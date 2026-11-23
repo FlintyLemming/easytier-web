@@ -3,8 +3,10 @@ import { defineStore } from 'pinia'
 import { listBlockedDevices, listMachines, listMembers, listNetworks } from '../api/client'
 import type { BlockedDevice, CentralNetworkMember, CentralNetworkSummary, RawMachine, TemporaryPeer } from '../api/types'
 import { buildDeviceViews, primaryNetworkId } from '../domain/devices'
+import { useSession } from './session'
 
 export const useInventory = defineStore('inventory', () => {
+  const session = useSession()
   const machines = ref<RawMachine[]>([])
   const networks = ref<CentralNetworkSummary[]>([])
   const membersByNetwork = ref<Record<string, CentralNetworkMember[]>>({})
@@ -30,7 +32,14 @@ export const useInventory = defineStore('inventory', () => {
 
   async function doRefresh(gen: number): Promise<void> {
     try {
-      const [m, n, b] = await Promise.all([listMachines(), listNetworks(), listBlockedDevices()])
+      // Webhook mode (spec §6.9): upstream registers no `/networks*` routes (they 404), so only the
+      // endpoints NetworkApi always registers are read; networks, members and temporary peers stay empty.
+      const webhook = session.webhookMode
+      const [m, n, b] = await Promise.all([
+        listMachines(),
+        webhook ? Promise.resolve([] as CentralNetworkSummary[]) : listNetworks(),
+        listBlockedDevices(),
+      ])
       const memberLists = await Promise.all(n.map((net) => listMembers(net.network_id)))
       if (gen !== generation) return
       const byNet: Record<string, CentralNetworkMember[]> = {}

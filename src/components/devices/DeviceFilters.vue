@@ -2,12 +2,14 @@
 import { useI18n } from 'vue-i18n'
 import type { StatusFilter } from '../../domain/deviceFilter'
 
-defineProps<{ counts: Record<StatusFilter, number>; city?: string | null }>()
+withDefaults(
+  defineProps<{ counts: Record<StatusFilter, number>; city?: string | null; statuses?: StatusFilter[] }>(),
+  { statuses: () => ['all', 'online', 'offline', 'unjoined'] },
+)
 const query = defineModel<string>('query', { default: '' })
 const status = defineModel<StatusFilter>('status', { default: 'all' })
 defineEmits<{ clearCity: [] }>()
 const { t } = useI18n()
-const order: StatusFilter[] = ['all', 'online', 'offline', 'unjoined']
 </script>
 
 <template>
@@ -21,7 +23,7 @@ const order: StatusFilter[] = ['all', 'online', 'offline', 'unjoined']
     />
     <div class="flex flex-wrap items-center gap-2" role="group" :aria-label="t('devices.filterLabel')">
       <button
-        v-for="s in order"
+        v-for="s in statuses"
         :key="s"
         type="button"
         :aria-pressed="status === s"

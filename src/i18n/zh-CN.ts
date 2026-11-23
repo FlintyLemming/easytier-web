@@ -16,7 +16,7 @@ export default {
     enrollLoading: '正在获取接入信息…',
     enrollTokenNote: '设备登记后会出现在设备列表中。',
     enrollWebhookNote: '当前由外部 webhook 验证设备，登记由 webhook 决定是否放行。',
-    webhookBanner: '当前使用外部 webhook 验证设备：网络与成员管理已停用，仅提供设备查看。',
+    webhookBanner: '当前后端运行在 webhook 模式，部分功能不可用',
     blocked: {
       title: '被拉黑的设备',
       empty: '没有被拉黑的设备',
@@ -57,6 +57,7 @@ export default {
   devices: {
     title: '设备',
     subtitle: '{total} 台设备 · {online} 台在线 · {unjoined} 台待加入网络',
+    subtitleWebhook: '{total} 台设备 · {online} 台在线',
     search: '搜索名称、主机名、IP、位置',
     filters: { all: '全部', online: '在线', offline: '离线', unjoined: '未加入网络' },
     filterLabel: '状态筛选',

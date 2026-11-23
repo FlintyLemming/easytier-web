@@ -6,13 +6,18 @@ import { locationText, relativeTime } from '../../domain/format'
 import KeyValueList, { type KeyValueItem } from '../ui/KeyValueList.vue'
 import SectionCard from '../ui/SectionCard.vue'
 
-const props = defineProps<{
-  device: DeviceView
-  ip: string | null
-  networkName: string | null
-  networkCidr: string | null
-  now: Date
-}>()
+const props = withDefaults(
+  defineProps<{
+    device: DeviceView
+    ip: string | null
+    networkName: string | null
+    networkCidr: string | null
+    now: Date
+    /** False in webhook mode: there are no central networks, so the IP and network rows are omitted. */
+    showNetwork?: boolean
+  }>(),
+  { showNetwork: true },
+)
 const { t, locale } = useI18n()
 
 const items = computed<KeyValueItem[]>(() => {
@@ -25,9 +30,14 @@ const items = computed<KeyValueItem[]>(() => {
     : d.lastSeen
       ? relativeTime(d.lastSeen, props.now, locale.value === 'en' ? 'en' : 'zh-CN')
       : null
+  const networkRows: KeyValueItem[] = props.showNetwork
+    ? [
+        { label: t('detail.overview.ip'), value: props.ip, mono: true, copy: true },
+        { label: t('detail.overview.network'), value: network },
+      ]
+    : []
   return [
-    { label: t('detail.overview.ip'), value: props.ip, mono: true, copy: true },
-    { label: t('detail.overview.network'), value: network },
+    ...networkRows,
     { label: t('detail.overview.hostname'), value: d.hostname || null },
     { label: t('detail.overview.os'), value: d.os || null },
     {

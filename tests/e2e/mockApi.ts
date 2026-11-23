@@ -58,6 +58,20 @@ function globToRegExp(glob: string): RegExp {
   return new RegExp('^' + esc + '$')
 }
 
+/**
+ * Webhook mode as upstream v2.7.1 serves it: console-info says `webhook_auth: true`; the central
+ * `/networks*` routes are not registered (bare 404); `/machines` lists sessions without `networks`
+ * or `alias`; alias/delete act on the central device registry, which webhook mode never fills (404).
+ */
+function webhookMachines() {
+  const base = fixture('machines.json')
+  for (const m of base.machines) {
+    m.networks = []
+    m.alias = null
+  }
+  return base
+}
+
 export interface RecordedRequest {
   method: string
   path: string
@@ -68,11 +82,12 @@ export interface RecordedRequest {
  * Intercept `**\/api/v1/**`. `overrides` is read live on every request (keys: `'METHOD /path'`,
  * `*` wildcard), so tests may mutate it mid-run. Handlers return JSON data or `status(code, body)`.
  * Also pins `localStorage['et.locale']` (default zh-CN) for deterministic text.
+ * `opts.webhook` serves the backend in webhook mode (see `webhookMachines`); overrides still win.
  */
 export async function mockApi(
   page: Page,
   overrides: Overrides = {},
-  opts: { locale?: 'zh-CN' | 'en' } = {},
+  opts: { locale?: 'zh-CN' | 'en'; webhook?: boolean } = {},
 ): Promise<{ requests: RecordedRequest[] }> {
   const requests: RecordedRequest[] = []
   const locale = opts.locale ?? 'zh-CN'
@@ -103,6 +118,17 @@ export async function mockApi(
       if (m === method && globToRegExp(p!).test(path)) {
         const out = await handler(req)
         return out instanceof MockStatus ? json(out.body, out.status) : json(out)
+      }
+    }
+    if (opts.webhook) {
+      if (key === 'GET /console-info') return json({ ...fixture<object>('console-info.json'), webhook_auth: true })
+      if (/^\/networks(\/|$)/.test(path)) return route.fulfill({ status: 404, body: '' })
+      if (key === 'GET /machines') return json(webhookMachines())
+      if (
+        (method === 'DELETE' && /^\/machines\/[^/]+$/.test(path)) ||
+        (method === 'PUT' && /^\/machines\/[^/]+\/alias$/.test(path))
+      ) {
+        return json({ error: 'device not found' }, 404)
       }
     }
     if (key === 'GET /auth/captcha') return route.fulfill({ status: 200, contentType: 'image/png', body: PNG })

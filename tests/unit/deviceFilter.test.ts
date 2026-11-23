@@ -13,7 +13,7 @@ const devices = buildDeviceViews(machines, networks, { [networks[0]!.network_id]
 
 const dev = (o: Partial<DeviceView>): DeviceView => ({
   id: 'x', name: 'x', hostname: 'x', alias: null, os: '', online: true, lastSeen: null, version: '2.7.1',
-  outdated: false, publicIp: null, location: null, networks: [], defaultNetworkId: null, member: null, ip: null, ...o,
+  outdated: false, publicIp: null, location: null, networks: [], defaultNetworkId: null, member: null, ip: null, pending: false, ...o,
 })
 
 describe('filterDevices', () => {

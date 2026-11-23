@@ -9,7 +9,10 @@ import UiButton from '../ui/UiButton.vue'
 import DeviceMenu from './DeviceMenu.vue'
 import DeviceStatus from './DeviceStatus.vue'
 
-const props = defineProps<{ device: DeviceView; now: Date; primaryName: string | null; joining?: boolean }>()
+const props = withDefaults(
+  defineProps<{ device: DeviceView; now: Date; primaryName: string | null; joining?: boolean; central?: boolean }>(),
+  { central: true },
+)
 const emit = defineEmits<{ join: []; rename: []; delete: [] }>()
 const { t } = useI18n()
 const router = useRouter()
@@ -51,7 +54,7 @@ function onEnter(e: KeyboardEvent) {
           {{ device.networks.find((n) => n.id === device.defaultNetworkId)?.name }}<template v-if="device.networks.length > 1"> · {{ t('devices.moreNetworks', { n: device.networks.length - 1 }) }}</template>
         </div>
       </template>
-      <div v-else class="flex flex-col items-start gap-1">
+      <div v-else-if="central && !device.pending" class="flex flex-col items-start gap-1">
         <span class="text-[12px] text-muted">{{ t('devices.notJoined') }}</span>
         <UiButton
           size="sm"
@@ -63,6 +66,8 @@ function onEnter(e: KeyboardEvent) {
           {{ t('devices.join', { network: primaryName ?? '' }) }}
         </UiButton>
       </div>
+      <!-- Webhook mode (no central networks) or no machine id yet: nothing to join. -->
+      <span v-else data-testid="ip-none" class="font-mono text-[13px] text-muted-soft">—</span>
     </td>
     <td class="min-w-0 px-4 py-3 align-middle">
       <div data-testid="location-text" class="truncate text-[14px] text-ink">{{ locationText(device.location) ?? '—' }}</div>
@@ -76,7 +81,7 @@ function onEnter(e: KeyboardEvent) {
     </td>
     <td class="px-4 py-3 align-middle"><DeviceStatus :device="device" :now="now" /></td>
     <td class="px-2 py-3 text-right align-middle">
-      <DeviceMenu :device="device" @rename="emit('rename')" @delete="emit('delete')" />
+      <DeviceMenu :device="device" :central="central" @rename="emit('rename')" @delete="emit('delete')" />
     </td>
   </tr>
 </template>

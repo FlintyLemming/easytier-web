@@ -4,6 +4,7 @@ import networksFx from '../fixtures/v2.7.1/networks.json'
 import membersFx from '../fixtures/v2.7.1/members.json'
 import type { CentralNetworkMember, CentralNetworkSummary, RawMachine } from '../../src/api/types'
 import { buildDeviceViews, defaultNetworkId, memberIp, primaryNetworkId } from '../../src/domain/devices'
+import { uuidToStr } from '../../src/lib/uuid'
 
 const machines = machinesFx.machines as unknown as RawMachine[]
 const networks = networksFx.networks as unknown as CentralNetworkSummary[]
@@ -85,5 +86,29 @@ describe('buildDeviceViews', () => {
     const [va, vb] = buildDeviceViews([a, b], networks, byNet)
     expect(va!.outdated).toBe(true)
     expect(vb!.outdated).toBe(false)
+  })
+  it('machines without info fall back to client_url ids; neither -> skipped; ids unique', () => {
+    const known = clone(machines[0]!)
+    const noInfo = { client_url: 'udp://203.0.113.7:4000', info: null, online: false } as RawMachine
+    const dupNoInfo = { ...noInfo, online: true } as RawMachine
+    const nothing = { info: null } as RawMachine
+    const dupKnown = clone(machines[0]!)
+    const views = buildDeviceViews([known, noInfo, nothing, dupNoInfo, dupKnown], networks, byNet)
+    expect(views.map((v) => v.id)).toEqual([uuidToStr(known.info!.machine_id), 'udp://203.0.113.7:4000'])
+    expect(new Set(views.map((v) => v.id)).size).toBe(views.length)
+    expect(views.every((v) => v.id !== '')).toBe(true)
+    const [k, p] = views
+    expect(k!.pending).toBe(false)
+    expect(p).toMatchObject({ pending: true, name: 'udp://203.0.113.7:4000', hostname: '', publicIp: '203.0.113.7', member: null, ip: null })
+  })
+  it('webhook shape: no networks, no alias -> unjoined views keyed by machine id', () => {
+    const wh = machines.map((m) => ({ ...clone(m), networks: [], alias: null }))
+    const views = buildDeviceViews(wh, [], {})
+    expect(views).toHaveLength(machines.length)
+    for (const v of views) {
+      expect(v.pending).toBe(false)
+      expect(v.defaultNetworkId).toBeNull()
+      expect(v.id).toMatch(/^[0-9a-f-]{36}$/)
+    }
   })
 })

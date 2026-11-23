@@ -11,6 +11,7 @@ defineProps<{
   joiningIds: Set<string>
   sortKey: SortKey | null
   sortDir: SortDir
+  central?: boolean
 }>()
 defineEmits<{ sort: [key: SortKey]; join: [d: DeviceView]; rename: [d: DeviceView]; delete: [d: DeviceView] }>()
 const { t } = useI18n()
@@ -62,6 +63,7 @@ const cols: { key: SortKey | null; label: string; width: string }[] = [
           :now="now"
           :primary-name="primaryName"
           :joining="joiningIds.has(d.id)"
+          :central="central ?? true"
           @join="$emit('join', d)"
           @rename="$emit('rename', d)"
           @delete="$emit('delete', d)"

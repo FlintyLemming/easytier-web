@@ -82,6 +82,40 @@ describe('inventory', () => {
   })
 })
 
+describe('inventory in webhook mode', () => {
+  it('reads only machines and blocked devices; networks, members and temporary peers stay empty', async () => {
+    m.getConsoleInfo.mockResolvedValue({ username: 'bob', webhook_auth: true } as never)
+    const s = useSession()
+    await s.load()
+    expect(s.webhookMode).toBe(true)
+    expect(s.centralEnabled).toBe(false)
+    m.listNetworks.mockRejectedValue(new Error('404 no route'))
+    m.listMembers.mockRejectedValue(new Error('404 no route'))
+    m.listBlockedDevices.mockResolvedValue([{ id: 'b', attempt_count: 0 }] as never)
+    const webhookMachines = machinesFx.machines.map((x) => ({ ...x, networks: [], alias: null }))
+    m.listMachines.mockResolvedValue(webhookMachines as never)
+    const inv = useInventory()
+    await inv.refresh()
+    expect(m.listNetworks).not.toHaveBeenCalled()
+    expect(m.listMembers).not.toHaveBeenCalled()
+    expect(inv.error).toBeNull()
+    expect(inv.loaded).toBe(true)
+    expect(inv.networks).toEqual([])
+    expect(inv.membersByNetwork).toEqual({})
+    expect(inv.temporaryByNetwork).toEqual({})
+    expect(inv.blocked).toHaveLength(1)
+    expect(inv.devices).toHaveLength(machinesFx.machines.length)
+    expect(inv.devices.every((d) => d.defaultNetworkId === null)).toBe(true)
+    expect(inv.primaryNetwork).toBeNull()
+  })
+
+  it('unknown mode (console-info not loaded) still reads networks', async () => {
+    const inv = useInventory()
+    await inv.refresh()
+    expect(m.listNetworks).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('inventory reset', () => {
   it('clears all state', async () => {
     m.listBlockedDevices.mockResolvedValue([{ id: 'b', attempt_count: 1 }] as never)

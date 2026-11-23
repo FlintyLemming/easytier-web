@@ -20,11 +20,13 @@ import { useDeviceRuntime } from '../composables/useDeviceRuntime'
 import { useToast } from '../composables/useToast'
 import { memberIp, type DeviceView } from '../domain/devices'
 import { useInventory } from '../stores/inventory'
+import { useSession } from '../stores/session'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const inventory = useInventory()
+const session = useSession()
 const toast = useToast()
 
 // The AppShell owns the 5 s inventory poller; this page only reads the store.
@@ -48,13 +50,18 @@ const member = computed(() => {
   return (inventory.membersByNetwork[networkId.value] ?? []).find((m) => m.device_id === machineId.value) ?? null
 })
 const ip = computed(() => (member.value ? memberIp(member.value) : null))
+/**
+ * Webhook mode (spec §6.9) or a device without a machine id yet: header + overview only — no central
+ * network cards, no proxy-rpc, no alias/delete (manual instances arrive with a later plan).
+ */
+const limited = computed(() => session.webhookMode || !!device.value?.pending)
 const online = computed(() => device.value?.online ?? false)
 /** Remount per-network editors when switching networks so no draft leaks across. */
 const networkKey = computed(() => `${machineId.value}:${networkId.value ?? ''}`)
 
 const runtime = useDeviceRuntime(
   machineId,
-  computed(() => (inNetwork.value ? networkId.value : null)),
+  computed(() => (inNetwork.value && !limited.value ? networkId.value : null)),
   online,
 )
 
@@ -143,11 +150,23 @@ async function confirmDelete(block: boolean) {
         :ip="ip"
         :all-networks="inventory.networks"
         :now="now"
+        :manage="!limited"
         @join="joinOpen = true"
         @delete="deleteTarget = device"
       />
 
-      <div class="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+      <div v-if="limited" class="w-full max-w-[560px]">
+        <OverviewCard
+          :device="device"
+          :ip="ip"
+          :network-name="inNetwork ? networkName : null"
+          :network-cidr="inNetwork ? (network?.virtual_cidr ?? null) : null"
+          :now="now"
+          :show-network="!session.webhookMode"
+        />
+      </div>
+
+      <div v-else class="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
         <div class="flex min-w-0 flex-col gap-4">
           <NotInNetworkState
             v-if="device.networks.length === 0"
@@ -210,7 +229,7 @@ async function confirmDelete(block: boolean) {
         </aside>
       </div>
 
-      <JoinNetworkDialog v-model:open="joinOpen" :device="device" :networks="inventory.networks" :busy="joining" @join="joinNetwork" />
+      <JoinNetworkDialog v-if="!limited" v-model:open="joinOpen" :device="device" :networks="inventory.networks" :busy="joining" @join="joinNetwork" />
     </template>
 
     <DeleteDeviceDialog :device="deleteTarget" :busy="deleting" @close="deleteTarget = null" @confirm="confirmDelete" />

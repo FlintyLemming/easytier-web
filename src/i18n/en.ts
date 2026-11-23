@@ -16,7 +16,7 @@ export default {
     enrollLoading: 'Loading enrollment info…',
     enrollTokenNote: 'Enrolled devices appear in the device list.',
     enrollWebhookNote: 'Devices are verified by an external webhook, which decides whether enrollment is allowed.',
-    webhookBanner: 'Devices are verified by an external webhook: network and member management are disabled; devices are view-only.',
+    webhookBanner: 'The backend is running in webhook mode; some features are unavailable',
     blocked: {
       title: 'Blocked devices',
       empty: 'No blocked devices',
@@ -57,6 +57,7 @@ export default {
   devices: {
     title: 'Devices',
     subtitle: '{total} devices · {online} online · {unjoined} waiting to join a network',
+    subtitleWebhook: '{total} devices · {online} online',
     search: 'Search name, hostname, IP, location',
     filters: { all: 'All', online: 'Online', offline: 'Offline', unjoined: 'Not in a network' },
     filterLabel: 'Status filter',

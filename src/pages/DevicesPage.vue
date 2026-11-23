@@ -16,9 +16,14 @@ import { useToast } from '../composables/useToast'
 import { filterDevices, sortDevices, statusCounts, type SortDir, type SortKey, type StatusFilter } from '../domain/deviceFilter'
 import type { DeviceView } from '../domain/devices'
 import { useInventory } from '../stores/inventory'
+import { useSession } from '../stores/session'
 
 const { t } = useI18n()
 const inventory = useInventory()
+const session = useSession()
+/** Webhook mode (spec §6.9) has no central networks: no joining, no 未加入网络 state. */
+const central = computed(() => !session.webhookMode)
+const statuses = computed<StatusFilter[]>(() => (central.value ? ['all', 'online', 'offline', 'unjoined'] : ['all', 'online', 'offline']))
 const toast = useToast()
 const route = useRoute()
 const router = useRouter()
@@ -127,7 +132,11 @@ async function confirmDelete(block: boolean) {
     <header>
       <h1 class="text-[26px] font-normal tracking-[-0.325px] text-ink">{{ t('devices.title') }}</h1>
       <p v-if="inventory.loaded" class="mt-1 text-[14px] text-muted">
-        {{ t('devices.subtitle', { total: counts.all, online: counts.online, unjoined: counts.unjoined }) }}
+        {{
+          central
+            ? t('devices.subtitle', { total: counts.all, online: counts.online, unjoined: counts.unjoined })
+            : t('devices.subtitleWebhook', { total: counts.all, online: counts.online })
+        }}
       </p>
     </header>
 
@@ -140,7 +149,7 @@ async function confirmDelete(block: boolean) {
     <EmptyState v-else-if="all.length === 0" :title="t('devices.emptyTitle')" :body="t('devices.emptyBody')" />
 
     <template v-else>
-      <DeviceFilters v-model:query="query" v-model:status="status" :counts="counts" :city="city" @clear-city="clearCity" />
+      <DeviceFilters v-model:query="query" v-model:status="status" :counts="counts" :city="city" :statuses="statuses" @clear-city="clearCity" />
 
       <EmptyState v-if="visible.length === 0" :title="t('devices.noMatch')" :body="t('devices.noMatchBody')">
         <template #action><UiButton @click="clearFilters">{{ t('devices.clearFilters') }}</UiButton></template>
@@ -154,6 +163,7 @@ async function confirmDelete(block: boolean) {
           :now="now"
           :primary-name="primaryName"
           :joining="joiningIds.has(d.id)"
+          :central="central"
           @join="join(d)"
           @rename="renameTarget = d"
           @delete="deleteTarget = d"
@@ -167,6 +177,7 @@ async function confirmDelete(block: boolean) {
         :joining-ids="joiningIds"
         :sort-key="sortKey"
         :sort-dir="sortDir"
+        :central="central"
         @sort="setSort"
         @join="join"
         @rename="(d) => (renameTarget = d)"

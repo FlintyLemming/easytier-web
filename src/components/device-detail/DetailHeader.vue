@@ -11,13 +11,21 @@ import UiMenu, { type UiMenuItem } from '../ui/UiMenu.vue'
 import NetworkSwitcher from './NetworkSwitcher.vue'
 import { errorMessage, refreshInventoryFresh } from './writes'
 
-const props = defineProps<{
-  device: DeviceView
-  networkId: string | null
-  ip: string | null
-  allNetworks: CentralNetworkSummary[]
-  now: Date
-}>()
+const props = withDefaults(
+  defineProps<{
+    device: DeviceView
+    networkId: string | null
+    ip: string | null
+    allNetworks: CentralNetworkSummary[]
+    now: Date
+    /**
+     * False in webhook mode or for a device without a machine id yet: no network switcher, no alias
+     * editing, no delete (they act on the central device registry, which upstream answers with 404).
+     */
+    manage?: boolean
+  }>(),
+  { manage: true },
+)
 const emit = defineEmits<{ join: []; delete: [] }>()
 const { t } = useI18n()
 const toast = useToast()
@@ -86,11 +94,12 @@ async function copyId() {
   } catch { /* clipboard unavailable */ }
 }
 
-const menuItems = computed<UiMenuItem[]>(() => [
-  { label: t('devices.copyId'), onSelect: () => void copyId() },
-  { label: '', separator: true },
-  { label: t('devices.delete'), danger: true, onSelect: () => emit('delete') },
-])
+const menuItems = computed<UiMenuItem[]>(() => {
+  if (props.device.pending) return []
+  const copy: UiMenuItem = { label: t('devices.copyId'), onSelect: () => void copyId() }
+  if (!props.manage) return [copy]
+  return [copy, { label: '', separator: true }, { label: t('devices.delete'), danger: true, onSelect: () => emit('delete') }]
+})
 </script>
 
 <template>
@@ -120,6 +129,7 @@ const menuItems = computed<UiMenuItem[]>(() => [
               @keydown.esc.prevent="cancel"
               @blur="commit"
             />
+            <span v-else-if="!manage" class="block max-w-full truncate">{{ device.name }}</span>
             <button
               v-else
               type="button"
@@ -141,13 +151,13 @@ const menuItems = computed<UiMenuItem[]>(() => [
 
       <div class="flex shrink-0 items-center gap-2">
         <NetworkSwitcher
-          v-if="device.networks.length > 0"
+          v-if="manage && device.networks.length > 0"
           :device="device"
           :network-id="networkId"
           :all-networks="allNetworks"
           @join="emit('join')"
         />
-        <UiMenu :items="menuItems">
+        <UiMenu v-if="menuItems.length" :items="menuItems">
           <template #trigger>
             <button
               type="button"

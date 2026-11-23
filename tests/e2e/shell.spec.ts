@@ -41,9 +41,11 @@ test('blocked bell shows a count badge and unblocks a device', async ({ page }) 
 })
 
 test('webhook banner appears when webhook_auth is true', async ({ page }) => {
-  await mockApi(page, { 'GET /console-info': () => ({ ...fixture<object>('console-info.json'), webhook_auth: true }) })
+  await mockApi(page, {}, { webhook: true })
   await page.goto('/#/devices')
-  await expect(page.getByTestId('webhook-banner')).toBeVisible()
+  await expect(page.getByTestId('webhook-banner')).toHaveText('当前后端运行在 webhook 模式，部分功能不可用')
+  // The list still loads although every /networks* route 404s.
+  await expect(page.getByTestId('device-name')).toHaveCount(3)
 })
 
 test('webhook banner is absent in central mode', async ({ page }) => {

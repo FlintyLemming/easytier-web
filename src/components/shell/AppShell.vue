@@ -17,7 +17,7 @@ onMounted(() => poller.start())
 <template>
   <div class="min-h-screen bg-canvas">
     <TopNav />
-    <WebhookBanner v-if="session.info?.webhook_auth === true" />
+    <WebhookBanner v-if="session.webhookMode" />
     <main class="mx-auto w-full max-w-[1200px] px-6 py-8">
       <RouterView />
     </main>

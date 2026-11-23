@@ -8,7 +8,10 @@ import UiButton from '../ui/UiButton.vue'
 import DeviceMenu from './DeviceMenu.vue'
 import DeviceStatus from './DeviceStatus.vue'
 
-const props = defineProps<{ device: DeviceView; now: Date; primaryName: string | null; joining?: boolean }>()
+const props = withDefaults(
+  defineProps<{ device: DeviceView; now: Date; primaryName: string | null; joining?: boolean; central?: boolean }>(),
+  { central: true },
+)
 const emit = defineEmits<{ join: []; rename: []; delete: [] }>()
 const { t } = useI18n()
 const router = useRouter()
@@ -40,7 +43,7 @@ function onEnter(e: KeyboardEvent) {
           {{ device.os || '—' }}<template v-if="device.alias"> · <span class="font-mono">{{ device.hostname }}</span></template>
         </div>
       </div>
-      <DeviceMenu :device="device" @rename="emit('rename')" @delete="emit('delete')" />
+      <DeviceMenu :device="device" :central="central" @rename="emit('rename')" @delete="emit('delete')" />
     </div>
     <div class="mt-3 flex items-center justify-between gap-3">
       <div class="min-w-0">
@@ -50,12 +53,13 @@ function onEnter(e: KeyboardEvent) {
             {{ device.networks.find((n) => n.id === device.defaultNetworkId)?.name }}<template v-if="device.networks.length > 1"> · {{ t('devices.moreNetworks', { n: device.networks.length - 1 }) }}</template>
           </div>
         </template>
-        <div v-else class="flex flex-col items-start gap-1">
+        <div v-else-if="central && !device.pending" class="flex flex-col items-start gap-1">
           <span class="text-[12px] text-muted">{{ t('devices.notJoined') }}</span>
           <UiButton size="sm" :loading="joining" :disabled="!primaryName" :title="primaryName ? undefined : t('devices.noPrimary')" @click.stop="emit('join')">
             {{ t('devices.join', { network: primaryName ?? '' }) }}
           </UiButton>
         </div>
+        <div v-else data-testid="ip-none" class="font-mono text-[13px] text-muted-soft">—</div>
       </div>
       <DeviceStatus :device="device" :now="now" class="shrink-0" />
     </div>
