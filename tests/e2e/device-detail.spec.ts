@@ -251,9 +251,11 @@ test('5: subnet proxy offers /24 candidates from interface IPs and PATCHes exact
 })
 
 test('6: 恢复默认 on core3 keeps subnet proxies via PUT, not DELETE', async ({ page }) => {
-  const { requests } = await open(page, CORE3)
+  const { requests } = await open(page, CORE3, {
+    'GET /networks/*/members/*/config': () => ({ ...fixture<object>('member-config-core3.json'), mtu: 1300 }),
+  })
   const row = page.getByTestId('setting-advanced')
-  await expect(row.getByTestId('advanced-state')).toHaveText('默认')
+  await expect(row.getByTestId('advanced-state')).toHaveText('已覆盖')
   await row.getByRole('button', { name: '恢复默认' }).click()
   const dlg = page.getByRole('dialog')
   await expect(dlg).toContainText('子网代理会保留')
@@ -268,6 +270,13 @@ test('6: 恢复默认 on core3 keeps subnet proxies via PUT, not DELETE', async 
 test('6b: overridden config shows 已覆盖', async ({ page }) => {
   await open(page, CORE3, { 'GET /networks/*/members/*/config': () => ({ proxy_cidrs: ['192.168.77.0/24'], mtu: 1300 }) })
   await expect(page.getByTestId('advanced-state')).toHaveText('已覆盖')
+})
+
+test('6c: in the 默认 state (override holds only subnet proxies) 恢复默认 is absent', async ({ page }) => {
+  await open(page, CORE3)
+  const row = page.getByTestId('setting-advanced')
+  await expect(row.getByTestId('advanced-state')).toHaveText('默认')
+  await expect(row.getByRole('button', { name: '恢复默认' })).toHaveCount(0)
 })
 
 test('7: diagnostics: collapsed, logger level, ACL stats, copyable TOML', async ({ page, context }) => {

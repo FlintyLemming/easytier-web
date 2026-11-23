@@ -106,7 +106,8 @@ async function restoreDefault() {
         <div class="text-[13px] text-ink">{{ t('detail.settings.advanced') }}</div>
         <div data-testid="advanced-state" class="mt-0.5 text-[12px]" :class="state === 'error' ? 'text-error' : 'text-muted'">{{ text }}</div>
       </div>
-      <LinkButton v-if="state === 'ready' && config !== null" :loading="restoring" :disabled="busy" @click="restoreDefault">
+      <!-- 恢复默认 is a no-op in the 默认 state, so it only appears when overridden. -->
+      <LinkButton v-if="overridden" :loading="restoring" :disabled="busy" @click="restoreDefault">
         {{ t('detail.settings.restore') }}
       </LinkButton>
     </div>
