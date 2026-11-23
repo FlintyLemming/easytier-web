@@ -1,2 +1,8 @@
 .superpowers/
 .DS_Store
+node_modules/
+dist/
+testenv/data*/
+testenv/backups/
+test-results/
+playwright-report/
