@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext } from '@playwright/test'
+import { expect, request as pwRequest, test, type APIRequestContext } from '@playwright/test'
 
 const CORE2 = '22222222-2222-4222-8222-222222222222'
 const CORE1 = '11111111-1111-4111-8111-111111111111'
@@ -23,12 +23,11 @@ async function core2Member(request: APIRequestContext, net: string): Promise<Mem
   return m!
 }
 
-test('live smoke: login, devices, connections, fixed IP round trip', async ({ page }) => {
+test('live smoke: login, devices, connections, fixed IP round trip', async ({ page }, testInfo) => {
   await page.addInitScript(() => {
     try { localStorage.setItem('et.locale', 'zh-CN') } catch { /* ignore */ }
   })
-  let net: string | null = null
-  try {
+  {
     // 1. login
     await page.goto('/#/login')
     await page.getByLabel('用户名').fill('admin')
@@ -49,30 +48,45 @@ test('live smoke: login, devices, connections, fixed IP round trip', async ({ pa
     const conns = page.getByTestId('connections-card')
     await expect(conns.getByText('core2', { exact: true })).toBeVisible()
     await expect(conns.getByText('core3', { exact: true })).toBeVisible()
-    await page.screenshot({ path: '.superpowers/sdd/2026-11-23-02-frontend-foundation-and-devices/task-11-live-detail.png', fullPage: true })
+    await page.screenshot({ path: testInfo.outputPath('live-detail.png'), fullPage: true })
 
     // 4. core2: set fixed IP, verify via API
-    net = await networkId(page.request)
+    const net = await networkId(page.request)
     expect((await core2Member(page.request, net)).virtual_ipv4).toBeNull()
     await page.goto(`/#/devices/${CORE2}`)
     const settings = page.getByTestId('settings-card')
     await settings.getByTestId('setting-ip').getByRole('button', { name: '设为固定' }).click()
     await settings.getByPlaceholder('10.144.144.9').fill(FIXED_IP)
-    await settings.getByRole('button', { name: '保存' }).first().click()
-    await expect.poll(async () => (await core2Member(page.request, net!)).virtual_ipv4).toBe(FIXED_IP)
+    await settings.getByTestId('setting-ip').getByRole('button', { name: '保存' }).click()
+    await expect.poll(async () => (await core2Member(page.request, net)).virtual_ipv4).toBe(FIXED_IP)
     await expect(settings.getByTestId('setting-ip')).toContainText(`固定 · ${FIXED_IP}`)
 
     // restore via the UI
     await settings.getByTestId('setting-ip').getByRole('button', { name: '改回自动' }).click()
-    await expect.poll(async () => (await core2Member(page.request, net!)).virtual_ipv4).toBeNull()
-  } finally {
-    // Always leave core2 on automatic IP, even when an assertion above failed.
-    if (net) {
-      const m = await core2Member(page.request, net)
-      if (m.virtual_ipv4) {
-        await page.request.patch(`/api/v1/networks/${net}/members/${CORE2}`, { data: { virtual_ipv4: '' } })
-      }
-      await expect.poll(async () => (await core2Member(page.request, net!)).virtual_ipv4).toBeNull()
+    await expect.poll(async () => (await core2Member(page.request, net)).virtual_ipv4).toBeNull()
+  }
+})
+
+// Independent safety net: own API context + explicit login, so it works even after a page crash or
+// test timeout. Cleanup errors are logged and never replace the test's own failure.
+test.afterEach(async ({}, testInfo) => {
+  const api = await pwRequest.newContext({ baseURL: 'http://localhost:11211' })
+  try {
+    const login = await api.post('/api/v1/auth/login', {
+      data: { username: 'admin', password: '21232f297a57a5a743894a0e4a801fc3' }, // MD5('admin'), like the app
+    })
+    if (!login.ok()) throw new Error(`cleanup login failed: ${login.status()}`)
+    const net = await networkId(api)
+    if ((await core2Member(api, net)).virtual_ipv4) {
+      const res = await api.patch(`/api/v1/networks/${net}/members/${CORE2}`, { data: { virtual_ipv4: '' } })
+      if (!res.ok()) throw new Error(`cleanup PATCH failed: ${res.status()}`)
     }
+    const after = await core2Member(api, net)
+    if (after.virtual_ipv4 !== null) throw new Error(`core2 virtual_ipv4 still ${after.virtual_ipv4}`)
+  } catch (e) {
+    console.error('[live cleanup] failed:', e)
+    if (testInfo.status === 'passed') throw e
+  } finally {
+    await api.dispose()
   }
 })

@@ -22,7 +22,8 @@ npm test             # 单元测试（vitest）
 npm run typecheck    # vue-tsc
 npm run e2e          # 带 mock 后端的 Playwright e2e（tests/e2e，端口 5198）
 npm run codegen      # 由 proto/ 重新生成 TypeScript 类型
-# 对接本地真实后端的冒烟测试（先启动测试环境，端口 5199）：
+# 对接本地真实后端的冒烟测试（端口 5199）。首次需 `npx playwright install chromium`；
+# 需要 ET_DATA_DIR=./data-central 的测试环境（其中已有 home-central 网络，见 testenv/README.md 的 capture 一节）：
 ET_DATA_DIR=./data-central docker compose -f testenv/docker-compose.yml up -d
 npx playwright test -c playwright.live.config.ts
 ```
