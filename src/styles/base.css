@@ -1,29 +1,38 @@
-body {
-  background-color: var(--color-canvas);
-  color: var(--color-ink);
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-}
+@layer base {
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
 
-h1, h2, h3 {
-  font-weight: 400;
-}
+  h1, h2, h3 {
+    font-weight: 400;
+  }
 
-h1 {
-  font-size: 36px;
-  letter-spacing: -0.72px;
-}
+  h1 {
+    font-size: 36px;
+    letter-spacing: -0.72px;
+  }
 
-h2 {
-  font-size: 26px;
-  letter-spacing: -0.325px;
-}
+  h2 {
+    font-size: 26px;
+    letter-spacing: -0.325px;
+  }
 
-h3 {
-  font-size: 22px;
-  letter-spacing: -0.11px;
-}
+  h3 {
+    font-size: 22px;
+    letter-spacing: -0.11px;
+  }
 
-code, .mono {
-  font-family: var(--font-mono);
+  code, .mono {
+    font-family: var(--font-mono);
+  }
+
+  .caption-uppercase {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.88px;
+    text-transform: uppercase;
+  }
 }
