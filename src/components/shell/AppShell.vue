@@ -4,6 +4,7 @@ import { useInventory } from '../../stores/inventory'
 import { useSession } from '../../stores/session'
 import { usePolling } from '../../composables/usePolling'
 import TopNav from './TopNav.vue'
+import RefreshNotice from './RefreshNotice.vue'
 import WebhookBanner from './WebhookBanner.vue'
 
 const session = useSession()
@@ -18,6 +19,7 @@ onMounted(() => poller.start())
   <div class="min-h-screen bg-canvas">
     <TopNav />
     <WebhookBanner v-if="session.webhookMode" />
+    <RefreshNotice />
     <main class="mx-auto w-full max-w-[1200px] px-6 py-8">
       <RouterView />
     </main>

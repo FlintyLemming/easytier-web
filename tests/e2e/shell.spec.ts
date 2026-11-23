@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { fixture, mockApi } from './mockApi'
+import { fixture, mockApi, status, type Overrides } from './mockApi'
 
 const CORE1 = '11111111-1111-4111-8111-111111111111'
 
@@ -120,4 +120,33 @@ test('at 640px and wider the tabs show and the menu button is hidden', async ({ 
   await page.goto('/#/devices')
   await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '设备' })).toBeVisible()
   await expect(page.getByRole('button', { name: '导航菜单' })).toBeHidden()
+})
+
+test('a failing background refresh shows a notice with the last update time until it recovers', async ({ page }) => {
+  await page.clock.install()
+  const overrides: Overrides = {}
+  await mockApi(page, overrides)
+  await page.goto('/#/devices')
+  await expect(page.getByTestId('device-name')).toHaveCount(3)
+  const notice = page.getByTestId('refresh-notice')
+  await expect(notice).toHaveCount(0)
+
+  overrides['GET /machines'] = () => status(500, { message: 'machines down' })
+  await expect(async () => {
+    await page.clock.runFor(5_000)
+    await expect(notice).toBeVisible({ timeout: 500 })
+  }).toPass()
+  await expect(notice).toHaveText(/^数据刷新失败，正在重试 · 上次更新 (刚刚|\d+ 分钟前)$/)
+  await expect(notice).toHaveAttribute('title', 'machines down')
+  // Last good data stays on screen; no orange in the notice.
+  await expect(page.getByTestId('device-name')).toHaveCount(3)
+  expect(await notice.evaluate((e) => getComputedStyle(e).backgroundColor)).not.toBe('rgb(245, 78, 0)')
+  await page.clock.runFor(150_000)
+  await expect(notice).toHaveText(/上次更新 [23] 分钟前$/)
+
+  delete overrides['GET /machines']
+  await expect(async () => {
+    await page.clock.runFor(5_000)
+    await expect(notice).toHaveCount(0, { timeout: 500 })
+  }).toPass()
 })

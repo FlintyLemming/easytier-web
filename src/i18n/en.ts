@@ -18,6 +18,7 @@ export default {
     enrollTokenNote: 'Enrolled devices appear in the device list.',
     enrollWebhookNote: 'Devices are verified by an external webhook, which decides whether enrollment is allowed.',
     webhookBanner: 'The backend is running in webhook mode; some features are unavailable',
+    refreshFailed: 'Refresh failed, retrying · last updated {time}',
     blocked: {
       title: 'Blocked devices',
       empty: 'No blocked devices',

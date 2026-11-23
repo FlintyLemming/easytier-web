@@ -18,6 +18,7 @@ export default {
     enrollTokenNote: '设备登记后会出现在设备列表中。',
     enrollWebhookNote: '当前由外部 webhook 验证设备，登记由 webhook 决定是否放行。',
     webhookBanner: '当前后端运行在 webhook 模式，部分功能不可用',
+    refreshFailed: '数据刷新失败，正在重试 · 上次更新 {time}',
     blocked: {
       title: '被拉黑的设备',
       empty: '没有被拉黑的设备',

@@ -15,6 +15,8 @@ export const useInventory = defineStore('inventory', () => {
   const blocked = ref<BlockedDevice[]>([])
   const loaded = ref(false)
   const error = ref<string | null>(null)
+  /** Epoch ms of the last successful refresh; failures leave it unchanged. */
+  const lastUpdatedAt = ref<number | null>(null)
 
   const devices = computed(() => buildDeviceViews(machines.value, networks.value, membersByNetwork.value))
   const primaryNetwork = computed<CentralNetworkSummary | null>(() => {
@@ -55,6 +57,7 @@ export const useInventory = defineStore('inventory', () => {
       blocked.value = b
       loaded.value = true
       error.value = null
+      lastUpdatedAt.value = Date.now()
     } catch (e) {
       if (gen !== generation) return
       error.value = e instanceof Error ? e.message : String(e)
@@ -81,6 +84,7 @@ export const useInventory = defineStore('inventory', () => {
     blocked.value = []
     loaded.value = false
     error.value = null
+    lastUpdatedAt.value = null
   }
 
   return {
@@ -91,6 +95,7 @@ export const useInventory = defineStore('inventory', () => {
     blocked,
     loaded,
     error,
+    lastUpdatedAt,
     devices,
     primaryNetwork,
     deviceById,

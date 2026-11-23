@@ -82,6 +82,37 @@ describe('inventory', () => {
   })
 })
 
+describe('inventory lastUpdatedAt', () => {
+  it('is set on success, unchanged on failure, cleared by reset', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-11-24T10:00:00Z'))
+      const inv = useInventory()
+      expect(inv.lastUpdatedAt).toBeNull()
+      await inv.refresh()
+      const first = Date.parse('2026-11-24T10:00:00Z')
+      expect(inv.lastUpdatedAt).toBe(first)
+
+      vi.setSystemTime(new Date('2026-11-24T10:00:05Z'))
+      m.listMachines.mockRejectedValue(new Error('boom'))
+      await inv.refresh()
+      expect(inv.error).toBe('boom')
+      expect(inv.lastUpdatedAt).toBe(first)
+
+      vi.setSystemTime(new Date('2026-11-24T10:00:10Z'))
+      m.listMachines.mockResolvedValue(machinesFx.machines as never)
+      await inv.refresh()
+      expect(inv.error).toBeNull()
+      expect(inv.lastUpdatedAt).toBe(Date.parse('2026-11-24T10:00:10Z'))
+
+      inv.reset()
+      expect(inv.lastUpdatedAt).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('inventory in webhook mode', () => {
   it('reads only machines and blocked devices; networks, members and temporary peers stay empty', async () => {
     m.getConsoleInfo.mockResolvedValue({ username: 'bob', webhook_auth: true } as never)
