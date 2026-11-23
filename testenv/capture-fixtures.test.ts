@@ -145,3 +145,42 @@ test('redact() scrubs public IPs and group secrets, keeps private ones', async (
   assert.ok(out.node_info.listeners.includes('udp://192.168.97.4:11010'))
   assert.equal(input.node_info.stun_info.public_ip[0], '1.1.1.1', 'input not mutated')
 })
+
+// ---------- consistency: every network reference is the captured network ----------
+
+test('every network_id / inst_id referenced in the fixtures equals index.networkId', () => {
+  const { networkId } = load('index.json')
+  assert.match(networkId, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+  const uuid = (u: { part1: number; part2: number; part3: number; part4: number }) => {
+    const h = [u.part1, u.part2, u.part3, u.part4].map((p) => (p >>> 0).toString(16).padStart(8, '0')).join('')
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
+  }
+  const refs: { where: string; id: string }[] = []
+  const walk = (v: unknown, where: string) => {
+    if (typeof v === 'string') {
+      // TOML config text from show_node_info: `instance_id = "<uuid>"`
+      for (const m of v.matchAll(/^instance_id\s*=\s*"([^"]+)"/gm)) refs.push({ where: `${where}(toml instance_id)`, id: m[1]! })
+    } else if (Array.isArray(v)) {
+      v.forEach((x, i) => walk(x, `${where}[${i}]`))
+    } else if (v && typeof v === 'object') {
+      for (const [k, x] of Object.entries(v)) {
+        const at = `${where}.${k}`
+        if ((k === 'network_id' || k === 'inst_id') && typeof x === 'string') refs.push({ where: at, id: x })
+        // machines[].info.inst_id is a UUID object: the core process's own session id from its
+        // heartbeat, not a network instance, so it is not compared. Network instances it runs are
+        // listed in running_network_instances.
+        if (k === 'running_network_instances' && Array.isArray(x)) x.forEach((u, i) => refs.push({ where: `${at}[${i}]`, id: uuid(u) }))
+        walk(x, at)
+      }
+    }
+  }
+  for (const { f, data } of allFixtures()) walk(data, f)
+  const files = new Set(refs.map((r) => r.where.slice(0, r.where.indexOf('.json') + 5)))
+  for (const f of ['network.json', 'networks.json', 'machines.json', 'list-route-core1.json', 'show-node-info-core3.json']) {
+    assert.ok(files.has(f), `no network reference found in ${f}`)
+  }
+  assert.deepEqual(
+    refs.filter((r) => r.id.toLowerCase() !== networkId).map((r) => `${r.where} = ${r.id}`),
+    [],
+  )
+})

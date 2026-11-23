@@ -3,7 +3,7 @@
 //   ET_DATA_DIR=./data-central docker compose -f testenv/docker-compose.yml up -d && node testenv/capture-fixtures.ts
 // Rerunnable: an existing `home-central` network is reused.
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { EtApi, MACHINES, strToUuid, uuidToStr, waitFor, waitForApi } from './lib/api.ts'
@@ -14,6 +14,8 @@ const here = dirname(fileURLToPath(import.meta.url))
 const outDir = join(here, '..', 'tests', 'fixtures', 'v2.7.1')
 const composeFile = join(here, 'docker-compose.yml')
 const CORE4_ID = '44444444-4444-4444-8444-444444444444'
+// The temporary blocked device runs the same core version as core1..3 (docker-compose.yml default).
+const CORE_TAG = process.env.ET_CORE_TAG ?? 'v2.6.4'
 const NET_NAME = 'home-central'
 
 const api = new EtApi(base)
@@ -36,14 +38,25 @@ function composeNetwork(): string {
   throw new Error('cannot determine compose network')
 }
 
-// Every fixture goes through redact(): no real public IPs (STUN / public_ipv4) or ACL group secrets get committed.
-function save(name: string, data: unknown) {
-  writeFileSync(join(outDir, name), `${JSON.stringify(redact(data), null, 2)}\n`)
-  log(`wrote ${name}`)
+// Writes every fixture in one go, only after all responses were fetched: first into a temp dir
+// next to outDir, then each file is renamed into place, so a failed run never leaves a mix of
+// old and new fixtures. Every fixture goes through redact(): no real public IPs (STUN /
+// public_ipv4) or ACL group secrets get committed.
+function saveAll(files: [string, unknown][]) {
+  mkdirSync(outDir, { recursive: true })
+  const tmp = mkdtempSync(join(dirname(outDir), '.capture-'))
+  try {
+    for (const [name, data] of files) writeFileSync(join(tmp, name), `${JSON.stringify(redact(data), null, 2)}\n`)
+    for (const [name] of files) {
+      renameSync(join(tmp, name), join(outDir, name))
+      log(`wrote ${name}`)
+    }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
 }
 
 async function main() {
-  mkdirSync(outDir, { recursive: true })
   await waitForApi(api)
   await api.login('admin', 'admin')
 
@@ -121,7 +134,7 @@ async function main() {
     try {
       sh(['rm', '-f', 'et-core4'])
       sh(['run', '-d', '--name', 'et-core4', '--network', net, '--cap-add', 'NET_ADMIN', '--device', '/dev/net/tun',
-        'easytier/easytier:v2.6.4', '--config-server', 'udp://web:22020/admin', '--machine-id', CORE4_ID])
+        `easytier/easytier:${CORE_TAG}`, '--config-server', 'udp://web:22020/admin', '--machine-id', CORE4_ID])
       log('et-core4 started, waiting for registration')
       const m = await waitFor(async () => {
         const r = await api.get<Any>('/machines')
@@ -140,19 +153,37 @@ async function main() {
     }
   }
 
-  // runtime ready
-  log('waiting for members running and routes')
+  // runtime ready: members running AND the PATCHed / PUT state above is what the cores run
+  log('waiting for members running, routes and the patched member state')
+  let readyState = 'nothing yet'
   await waitFor(async () => {
     const r = await api.get<Any>(`/networks/${nid}/members`)
     const ms = r.members ?? []
+    const byDev = (id: string) => ms.find((m: Any) => String(m.device_id).toLowerCase() === id)
+    const ip1 = byDev(MACHINES.core1)?.runtime_virtual_ipv4
+    readyState = `members=${ms.length} running=${ms.filter((m: Any) => m.running).length} core1 ip=${ip1}`
     if (ms.length !== 3 || !ms.every((m: Any) => m.running)) return undefined
+    if (typeof ip1 !== 'string' || !ip1.startsWith('10.144.144.1/')) return undefined
     const rt = await api.post<Any>(`/machines/${MACHINES.core1}/proxy-rpc`, {
       service_name: 'api.instance.PeerManageRpcService',
       method_name: 'list_route',
       payload: { instance: { id: strToUuid(nid) } },
     })
-    return (rt.routes ?? []).length >= 2 ? true : undefined
-  }, 180_000, 'members running + core1 sees 2 other routes')
+    const routes = rt.routes ?? []
+    const lab = routes.find((x: Any) => x.hostname === 'lab-box')
+    readyState += ` routes=[${routes.map((x: Any) => x.hostname).join(',')}] lab-box proxy_cidrs=${JSON.stringify(lab?.proxy_cidrs)}`
+    if (routes.length < 2 || !lab || !(lab.proxy_cidrs ?? []).includes('192.168.77.0/24')) return undefined
+    const ni = await api.post<Any>(`/machines/${MACHINES.core3}/proxy-rpc`, {
+      service_name: 'api.instance.PeerManageRpcService',
+      method_name: 'show_node_info',
+      payload: { instance: { id: strToUuid(nid) } },
+    })
+    const acl = String(ni?.node_info?.config ?? '').includes('deny-lab-ssh')
+    readyState += ` core3 acl=${acl}`
+    return acl ? true : undefined
+  }, 180_000, 'members running, core1 at 10.144.144.1, core3 route named lab-box with proxy_cidrs, ACL on core3').catch((e) => {
+    throw new Error(`${e instanceof Error ? e.message : String(e)}; last state: ${readyState}`)
+  })
   // give latency stats a moment
   await new Promise((r) => setTimeout(r, 10_000))
 
@@ -161,21 +192,24 @@ async function main() {
   const inst = { instance: { id: strToUuid(nid) } }
   const PM = 'api.instance.PeerManageRpcService'
 
-  save('console-info.json', await api.get('/console-info'))
-  save('summary.json', await api.get('/summary'))
-  save('machines.json', await api.get('/machines'))
-  save('networks.json', await api.get('/networks'))
-  save('network.json', await api.get(`/networks/${nid}`))
-  save('members.json', await api.get(`/networks/${nid}/members`))
-  save('member-config-core3.json', await api.get(`/networks/${nid}/members/${MACHINES.core3}/config`))
-  save('acl-policy.json', await api.get(`/networks/${nid}/acl-policy`))
-  save('gateway-info.json', await api.get('/networks/gateway-info'))
-  save('blocked-devices.json', await api.get('/blocked-devices'))
-  save('list-route-core1.json', await rpc(MACHINES.core1, PM, 'list_route', inst))
-  save('list-peer-core1.json', await rpc(MACHINES.core1, PM, 'list_peer', inst))
-  save('show-node-info-core3.json', await rpc(MACHINES.core3, PM, 'show_node_info', inst))
-  save('logger-level.json', await rpc(MACHINES.core1, 'api.logger.LoggerRpcService', 'get_logger_config', {}))
-  save('index.json', { networkId: nid, machines: { core1: MACHINES.core1, core2: MACHINES.core2, core3: MACHINES.core3 } })
+  const files: [string, unknown][] = [
+    ['console-info.json', await api.get('/console-info')],
+    ['summary.json', await api.get('/summary')],
+    ['machines.json', await api.get('/machines')],
+    ['networks.json', await api.get('/networks')],
+    ['network.json', await api.get(`/networks/${nid}`)],
+    ['members.json', await api.get(`/networks/${nid}/members`)],
+    ['member-config-core3.json', await api.get(`/networks/${nid}/members/${MACHINES.core3}/config`)],
+    ['acl-policy.json', await api.get(`/networks/${nid}/acl-policy`)],
+    ['gateway-info.json', await api.get('/networks/gateway-info')],
+    ['blocked-devices.json', await api.get('/blocked-devices')],
+    ['list-route-core1.json', await rpc(MACHINES.core1, PM, 'list_route', inst)],
+    ['list-peer-core1.json', await rpc(MACHINES.core1, PM, 'list_peer', inst)],
+    ['show-node-info-core3.json', await rpc(MACHINES.core3, PM, 'show_node_info', inst)],
+    ['logger-level.json', await rpc(MACHINES.core1, 'api.logger.LoggerRpcService', 'get_logger_config', {})],
+    ['index.json', { networkId: nid, machines: { core1: MACHINES.core1, core2: MACHINES.core2, core3: MACHINES.core3 } }],
+  ]
+  saveAll(files)
 }
 
 await main()
