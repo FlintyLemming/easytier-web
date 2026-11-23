@@ -1,0 +1,43 @@
+# Rulings made during execution of Plans 1–2
+
+Collected from the SDD ledgers (controller decisions taken on the user's behalf). Each line: decision — reason — cost if wrong.
+
+## Plan 1 (test env + gate)
+- Ruling: repo was not a git repo; controller ran `git init -b main`, committed docs + minimal .gitignore (`.superpowers/`, `.DS_Store`) on main, implementation on branch `feat/console-v1` in place (no worktree) — nothing pre-existing to isolate from; worktree would complicate Docker bind mounts — cost if wrong: none, branch can be moved.
+## Rulings
+- Ruling: T1 must NOT re-run `git init`; it extends the existing .gitignore with the remaining entries — repo exists — cost: none.
+- Ruling: seed-legacy prints `seeded <N> instances` on first run and `skipped <N> existing` when instances already exist, then `<M> running` — T3 Step 5's "skipped" needs a defined string — cost: trivial wording.
+- Ruling: shell scripts resolve the compose file relative to their own directory (`$(dirname "$0")/docker-compose.yml`) so they work from any cwd — plan silent — cost: none.
+- Ruling: all testenv TS uses explicit `.ts` import extensions and erasable-only syntax (no enums, namespaces, parameter properties) so `node file.ts` runs without a build step — Node 26 type stripping — cost: none.
+- I1 (plan-mandated) G5 route check matches hostname only; could be satisfied by legacy `home` routes if proxy-rpc ignored instance id. Ruling: strengthen — the matched core3 route must also have an IPv4 inside the gate CIDR 10.155.0.0/24 — spec intent is proving central delivery on 2.6.4 cores; plan text is weaker than its purpose — cost if wrong: one gate re-run.
+- I2 G4 doesn't prove continuous uptime across the upgrade. Ruling: out of scope, no fix — spec §5.10.1 asks that legacy instances are preserved and running after upgrade, not uninterrupted; web restart does not restart cores — cost if wrong: none for the gate decision.
+- Ruling: C1 fix amends HEAD commit 52e2957 (local, unpushed) so the leaked IPs never persist in history; M8 ACL group_secret redacted in the same scrub — privacy; amend of an unpushed local commit is recoverable via reflog — cost if wrong: none.
+- Ruling: I1 enters the fix wave — add G4b (restart cores after upgrade; legacy home instances re-delivered and running within 90s, lab still not running; per-instance TOML/config fidelity vs pre-upgrade capture) and rerun the gate; a genuine G4b FAIL stops the roadmap and goes to the user — spec §5.10.1 bullet 1 says legacy instances must be delivered and run, which the original gate didn't prove — cost if wrong: one gate rerun.
+- Ruling: G6 removal wait raised 60s→90s (plan value) — observed 32–34s; spec risk notes heartbeat latency — cost if wrong: none.
+- Ruling: I2 a–e and M3 are Plan 2 text defects; controller amends Plan 2 before dispatching it (memberIp strips prefix; counters coerced with Number(); naming expectations use members' display name; outdated test via override; vitest include tests/unit/**) — fixtures are ground truth per spec §8 — cost if wrong: plan rework only.
+- Ruling: M6/M7 carried to Plan 6 as notes (wizard disabled count from config disabled flag, not disabled_inst_ids; runbook rollback order stop→restore→start old tag) — Plan 6 not yet written — cost if wrong: none now.
+- Ruling: out-of-range production details in committed docs (idc-ucloud, host path, inventory) left as-is; surface to user before any push — user's own planning docs, local repo — cost if wrong: privacy exposure only if pushed publicly.
+- Ruling: G4b treats networking_method `1` (2.6.4) and `"Manual"` (v2.7.1) as equal — proto3 JSON permits enum by number or name; same enum value — cost if wrong: none (offline backup diff also showed stored configs byte-identical).
+- Ruling: pre-amend commit 52e2957 left in local reflog (unreachable, unpushed); not pruned — pruning is destructive housekeeping, user's call — cost if wrong: none unless reflog is shared (it never is).
+- Ruling applied: Plan 2 amended for I2 a–e + M3 (commit a410eb4); naming ruling: PeerLink.name for members = device list name via deviceNames (so hostname_override doesn't rename devices in the connection table) — consistency with device list — cost if wrong: display-only change
+
+## Plan 2 (frontend foundation + devices)
+## Rulings
+- Ruling: playwright.config.ts = testDir tests/e2e, chromium, webServer `npm run build && npm run preview -- --port 5198 --strictPort`, baseURL http://localhost:5198 — plan silent; preview of built app is closest to production — cost if wrong: config tweak.
+- Ruling: T5/T6/T7 may modify src/main.ts and src/App.vue to install Pinia / hosts / router+i18n — files omitted from their lists — cost: none.
+- Ruling: inventory polling owned by AppShell (5s); pages don't start their own inventory poller — shell bell needs `blocked` on every page and two pollers would double requests (violates single-flight intent) — cost if wrong: move one call.
+- Ruling: mockApi built-in defaults for auth endpoints (check_login_status, login, logout, oidc/config, captcha) — no fixtures exist for them — cost: none.
+- Ruling: Review Focus 4 measured by recording main-frame URL changes and asserting exactly one `/login` URL before re-login — plan wording vague — cost: none.
+- Ruling: enroll host = new URL(apiUrl('/'), location.href).hostname — T3 exposes apiUrl only — cost: none.
+- Task 4: dispatched (base d2953dc, implementer a61a9f75dfb8b8453, model sonnet). Ruling: DeviceView.hostname = machines info.hostname (OS hostname), not member hostname — device list identity is the device; member hostname may carry override — cost if wrong: display only.
+- Task 5: dispatched (base d18d797, implementer a9010d7e57780ad08, model sonnet). Ruling: one failed listMembers fails the whole refresh (keep last good data) — consistency over partial updates — cost if wrong: one stale cycle.
+- Task 7: dispatched (base f10392b, implementer a386c905b5976f5fe, model sonnet). Rulings: placeholder DevicesPage/DeviceDetailPage created in T7 so routes resolve (replaced by T8/T10); guard non-401 load errors allow navigation + toast; e2e force zh-CN via addInitScript — cost: none.
+- Task 8: dispatched (base df1f50d, implementer a2b578c9a2e0cd65f, model sonnet). Ruling: page does not start its own poller (AppShell ruling supersedes brief Step 3 sentence); delete dialog 'also block' default checked (matches original console) — cost if wrong: UX default flip.
+- Ruling: path_latency treated as milliseconds — upstream Status.vue never renders it; fixture (path_latency 1 vs latency_us 253–527) is consistent with ms; EasyTier route latency is ms — cost if wrong: relay latency mis-scaled in UI only.
+- Task 10: dispatched (base 5ea17a6, implementer afb6e71d70d1d55db, model opus — largest UI task). Rulings: NotInNetworkState join button uses primary (page's single main action; nav CTA is shell) — cost if wrong: button style; detail layout collapses to one column below 1024px (spec says 640) because the connections table needs width — cost: breakpoint tweak; runtime reuses inventory members + one listMembers per network change for temporary_peers — avoids extra polling; infra label 「网关」 for now.
+- Ruling (re-ruling I2): inventory store keeps temporary_peers per network (5s refresh, all-or-nothing, reset clears); useDeviceRuntime reads them from the store, no extra listMembers — fresher data at zero extra polling — cost if wrong: none.
+- Task 11: dispatched (base b37497f, model sonnet). Rulings: live smoke always restores core2 IP in finally; README concise, deployment deferred to Plan 6.
+- Ruling: one fix wave F1–F14 = 4 Important + "fix before building on" (proxy-rpc 8s timeout, path encoding, MemberSettingsCard split, 恢复默认 only when overridden, ConfirmHost non-danger → secondary) + cheap "fix before release" (bell time, HTTP copy fallback, SR label i18n, location font, aria-controls) — they sit in code Plans 3–5 build on — cost if wrong: one larger fix wave.
+- Ruling: deferred to Plan 3 (noted for its plan): route-driven inventory poll interval (overview 10s), location resolver for city filter (cached offline locations), shared runtime store for dashboard+detail.
+- Ruling: overrideState counting explicit false/0 as overridden kept — proto optional Some(false) is a real override that does change the merged config — revisit in Plan 4 editor — cost if wrong: mislabel only.
+- Ruling: webhook mode hides rename/delete (upstream routes exist but always 404 without central registry); mode check uses webhook_auth===true so a failed console-info keeps central behaviour; viaKind 'unknown' + viaInfra additions accepted (additive); proxy-rpc timeout = status 0 'timeout' — all reasonable — cost if wrong: small UI adjustments.
