@@ -78,3 +78,53 @@ test('uuid conversion round trips', () => {
   assert.deepEqual(u, { part1: 0x11111111, part2: 0x11114111, part3: 0x81111111, part4: 0x11111111 })
   assert.equal(uuidToStr(u), s)
 })
+
+// A server that accepts requests and never answers (or answers headers but never ends the body).
+async function withHangingServer(mode: 'no-response' | 'no-body-end', fn: (base: string, hits: () => number) => Promise<void>) {
+  let n = 0
+  const server = createServer((_req, res) => {
+    n++
+    if (mode === 'no-body-end') {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.write('{"partial":')
+    }
+  })
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+  try {
+    await fn(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, () => n)
+  } finally {
+    server.closeAllConnections()
+    server.close()
+  }
+}
+
+test('request times out with a clear error when the server never responds', async () => {
+  await withHangingServer('no-response', async (base) => {
+    const api = new EtApi(base, { timeoutMs: 150 })
+    const t0 = Date.now()
+    await assert.rejects(api.get('/machines'), /timeout after 150ms: GET \/machines/)
+    assert.ok(Date.now() - t0 < 2000, 'gave up promptly')
+  })
+})
+
+test('request times out when the body never finishes', async () => {
+  await withHangingServer('no-body-end', async (base) => {
+    const api = new EtApi(base, { timeoutMs: 150 })
+    await assert.rejects(api.post('/x', {}), /timeout after 150ms: POST \/x/)
+  })
+})
+
+test('waitFor keeps polling a timing-out request until its own deadline', async () => {
+  await withHangingServer('no-response', async (base, hits) => {
+    const api = new EtApi(base, { timeoutMs: 100 })
+    await assert.rejects(waitFor(() => api.get('/machines'), 600, 'hung api'), (e: unknown) => {
+      assert.match(String(e), /timeout waiting for hung api \(last error: timeout after 100ms: GET \/machines\)/)
+      return true
+    })
+    assert.ok(hits() >= 2, `polled ${hits()} times`)
+  })
+})
+
+test('default request timeout is 15s', () => {
+  assert.equal(new EtApi().timeoutMs, 15_000)
+})

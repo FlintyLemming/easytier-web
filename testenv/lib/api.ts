@@ -11,12 +11,19 @@ export class EtApiError extends Error {
   }
 }
 
+export interface EtApiOptions {
+  // Per-request timeout covering the response headers and body. Default 15s.
+  timeoutMs?: number
+}
+
 export class EtApi {
   base: string
+  timeoutMs: number
   private cookies = new Map<string, string>()
 
-  constructor(base = 'http://localhost:11211') {
+  constructor(base = 'http://localhost:11211', opts: EtApiOptions = {}) {
     this.base = base.replace(/\/+$/, '')
+    this.timeoutMs = opts.timeoutMs ?? 15_000
   }
 
   async login(user: string, pass: string): Promise<void> {
@@ -46,18 +53,34 @@ export class EtApi {
     if (this.cookies.size) {
       headers.cookie = [...this.cookies].map(([k, v]) => `${k}=${v}`).join('; ')
     }
-    const res = await fetch(`${this.base}/api/v1${path}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    })
-    for (const line of res.headers.getSetCookie()) {
-      const [pair] = line.split(';')
-      const i = pair!.indexOf('=')
-      if (i > 0) this.cookies.set(pair!.slice(0, i).trim(), pair!.slice(i + 1).trim())
+    // The signal also aborts reading the body, so a stalled response cannot hang a caller.
+    // A timeout surfaces as a plain Error; waitFor treats it like any other failed attempt.
+    const where = `${method} ${path}`
+    const timedOut = (e: unknown) => {
+      if (e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
+        return new Error(`timeout after ${this.timeoutMs}ms: ${where}`, { cause: e })
+      }
+      return e
     }
-    const text = await res.text()
-    if (!res.ok) throw new EtApiError(res.status, text, `${method} ${path}`)
+    let res: Response
+    let text: string
+    try {
+      res = await fetch(`${this.base}/api/v1${path}`, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(this.timeoutMs),
+      })
+      for (const line of res.headers.getSetCookie()) {
+        const [pair] = line.split(';')
+        const i = pair!.indexOf('=')
+        if (i > 0) this.cookies.set(pair!.slice(0, i).trim(), pair!.slice(i + 1).trim())
+      }
+      text = await res.text()
+    } catch (e) {
+      throw timedOut(e)
+    }
+    if (!res.ok) throw new EtApiError(res.status, text, where)
     if (!text) return undefined as T
     try {
       return JSON.parse(text) as T
