@@ -7,6 +7,7 @@ export default {
   },
   nav: {
     label: '主导航',
+    menu: '导航菜单',
     devices: '设备',
   },
   shell: {

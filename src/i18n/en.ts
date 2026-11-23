@@ -7,6 +7,7 @@ export default {
   },
   nav: {
     label: 'Main navigation',
+    menu: 'Navigation menu',
     devices: 'Devices',
   },
   shell: {
