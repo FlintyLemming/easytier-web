@@ -292,9 +292,13 @@ test('7: diagnostics: collapsed, logger level, ACL stats, copyable TOML', async 
   })
   const toggle = page.getByRole('button', { name: '诊断' })
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(toggle).not.toHaveAttribute('aria-controls')
   await expect(page.getByLabel('日志级别')).toHaveCount(0)
   await toggle.click()
   await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  const controls = await toggle.getAttribute('aria-controls')
+  expect(controls).toBeTruthy()
+  await expect(page.locator(`[id="${controls}"]`)).toBeVisible()
   const select = page.getByLabel('日志级别')
   await expect(select).toHaveValue('0')
   await select.selectOption('4')
@@ -307,6 +311,23 @@ test('7: diagnostics: collapsed, logger level, ACL stats, copyable TOML', async 
   await expect(page.getByTestId('running-toml')).toContainText('instance_name = "home-central"')
   await page.getByRole('button', { name: '复制 TOML' }).click()
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('instance_name = "home-central"')
+})
+
+test('7b: log level read failure leaves no dangling label', async ({ page }) => {
+  await open(page, CORE3, {
+    'POST /machines/*/proxy-rpc': (req: Request) => {
+      const name = (req.postDataJSON() as { method_name: string }).method_name
+      if (name === 'get_logger_config') return status(500, { message: 'logger unavailable' })
+      return RPC[name] ? fixture(RPC[name]) : {}
+    },
+  })
+  await page.getByRole('button', { name: '诊断' }).click()
+  const card = page.getByTestId('diagnostics-card')
+  await expect(card).toContainText('logger unavailable')
+  const label = card.locator('label', { hasText: '日志级别' })
+  await expect(label).toBeVisible()
+  await expect(label).not.toHaveAttribute('for')
+  await expect(page.getByLabel('日志级别')).toHaveCount(0)
 })
 
 test('8a: 移出此网络 on a non-default network DELETEs that member and lands on the device route', async ({ page }) => {
@@ -477,6 +498,10 @@ test('overview card shows key facts and sub-line', async ({ page }) => {
   await expect(ov).toContainText('2.6.4-8428a89d')
   await expect(ov).toContainText('192.168.97.5')
   await expect(page.getByTestId('detail-subline')).toHaveText('Alpine Linux · 本地网络 · 10.144.144.1')
+  // Only the IP is mono; the location text keeps the sans font.
+  const font = (text: string) => ov.getByText(text, { exact: true }).evaluate((e) => getComputedStyle(e).fontFamily)
+  expect(await font('192.168.97.5')).toContain('JetBrains Mono')
+  expect(await font('本地网络')).not.toContain('JetBrains Mono')
 })
 
 test('no member record in the selected network shows a message, not a skeleton', async ({ page }) => {

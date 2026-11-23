@@ -20,6 +20,15 @@ const props = withDefaults(
 )
 const { t, locale } = useI18n()
 
+/** Only the IP is mono; the (often Chinese) location text keeps the sans font. */
+function publicIpItem(d: DeviceView): KeyValueItem {
+  const parts = [
+    ...(d.publicIp ? [{ text: d.publicIp, mono: true }] : []),
+    ...(locationText(d.location) ? [{ text: locationText(d.location)!, mono: false }] : []),
+  ]
+  return { label: t('detail.overview.publicIp'), value: parts.map((p) => p.text).join(' · ') || null, parts }
+}
+
 const items = computed<KeyValueItem[]>(() => {
   const d = props.device
   const network = props.networkName
@@ -40,11 +49,7 @@ const items = computed<KeyValueItem[]>(() => {
     ...networkRows,
     { label: t('detail.overview.hostname'), value: d.hostname || null },
     { label: t('detail.overview.os'), value: d.os || null },
-    {
-      label: t('detail.overview.publicIp'),
-      value: [d.publicIp, locationText(d.location)].filter(Boolean).join(' · ') || null,
-      mono: true,
-    },
+    publicIpItem(d),
     { label: t('detail.overview.version'), value: d.version || null, mono: true },
     { label: t('detail.overview.id'), value: d.id, mono: true, copy: true },
     { label: t('detail.overview.lastSeen'), value: lastSeen },

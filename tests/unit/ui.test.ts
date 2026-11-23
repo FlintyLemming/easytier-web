@@ -6,6 +6,9 @@ import ConfirmHost from '../../src/components/ui/ConfirmHost.vue'
 import ToastHost from '../../src/components/ui/ToastHost.vue'
 import { useConfirm } from '../../src/composables/useConfirm'
 import { toasts, useToast } from '../../src/composables/useToast'
+import StatusDot from '../../src/components/ui/StatusDot.vue'
+import KeyValueList from '../../src/components/ui/KeyValueList.vue'
+import { i18n } from '../../src/i18n'
 
 const wrappers: VueWrapper[] = []
 function track<T extends VueWrapper>(w: T): T {
@@ -203,3 +206,43 @@ describe('design constraints', () => {
     }
   })
 })
+
+describe('screen-reader labels follow the locale', () => {
+  afterEach(() => {
+    i18n.global.locale.value = 'en'
+  })
+
+  it('CopyButton, KeyValueList copy, toast dismiss and StatusDot are translated', async () => {
+    i18n.global.locale.value = 'en'
+    const copy = track(mount(CopyButton, { props: { text: 'x' } }))
+    const dot = track(mount(StatusDot, { props: { online: true } }))
+    const off = track(mount(StatusDot, { props: { online: false } }))
+    const kv = track(mount(KeyValueList, { props: { items: [{ label: '内网 IP', value: '10.0.0.1', copy: true }] } }))
+    const host = track(mount(ToastHost))
+    useToast().success('ok')
+    await flushPromises()
+    expect(copy.attributes('aria-label')).toBe('Copy')
+    expect(dot.attributes('aria-label')).toBe('Online')
+    expect(off.attributes('aria-label')).toBe('Offline')
+    expect(kv.find('button').attributes('aria-label')).toBe('Copy 内网 IP')
+    expect(host.find('button').attributes('aria-label')).toBe('Dismiss')
+
+    i18n.global.locale.value = 'zh-CN'
+    await flushPromises()
+    expect(copy.attributes('aria-label')).toBe('复制')
+    expect(dot.attributes('aria-label')).toBe('在线')
+    expect(off.attributes('aria-label')).toBe('离线')
+    expect(kv.find('button').attributes('aria-label')).toBe('复制内网 IP')
+    expect(host.find('button').attributes('aria-label')).toBe('关闭')
+  })
+
+  it('KeyValueList parts give each part its own font', () => {
+    const w = track(mount(KeyValueList, {
+      props: { items: [{ label: 'ip', value: '1.2.3.4 · 杭州', parts: [{ text: '1.2.3.4', mono: true }, { text: '杭州' }] }] },
+    }))
+    const spans = w.findAll('dd span span').filter((x) => x.text() !== '·')
+    expect(spans.map((x) => [x.text(), x.classes().includes('font-mono')])).toEqual([['1.2.3.4', true], ['杭州', false]])
+    expect(w.find('dd').classes()).not.toContain('font-mono')
+  })
+})
+

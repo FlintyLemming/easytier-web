@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, useId, watch } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getLoggerLevel, nodeAclStats, nodeInfo, setLoggerLevel } from '../../api/client'
 import type { NodeAclRuleStat } from '../../api/types'
@@ -39,6 +39,8 @@ async function fill<T>(target: { value: Slot<T> }, run: () => Promise<T>, mySeq:
 }
 
 const busy = () => [level, acl, toml].some((x) => x.value.state === 'loading')
+/** The log-level <select> is rendered (not the skeleton or an error), so its label can point at it. */
+const levelSelectShown = computed(() => !(level.value.state === 'loading' && level.value.value === null) && level.value.state !== 'error')
 
 function load() {
   if (!open.value || !props.online || busy()) return
@@ -84,7 +86,7 @@ const bytes = (v: number | string | undefined) => formatBytes(Number(v ?? 0))
       <button
         type="button"
         :aria-expanded="open ? 'true' : 'false'"
-        :aria-controls="bodyId"
+        :aria-controls="open ? bodyId : undefined"
         class="flex w-full cursor-pointer items-center justify-between gap-3 rounded-card px-5 py-3 text-left hover:bg-canvas-soft focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ink"
         @click="toggle"
       >
@@ -113,7 +115,7 @@ const bytes = (v: number | string | undefined) => formatBytes(Number(v ?? 0))
         <!-- log level -->
         <div class="flex items-end justify-between gap-3">
           <div class="flex flex-col gap-1.5">
-            <label :for="levelId" class="caption-uppercase text-muted">{{ t('detail.diagnostics.logLevel') }}</label>
+            <label :for="levelSelectShown ? levelId : undefined" class="caption-uppercase text-muted">{{ t('detail.diagnostics.logLevel') }}</label>
             <SkeletonRows v-if="level.state === 'loading' && level.value === null" :rows="1" class="w-48" />
             <p v-else-if="level.state === 'error'" class="text-[13px] text-error">
               {{ t('detail.diagnostics.loadFailed', { message: level.error }) }}
