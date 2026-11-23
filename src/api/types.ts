@@ -78,7 +78,8 @@ export interface NodePeerInfo {
 
 export interface NodeAclRuleStat {
   rule?: { name?: string }
-  stat?: { packet_count?: number; byte_count?: number }
+  // 64-bit counters; may arrive as JSON strings like the peer stats.
+  stat?: { packet_count?: number | string; byte_count?: number | string }
 }
 
 /// A device currently online through a credential; `credential_id` is null

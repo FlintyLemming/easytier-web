@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { strToUuid } from '../../src/lib/uuid'
 import { apiUrl, onUnauthorized, ApiError } from '../../src/api/http'
-import { login, nodeRoutes, deleteMachine, nodeInfo, logout, checkLogin } from '../../src/api/client'
+import { login, nodeRoutes, deleteMachine, nodeInfo, logout, checkLogin, proxyRpc } from '../../src/api/client'
 
 interface Call { url: string; init: RequestInit }
 let calls: Call[]
@@ -85,5 +85,40 @@ describe('api client', () => {
       config: 'x',
       interfaceIpv4s: ['192.168.1.1'],
     })
+  })
+
+  it('proxy-rpc runs at most 4 requests at once and drains the queue', async () => {
+    let inFlight = 0
+    let peak = 0
+    const release: (() => void)[] = []
+    calls = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+      calls.push({ url, init })
+      inFlight++
+      peak = Math.max(peak, inFlight)
+      await new Promise<void>((r) => release.push(r))
+      inFlight--
+      return json({ ok: true })
+    }))
+    const all = Promise.all(Array.from({ length: 6 }, (_, i) => proxyRpc(`m${i}`, 's', 'x', {})))
+    await vi.waitFor(() => expect(calls).toHaveLength(4))
+    expect(peak).toBe(4)
+    release.shift()!()
+    await vi.waitFor(() => expect(calls).toHaveLength(5))
+    expect(peak).toBe(4)
+    while (calls.length < 6 || release.length) {
+      release.shift()?.()
+      await new Promise((r) => setTimeout(r, 0))
+    }
+    await expect(all).resolves.toHaveLength(6)
+    expect(peak).toBe(4)
+  })
+
+  it('a failed proxy-rpc frees its slot', async () => {
+    stub(() => json({ message: 'nope' }, 500))
+    const results = await Promise.allSettled(Array.from({ length: 6 }, () => proxyRpc('m', 's', 'x', {})))
+    expect(results.every((r) => r.status === 'rejected')).toBe(true)
+    stub(() => json({ ok: true }))
+    await expect(proxyRpc('m', 's', 'x', {})).resolves.toEqual({ ok: true })
   })
 })

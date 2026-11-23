@@ -145,10 +145,35 @@ export async function clearMemberConfig(networkId: string, deviceId: string): Pr
 
 // --- proxy-rpc ---
 
-export function proxyRpc<T>(machineId: string, service: string, method: string, payload: unknown): Promise<T> {
-  return request<T>('POST', `/machines/${machineId}/proxy-rpc`, {
-    body: { service_name: service, method_name: method, payload },
-  })
+/** At most this many proxy-rpc calls are in flight at once, app-wide; the rest wait in FIFO order. */
+const RPC_CONCURRENCY = 4
+let rpcActive = 0
+const rpcWaiters: (() => void)[] = []
+
+async function acquireRpcSlot(): Promise<void> {
+  if (rpcActive < RPC_CONCURRENCY) {
+    rpcActive++
+    return
+  }
+  await new Promise<void>((resolve) => rpcWaiters.push(resolve))
+}
+
+function releaseRpcSlot(): void {
+  const next = rpcWaiters.shift()
+  // Hand the slot straight to the next waiter so a newcomer cannot slip in between.
+  if (next) next()
+  else rpcActive--
+}
+
+export async function proxyRpc<T>(machineId: string, service: string, method: string, payload: unknown): Promise<T> {
+  await acquireRpcSlot()
+  try {
+    return await request<T>('POST', `/machines/${machineId}/proxy-rpc`, {
+      body: { service_name: service, method_name: method, payload },
+    })
+  } finally {
+    releaseRpcSlot()
+  }
 }
 
 const instancePayload = (instId: string) => ({ instance: { id: strToUuid(instId) } })
