@@ -21,7 +21,8 @@ const head = computed(() => confirmQueue.slice(0, 1))
     <p v-if="req.body">{{ req.body }}</p>
     <template #footer>
       <UiButton variant="secondary" @click="settleConfirm(req.id, false)">{{ req.cancelLabel ?? t('common.cancel') }}</UiButton>
-      <UiButton :variant="req.danger ? 'danger' : 'primary'" @click="settleConfirm(req.id, true)">
+      <!-- Orange is reserved for the page's single main action, so plain confirms are secondary. -->
+      <UiButton :variant="req.danger ? 'danger' : 'secondary'" @click="settleConfirm(req.id, true)">
         {{ req.confirmLabel ?? t('common.confirm') }}
       </UiButton>
     </template>

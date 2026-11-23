@@ -79,6 +79,28 @@ describe('confirm', () => {
     expect(r1).toHaveBeenCalledTimes(1)
   })
 
+  it('confirm button: danger variant for danger, secondary (never orange) otherwise', async () => {
+    track(mount(ConfirmHost, { attachTo: document.body }))
+    const { confirm } = useConfirm()
+    const p1 = confirm({ title: 'Plain', confirmLabel: 'Go' })
+    await flushPromises()
+    const go = btn('Go')!
+    expect(go.className).not.toContain('bg-primary')
+    expect(go.className).toContain('border-hairline-strong')
+    expect(go.className).toBe(btn('Cancel')!.className)
+    go.click()
+    await p1
+    await flushPromises()
+
+    const p2 = confirm({ title: 'Risky', confirmLabel: 'Remove', danger: true })
+    await flushPromises()
+    const rm = btn('Remove')!
+    expect(rm.className).toContain('text-error')
+    expect(rm.className).not.toContain('bg-primary')
+    rm.click()
+    expect(await p2).toBe(true)
+  })
+
   it('Esc dismissal resolves false', async () => {
     track(mount(ConfirmHost, { attachTo: document.body }))
     const p = useConfirm().confirm({ title: 'Esc?' })
