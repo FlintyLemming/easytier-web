@@ -120,6 +120,7 @@ node --test testenv/capture-fixtures.test.ts
 - IPv4 有两种写法：`list_route` 的 `ipv4_addr` 是 `{ "address": { "addr": <u32，大端序> }, "network_length": 24 }`（177246209 = 10.144.144.1）；`show_node_info` 的 `ipv4_addr` 是字符串 `"10.144.144.3/24"`。
 - 连接的 `is_closed` 为 false 时不出现（字段缺失）；`list_route` 里没有子网代理的路由也没有 `proxy_cidrs` 字段。
 - `logger-level.json` 是 `{}`：日志级别为 0（默认值）时字段被省略。
+- `networking_method`（proto 枚举 PublicServer=0 / Manual=1 / Standalone=2）：v2.7.1 的 web 返回名字（`"Manual"`，如 `network.json`、`GET /machines/{id}/networks/config/{inst}`），v2.6.4 的 web 返回数字（`1`）。同一份旧配置经 `networks/config` 读出来时，v2.6.4 把未设置字段写成 null / []，v2.7.1 直接省略。
 - `list_peer` 里连接的 `conn_id` 是字符串 UUID，而 `default_conn_id` 是 `{part1..part4}` 的 UUID 对象（用 `uuidToStr` 转）。
 - `alias`：`/machines` 的条目里没设置别名时**没有这个键**（不是 null）；`/networks/{id}/members` 的成员里没设置时是 `"alias": null`。
 - `/machines` 的顺序：在线的在前，然后按 `last_seen` 从新到旧。
