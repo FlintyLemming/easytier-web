@@ -1,105 +1,7 @@
 {
   "machines": [
     {
-      "client_url": "udp://192.168.97.5:36164",
-      "info": {
-        "machine_id": {
-          "part1": 572662306,
-          "part2": 572670498,
-          "part3": 2183275042,
-          "part4": 572662306
-        },
-        "inst_id": {
-          "part1": 2282722311,
-          "part2": 3594995366,
-          "part3": 2470525648,
-          "part4": 3350112779
-        },
-        "user_token": "admin",
-        "easytier_version": "2.6.4-8428a89d",
-        "report_time": "2026-11-23T17:16:34.882976192+08:00",
-        "hostname": "core2",
-        "running_network_instances": [
-          {
-            "part1": 3665934775,
-            "part2": 1778860994,
-            "part3": 2924751031,
-            "part4": 2735086510
-          }
-        ],
-        "device_os": {
-          "os_type": "linux",
-          "version": "3.23.4",
-          "distribution": "Alpine Linux"
-        },
-        "support_config_source": true
-      },
-      "location": {
-        "country": "本地网络",
-        "city": null,
-        "region": null
-      },
-      "networks": [
-        {
-          "network_id": "da81b9b7-6a07-43c2-ae54-28b7a3061bae",
-          "display_name": "home-central",
-          "network_name": "home-central"
-        }
-      ],
-      "online": true,
-      "last_seen": "2026-11-23T09:16:10.357723366+00:00"
-    },
-    {
-      "client_url": "udp://192.168.97.3:44727",
-      "info": {
-        "machine_id": {
-          "part1": 286331153,
-          "part2": 286343441,
-          "part3": 2165379345,
-          "part4": 286331153
-        },
-        "inst_id": {
-          "part1": 2194487839,
-          "part2": 114314161,
-          "part3": 2767095914,
-          "part4": 553859579
-        },
-        "user_token": "admin",
-        "easytier_version": "2.6.4-8428a89d",
-        "report_time": "2026-11-23T17:16:34.839903356+08:00",
-        "hostname": "core1",
-        "running_network_instances": [
-          {
-            "part1": 3665934775,
-            "part2": 1778860994,
-            "part3": 2924751031,
-            "part4": 2735086510
-          }
-        ],
-        "device_os": {
-          "os_type": "linux",
-          "version": "3.23.4",
-          "distribution": "Alpine Linux"
-        },
-        "support_config_source": true
-      },
-      "location": {
-        "country": "本地网络",
-        "city": null,
-        "region": null
-      },
-      "networks": [
-        {
-          "network_id": "da81b9b7-6a07-43c2-ae54-28b7a3061bae",
-          "display_name": "home-central",
-          "network_name": "home-central"
-        }
-      ],
-      "online": true,
-      "last_seen": "2026-11-23T09:16:10.304799122+00:00"
-    },
-    {
-      "client_url": "udp://192.168.97.4:37204",
+      "client_url": "udp://192.168.97.3:50568",
       "info": {
         "machine_id": {
           "part1": 858993459,
@@ -108,21 +10,21 @@
           "part4": 858993459
         },
         "inst_id": {
-          "part1": 2560720008,
-          "part2": 2320254985,
-          "part3": 2997621449,
-          "part4": 933285173
+          "part1": 1029970114,
+          "part2": 1579109911,
+          "part3": 2157243182,
+          "part4": 3856830914
         },
         "user_token": "admin",
         "easytier_version": "2.6.4-8428a89d",
-        "report_time": "2026-11-23T17:16:34.839002149+08:00",
+        "report_time": "2026-11-23T17:38:24.840645993+08:00",
         "hostname": "core3",
         "running_network_instances": [
           {
-            "part1": 3665934775,
-            "part2": 1778860994,
-            "part3": 2924751031,
-            "part4": 2735086510
+            "part1": 1722846907,
+            "part2": 4227352564,
+            "part3": 3031835819,
+            "part4": 2736710096
           }
         ],
         "device_os": {
@@ -139,13 +41,111 @@
       },
       "networks": [
         {
-          "network_id": "da81b9b7-6a07-43c2-ae54-28b7a3061bae",
+          "network_id": "66b08ebb-fbf8-47f4-b4b6-24aba31ee1d0",
           "display_name": "home-central",
           "network_name": "home-central"
         }
       ],
       "online": true,
-      "last_seen": "2026-11-23T09:16:10.304582456+00:00"
+      "last_seen": "2026-11-23T09:38:17.847479395+00:00"
+    },
+    {
+      "client_url": "udp://192.168.97.5:54698",
+      "info": {
+        "machine_id": {
+          "part1": 286331153,
+          "part2": 286343441,
+          "part3": 2165379345,
+          "part4": 286331153
+        },
+        "inst_id": {
+          "part1": 1277617478,
+          "part2": 3170452156,
+          "part3": 2224615306,
+          "part4": 1258790391
+        },
+        "user_token": "admin",
+        "easytier_version": "2.6.4-8428a89d",
+        "report_time": "2026-11-23T17:38:24.840693367+08:00",
+        "hostname": "core1",
+        "running_network_instances": [
+          {
+            "part1": 1722846907,
+            "part2": 4227352564,
+            "part3": 3031835819,
+            "part4": 2736710096
+          }
+        ],
+        "device_os": {
+          "os_type": "linux",
+          "version": "3.23.4",
+          "distribution": "Alpine Linux"
+        },
+        "support_config_source": true
+      },
+      "location": {
+        "country": "本地网络",
+        "city": null,
+        "region": null
+      },
+      "networks": [
+        {
+          "network_id": "66b08ebb-fbf8-47f4-b4b6-24aba31ee1d0",
+          "display_name": "home-central",
+          "network_name": "home-central"
+        }
+      ],
+      "online": true,
+      "last_seen": "2026-11-23T09:38:17.841732864+00:00"
+    },
+    {
+      "client_url": "udp://192.168.97.4:37896",
+      "info": {
+        "machine_id": {
+          "part1": 572662306,
+          "part2": 572670498,
+          "part3": 2183275042,
+          "part4": 572662306
+        },
+        "inst_id": {
+          "part1": 190044810,
+          "part2": 2481931800,
+          "part3": 2194671931,
+          "part4": 2881837382
+        },
+        "user_token": "admin",
+        "easytier_version": "2.6.4-8428a89d",
+        "report_time": "2026-11-23T17:38:24.840643118+08:00",
+        "hostname": "core2",
+        "running_network_instances": [
+          {
+            "part1": 1722846907,
+            "part2": 4227352564,
+            "part3": 3031835819,
+            "part4": 2736710096
+          }
+        ],
+        "device_os": {
+          "os_type": "linux",
+          "version": "3.23.4",
+          "distribution": "Alpine Linux"
+        },
+        "support_config_source": true
+      },
+      "location": {
+        "country": "本地网络",
+        "city": null,
+        "region": null
+      },
+      "networks": [
+        {
+          "network_id": "66b08ebb-fbf8-47f4-b4b6-24aba31ee1d0",
+          "display_name": "home-central",
+          "network_name": "home-central"
+        }
+      ],
+      "online": true,
+      "last_seen": "2026-11-23T09:38:17.841619617+00:00"
     }
   ]
 }

@@ -1,17 +1,17 @@
 {
   "node_info": {
-    "config": "hostname = \"lab-box\"\ninstance_name = \"home-central\"\ninstance_id = \"da81b9b7-6a07-43c2-ae54-28b7a3061bae\"\nipv4 = \"10.144.144.3/24\"\ndhcp = false\nlisteners = []\n\n[network_identity]\nnetwork_name = \"home-central\"\nnetwork_secret = \"home-secret\"\n\n[[peer]]\nuri = \"tcp://core1:11010\"\n\n[[proxy_network]]\ncidr = \"192.168.77.0/24\"\n\n[flags]\n\n[[acl.acl_v1.chains]]\nname = \"inbound\"\nchain_type = 1\ndescription = \"compiled from central network intent\"\nenabled = true\ndefault_action = 1\n\n[[acl.acl_v1.chains.rules]]\nname = \"r1:tcp\"\ndescription = \"deny-lab-ssh\"\npriority = 100\nenabled = true\nprotocol = 1\nports = [\"22\"]\nsource_ips = []\ndestination_ips = []\nsource_ports = []\naction = 2\nrate_limit = 0\nburst_limit = 0\nstateful = true\nsource_groups = []\ndestination_groups = []\n\n[[acl.acl_v1.chains]]\nname = \"forward\"\nchain_type = 3\ndescription = \"compiled from central network intent\"\nenabled = true\nrules = []\ndefault_action = 1\n\n[acl.acl_v1.group]\nmembers = [\"member:030318ce-51e8-4928-b219-7d4dc37acc0b\"]\n\n[[acl.acl_v1.group.declares]]\ngroup_name = \"member:4ef3a1eb-1c51-449b-82c2-05007a49f3bf\"\ngroup_secret = \"redacted-group-secret\"\n\n[[acl.acl_v1.group.declares]]\ngroup_name = \"member:83097f42-1067-4e2e-b708-4a543d0a4102\"\ngroup_secret = \"redacted-group-secret\"\n\n[[acl.acl_v1.group.declares]]\ngroup_name = \"member:030318ce-51e8-4928-b219-7d4dc37acc0b\"\ngroup_secret = \"redacted-group-secret\"\n\n[source]\nsource = \"webhook\"\n",
+    "config": "hostname = \"lab-box\"\ninstance_name = \"home-central\"\ninstance_id = \"66b08ebb-fbf8-47f4-b4b6-24aba31ee1d0\"\nipv4 = \"10.144.144.3/24\"\ndhcp = false\nlisteners = []\n\n[network_identity]\nnetwork_name = \"home-central\"\nnetwork_secret = \"home-secret\"\n\n[[peer]]\nuri = \"tcp://core1:11010\"\n\n[[proxy_network]]\ncidr = \"192.168.77.0/24\"\n\n[flags]\n\n[[acl.acl_v1.chains]]\nname = \"inbound\"\nchain_type = 1\ndescription = \"compiled from central network intent\"\nenabled = true\ndefault_action = 1\n\n[[acl.acl_v1.chains.rules]]\nname = \"r1:tcp\"\ndescription = \"deny-lab-ssh\"\npriority = 100\nenabled = true\nprotocol = 1\nports = [\"22\"]\nsource_ips = []\ndestination_ips = []\nsource_ports = []\naction = 2\nrate_limit = 0\nburst_limit = 0\nstateful = true\nsource_groups = []\ndestination_groups = []\n\n[[acl.acl_v1.chains]]\nname = \"forward\"\nchain_type = 3\ndescription = \"compiled from central network intent\"\nenabled = true\nrules = []\ndefault_action = 1\n\n[acl.acl_v1.group]\nmembers = [\"member:4d9a9da7-1d93-4633-a299-8d78554a2bfc\"]\n\n[[acl.acl_v1.group.declares]]\ngroup_name = \"member:af62c1f3-45f7-4988-9d7c-ea7f8d241428\"\ngroup_secret = \"redacted-group-secret\"\n\n[[acl.acl_v1.group.declares]]\ngroup_name = \"member:64370283-b14f-4fa4-b63e-bcba1dc63260\"\ngroup_secret = \"redacted-group-secret\"\n\n[[acl.acl_v1.group.declares]]\ngroup_name = \"member:4d9a9da7-1d93-4633-a299-8d78554a2bfc\"\ngroup_secret = \"redacted-group-secret\"\n\n[source]\nsource = \"webhook\"\n",
     "feature_flag": {
       "kcp_input": true,
       "quic_input": true,
       "support_conn_list_sync": true
     },
     "hostname": "lab-box",
-    "inst_id": "da81b9b7-6a07-43c2-ae54-28b7a3061bae",
+    "inst_id": "66b08ebb-fbf8-47f4-b4b6-24aba31ee1d0",
     "ip_list": {
       "interface_ipv4s": [
         {
-          "addr": 3232260356
+          "addr": 3232260355
         }
       ],
       "public_ipv4": {
@@ -20,16 +20,16 @@
     },
     "ipv4_addr": "10.144.144.3/24",
     "listeners": [
-      "ring://da81b9b7-6a07-43c2-ae54-28b7a3061bae"
+      "ring://66b08ebb-fbf8-47f4-b4b6-24aba31ee1d0"
     ],
-    "peer_id": 2256402620,
+    "peer_id": 2527025153,
     "proxy_cidrs": [
       "192.168.77.0/24"
     ],
     "stun_info": {
-      "last_update_time": "1795425366",
-      "max_port": 47924,
-      "min_port": 22401,
+      "last_update_time": "1795426697",
+      "max_port": 55244,
+      "min_port": 16072,
       "public_ip": [
         "203.0.113.10",
         "198.51.100.20"

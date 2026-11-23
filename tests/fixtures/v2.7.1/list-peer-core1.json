@@ -3,90 +3,90 @@
     {
       "conns": [
         {
-          "conn_id": "4ff6c474-2ff0-4e28-ba86-86707baa3d8c",
-          "my_peer_id": 565694132,
+          "conn_id": "fd747ae0-0050-41f0-b280-b563d8529bbf",
+          "my_peer_id": 3850342038,
           "network_name": "home-central",
-          "peer_id": 2256402620,
+          "peer_id": 1428556633,
           "stats": {
-            "latency_us": "345",
-            "rx_bytes": "17850",
-            "rx_packets": "157",
-            "tx_bytes": "18834",
-            "tx_packets": "157"
+            "latency_us": "527",
+            "rx_bytes": "4024",
+            "rx_packets": "27",
+            "tx_bytes": "4703",
+            "tx_packets": "27"
           },
           "tunnel": {
             "local_addr": {
               "url": "tcp://0.0.0.0:11010"
             },
             "remote_addr": {
-              "url": "tcp://192.168.97.4:46563"
+              "url": "tcp://192.168.97.4:32961"
             },
             "resolved_remote_addr": {
-              "url": "tcp://192.168.97.4:46563"
+              "url": "tcp://192.168.97.4:32961"
             },
             "tunnel_type": "tcp"
           }
         }
       ],
       "default_conn_id": {
-        "part1": 1341572212,
-        "part2": 804277800,
-        "part3": 3129378416,
-        "part4": 2074754444
+        "part1": 4252269280,
+        "part2": 5259760,
+        "part3": 2994779491,
+        "part4": 3629292479
       },
       "directly_connected_conns": [
         {
-          "part1": 1341572212,
-          "part2": 804277800,
-          "part3": 3129378416,
-          "part4": 2074754444
+          "part1": 4252269280,
+          "part2": 5259760,
+          "part3": 2994779491,
+          "part4": 3629292479
         }
       ],
-      "peer_id": 2256402620
+      "peer_id": 1428556633
     },
     {
       "conns": [
         {
-          "conn_id": "9aa70837-64cf-48ac-9bc1-9f3348b36a22",
-          "my_peer_id": 565694132,
+          "conn_id": "361633d2-ef91-4893-8f52-9667cf936001",
+          "my_peer_id": 3850342038,
           "network_name": "home-central",
-          "peer_id": 451161871,
+          "peer_id": 2527025153,
           "stats": {
-            "latency_us": "445",
-            "rx_bytes": "26349",
-            "rx_packets": "217",
-            "tx_bytes": "29315",
-            "tx_packets": "217"
+            "latency_us": "253",
+            "rx_bytes": "3595",
+            "rx_packets": "24",
+            "tx_bytes": "4099",
+            "tx_packets": "24"
           },
           "tunnel": {
             "local_addr": {
               "url": "tcp://0.0.0.0:11010"
             },
             "remote_addr": {
-              "url": "tcp://192.168.97.5:45137"
+              "url": "tcp://192.168.97.3:46043"
             },
             "resolved_remote_addr": {
-              "url": "tcp://192.168.97.5:45137"
+              "url": "tcp://192.168.97.3:46043"
             },
             "tunnel_type": "tcp"
           }
         }
       ],
       "default_conn_id": {
-        "part1": 2594637879,
-        "part2": 1691306156,
-        "part3": 2613157683,
-        "part4": 1219717666
+        "part1": 907424722,
+        "part2": 4019275923,
+        "part3": 2404554343,
+        "part4": 3482542081
       },
       "directly_connected_conns": [
         {
-          "part1": 2594637879,
-          "part2": 1691306156,
-          "part3": 2613157683,
-          "part4": 1219717666
+          "part1": 907424722,
+          "part2": 4019275923,
+          "part3": 2404554343,
+          "part4": 3482542081
         }
       ],
-      "peer_id": 451161871
+      "peer_id": 2527025153
     }
   ]
 }

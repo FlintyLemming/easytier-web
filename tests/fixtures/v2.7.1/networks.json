@@ -1,7 +1,7 @@
 {
   "networks": [
     {
-      "network_id": "da81b9b7-6a07-43c2-ae54-28b7a3061bae",
+      "network_id": "66b08ebb-fbf8-47f4-b4b6-24aba31ee1d0",
       "display_name": "home-central",
       "network_name": "home-central",
       "networking_method": "Manual",
