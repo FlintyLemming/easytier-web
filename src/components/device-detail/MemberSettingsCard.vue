@@ -6,6 +6,7 @@ import { ApiError } from '../../api/http'
 import type { CentralNetworkMember } from '../../api/types'
 import { useConfirm } from '../../composables/useConfirm'
 import { useToast } from '../../composables/useToast'
+import { useInventory } from '../../stores/inventory'
 import { isIpv4 } from '../../domain/cidr'
 import { overrideState, resetOverridePlan } from '../../domain/memberOverride'
 import SectionCard from '../ui/SectionCard.vue'
@@ -26,6 +27,7 @@ const props = defineProps<{
 const { t } = useI18n()
 const toast = useToast()
 const { confirm } = useConfirm()
+const inventory = useInventory()
 const ipInputId = useId()
 const hostInputId = useId()
 
@@ -155,6 +157,9 @@ const advancedText = computed(() => {
 
 async function restoreDefault() {
   if (busy.value) return
+  // Capture the target before awaiting the dialog; the route can change while it is open.
+  const networkId = props.networkId
+  const deviceId = props.deviceId
   const plan = resetOverridePlan(config.value)
   const ok = await confirm({
     title: t('detail.settings.restoreTitle'),
@@ -165,8 +170,8 @@ async function restoreDefault() {
   if (!ok) return
   busy.value = 'restore'
   try {
-    if (plan.kind === 'put') await setMemberConfig(props.networkId, props.deviceId, plan.config)
-    else await clearMemberConfig(props.networkId, props.deviceId)
+    if (plan.kind === 'put') await setMemberConfig(networkId, deviceId, plan.config)
+    else await clearMemberConfig(networkId, deviceId)
     toast.success(t('detail.settings.restored'))
     await refreshInventoryFresh()
     await loadConfig()
@@ -183,7 +188,8 @@ const inputClass =
 
 <template>
   <SectionCard data-testid="settings-card" :title="t('detail.settings.title')" :meta="networkName">
-    <SkeletonRows v-if="!member" :rows="4" />
+    <SkeletonRows v-if="!member && !inventory.loaded" :rows="4" />
+    <p v-else-if="!member" class="text-[14px] text-muted">{{ t('detail.settings.memberMissing') }}</p>
     <ul v-else class="-my-3 flex flex-col divide-y divide-hairline-soft">
       <!-- private IP -->
       <li data-testid="setting-ip" class="py-3">
@@ -275,7 +281,7 @@ const inputClass =
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
             <div class="text-[13px] text-ink">{{ t('detail.settings.advanced') }}</div>
-            <div class="mt-0.5 text-[12px]" :class="configState === 'error' ? 'text-error' : 'text-muted'">{{ advancedText }}</div>
+            <div data-testid="advanced-state" class="mt-0.5 text-[12px]" :class="configState === 'error' ? 'text-error' : 'text-muted'">{{ advancedText }}</div>
           </div>
           <LinkButton
             v-if="configState === 'ready' && config !== null"

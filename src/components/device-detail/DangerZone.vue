@@ -6,7 +6,7 @@ import { removeMember } from '../../api/client'
 import { useConfirm } from '../../composables/useConfirm'
 import { useToast } from '../../composables/useToast'
 import type { DeviceView } from '../../domain/devices'
-import { errorMessage, refreshInventoryFresh } from './writes'
+import { errorMessage, pushIfStill, refreshInventoryFresh } from './writes'
 
 const props = defineProps<{ device: DeviceView; networkId: string; networkName: string }>()
 const emit = defineEmits<{ delete: [] }>()
@@ -18,19 +18,26 @@ const leaving = ref(false)
 
 async function leave() {
   if (leaving.value) return
+  // Capture everything the dialog names before awaiting it: the route (and so these props) can
+  // change while the dialog is open, and the DELETE must hit the network the user confirmed.
+  const deviceId = props.device.id
+  const deviceName = props.device.name
+  const networkId = props.networkId
+  const networkName = props.networkName
+  const startPath = router.currentRoute.value.fullPath
   const ok = await confirm({
     title: t('detail.danger.leave'),
-    body: t('detail.danger.leaveBody', { name: props.device.name, network: props.networkName }),
+    body: t('detail.danger.leaveBody', { name: deviceName, network: networkName }),
     confirmLabel: t('detail.danger.leaveConfirm'),
     danger: true,
   })
   if (!ok) return
   leaving.value = true
   try {
-    await removeMember(props.networkId, props.device.id)
-    toast.success(t('detail.danger.left', { name: props.device.name, network: props.networkName }))
+    await removeMember(networkId, deviceId)
+    toast.success(t('detail.danger.left', { name: deviceName, network: networkName }))
     await refreshInventoryFresh()
-    await router.push({ name: 'device', params: { machineId: props.device.id } })
+    await pushIfStill(router, startPath, { name: 'device', params: { machineId: deviceId } })
   } catch (e) {
     toast.error(t('detail.danger.leaveFailed', { message: errorMessage(e) }))
   } finally {

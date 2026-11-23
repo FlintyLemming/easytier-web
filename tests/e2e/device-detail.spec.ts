@@ -28,6 +28,45 @@ function members(patch: (m: any) => void) {
   return base
 }
 
+const OFFICE_NET = {
+  network_id: OFFICE,
+  display_name: 'office',
+  network_name: 'office',
+  networking_method: 'Manual',
+  virtual_cidr: '10.155.0.0/24',
+  secure_mode: false,
+  member_count: 1,
+  online_member_count: 1,
+}
+
+/** core1 is in home-central (its default, the primary network) and in a second network `office`. */
+function core1InOffice(): Overrides {
+  return {
+    'GET /networks': () => {
+      const n = fixture('networks.json')
+      n.networks.push(OFFICE_NET)
+      return n
+    },
+    'GET /machines': () =>
+      machines((m) => {
+        if (m.info.hostname === 'core1') m.networks.push({ network_id: OFFICE, display_name: 'office', network_name: 'office' })
+      }),
+    [`GET /networks/${OFFICE}/members`]: () => ({
+      members: [
+        {
+          ...fixture('members.json').members.find((x: any) => x.device_id === CORE1),
+          member_id: 'office-core1',
+          virtual_ipv4: null,
+          allocated_ipv4: '10.155.0.1',
+          runtime_virtual_ipv4: '10.155.0.1/24',
+          has_override: false,
+        },
+      ],
+      temporary_peers: [],
+    }),
+  }
+}
+
 const rpcCalls = (reqs: RecordedRequest[], method?: string) =>
   reqs.filter(
     (r) =>
@@ -172,7 +211,7 @@ test('5: subnet proxy offers /24 candidates from interface IPs and PATCHes exact
 test('6: 恢复默认 on core3 keeps subnet proxies via PUT, not DELETE', async ({ page }) => {
   const { requests } = await open(page, CORE3)
   const row = page.getByTestId('setting-advanced')
-  await expect(row).toContainText('默认')
+  await expect(row.getByTestId('advanced-state')).toHaveText('默认')
   await row.getByRole('button', { name: '恢复默认' }).click()
   const dlg = page.getByRole('dialog')
   await expect(dlg).toContainText('子网代理会保留')
@@ -186,7 +225,7 @@ test('6: 恢复默认 on core3 keeps subnet proxies via PUT, not DELETE', async 
 
 test('6b: overridden config shows 已覆盖', async ({ page }) => {
   await open(page, CORE3, { 'GET /networks/*/members/*/config': () => ({ proxy_cidrs: ['192.168.77.0/24'], mtu: 1300 }) })
-  await expect(page.getByTestId('setting-advanced')).toContainText('已覆盖')
+  await expect(page.getByTestId('advanced-state')).toHaveText('已覆盖')
 })
 
 test('7: diagnostics: collapsed, logger level, ACL stats, copyable TOML', async ({ page, context }) => {
@@ -219,14 +258,57 @@ test('7: diagnostics: collapsed, logger level, ACL stats, copyable TOML', async 
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('instance_name = "home-central"')
 })
 
-test('8a: 移出此网络 confirms then DELETEs the member', async ({ page }) => {
-  const { requests } = await open(page, CORE1)
+test('8a: 移出此网络 on a non-default network DELETEs that member and lands on the device route', async ({ page }) => {
+  const { requests } = await open(page, CORE1, core1InOffice(), OFFICE)
+  await expect(page.getByTestId('setting-ip')).toContainText('自动分配 · 10.155.0.1')
   await page.getByRole('button', { name: '移出此网络' }).click()
   const dlg = page.getByRole('dialog')
+  await expect(dlg).toContainText('office')
   await dlg.getByRole('button', { name: '移出', exact: true }).click()
   await expect
-    .poll(() => requests.some((r) => r.method === 'DELETE' && r.path === `/networks/${NET}/members/${CORE1}`))
-    .toBe(true)
+    .poll(() => requests.filter((r) => r.method === 'DELETE').map((r) => r.path))
+    .toEqual([`/networks/${OFFICE}/members/${CORE1}`])
+  await expect(page).toHaveURL(new RegExp(`/#/devices/${CORE1}$`))
+})
+
+test('8a-2: changing network while the leave dialog is open still removes only the confirmed network', async ({ page }) => {
+  const { requests } = await open(page, CORE1, core1InOffice())
+  await page.getByRole('button', { name: /切换网络/ }).click()
+  await page.getByRole('menuitem', { name: /office/ }).click()
+  await expect(page).toHaveURL(new RegExp(`/#/devices/${CORE1}/networks/${OFFICE}$`))
+  await expect(page.getByTestId('setting-ip')).toContainText('10.155.0.1')
+  await page.getByRole('button', { name: '移出此网络' }).click()
+  const dlg = page.getByRole('dialog')
+  await expect(dlg).toContainText('office')
+  await page.goBack()
+  await expect(page).toHaveURL(new RegExp(`/#/devices/${CORE1}$`))
+  await expect(page.getByTestId('setting-ip')).toContainText('10.144.144.1')
+  await dlg.getByRole('button', { name: '移出', exact: true }).click()
+  await expect
+    .poll(() => requests.filter((r) => r.method === 'DELETE').map((r) => r.path))
+    .toEqual([`/networks/${OFFICE}/members/${CORE1}`])
+})
+
+test('8a-3: leaving the page while the leave dialog is open does not pull the user back afterwards', async ({ page }) => {
+  const { requests } = await mockApi(page, core1InOffice())
+  await page.goto('/#/devices')
+  await page.getByRole('row').filter({ hasText: 'core1' }).getByText('Alpine Linux').click()
+  await page.getByRole('button', { name: /切换网络/ }).click()
+  await page.getByRole('menuitem', { name: /office/ }).click()
+  await expect(page).toHaveURL(new RegExp(`/#/devices/${CORE1}/networks/${OFFICE}$`))
+  await page.getByRole('button', { name: '移出此网络' }).click()
+  const dlg = page.getByRole('dialog')
+  await expect(dlg).toContainText('office')
+  await page.evaluate(() => history.go(-2))
+  await expect(page).toHaveURL(/\/#\/devices$/)
+  await dlg.getByRole('button', { name: '移出', exact: true }).click()
+  await expect
+    .poll(() => requests.filter((r) => r.method === 'DELETE').map((r) => r.path))
+    .toEqual([`/networks/${OFFICE}/members/${CORE1}`])
+  // Wait for the post-write refreshes, then check we were not navigated to the device page.
+  await expect.poll(() => requests.filter((r) => r.method === 'GET' && r.path === '/machines').length).toBeGreaterThan(2)
+  await page.waitForTimeout(300)
+  await expect(page).toHaveURL(/\/#\/devices$/)
 })
 
 test('8b: 删除设备… confirms then returns to the list', async ({ page }) => {
@@ -322,6 +404,14 @@ test('alias: click name to edit, Enter saves via PUT alias, Esc cancels', async 
   expect(requests.some((r) => r.method === 'PUT')).toBe(false)
   await page.getByRole('button', { name: /修改别名/ }).click()
   await page.getByRole('textbox', { name: '别名' }).fill('书房')
+  // Enter that confirms an IME candidate must not save.
+  await page.getByRole('textbox', { name: '别名' }).dispatchEvent('keydown', { key: 'Enter', code: 'Enter', isComposing: true })
+  await page.getByRole('textbox', { name: '别名' }).evaluate((el) =>
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 229, bubbles: true })),
+  )
+  await page.waitForTimeout(200)
+  expect(requests.some((r) => r.method === 'PUT')).toBe(false)
+  await expect(page.getByRole('textbox', { name: '别名' })).toBeVisible()
   await page.getByRole('textbox', { name: '别名' }).press('Enter')
   await expect
     .poll(() => requests.find((r) => r.method === 'PUT' && r.path === `/machines/${CORE1}/alias`)?.body)
@@ -336,6 +426,19 @@ test('overview card shows key facts and sub-line', async ({ page }) => {
   await expect(ov).toContainText('2.6.4-8428a89d')
   await expect(ov).toContainText('192.168.97.5')
   await expect(page.getByTestId('detail-subline')).toHaveText('Alpine Linux · 本地网络 · 10.144.144.1')
+})
+
+test('no member record in the selected network shows a message, not a skeleton', async ({ page }) => {
+  await open(page, CORE1, {
+    'GET /networks/*/members': () => {
+      const b = fixture('members.json')
+      b.members = b.members.filter((x: any) => x.device_id !== CORE1)
+      return b
+    },
+  })
+  const card = page.getByTestId('settings-card')
+  await expect(card).toContainText('暂时读不到这台设备在此网络中的成员信息。')
+  await expect(card.locator('[aria-busy="true"]')).toHaveCount(0)
 })
 
 test('unknown device shows a way back to the list', async ({ page }) => {

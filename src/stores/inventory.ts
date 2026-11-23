@@ -1,13 +1,15 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { listBlockedDevices, listMachines, listMembers, listNetworks } from '../api/client'
-import type { BlockedDevice, CentralNetworkMember, CentralNetworkSummary, RawMachine } from '../api/types'
+import type { BlockedDevice, CentralNetworkMember, CentralNetworkSummary, RawMachine, TemporaryPeer } from '../api/types'
 import { buildDeviceViews, primaryNetworkId } from '../domain/devices'
 
 export const useInventory = defineStore('inventory', () => {
   const machines = ref<RawMachine[]>([])
   const networks = ref<CentralNetworkSummary[]>([])
   const membersByNetwork = ref<Record<string, CentralNetworkMember[]>>({})
+  /** `temporary_peers` from the same `GET /networks/{id}/members` responses, keyed by network id. */
+  const temporaryByNetwork = ref<Record<string, TemporaryPeer[]>>({})
   const blocked = ref<BlockedDevice[]>([])
   const loaded = ref(false)
   const error = ref<string | null>(null)
@@ -32,10 +34,15 @@ export const useInventory = defineStore('inventory', () => {
       const memberLists = await Promise.all(n.map((net) => listMembers(net.network_id)))
       if (gen !== generation) return
       const byNet: Record<string, CentralNetworkMember[]> = {}
-      n.forEach((net, i) => { byNet[net.network_id] = memberLists[i]!.members })
+      const tempByNet: Record<string, TemporaryPeer[]> = {}
+      n.forEach((net, i) => {
+        byNet[net.network_id] = memberLists[i]!.members
+        tempByNet[net.network_id] = memberLists[i]!.temporary_peers
+      })
       machines.value = m
       networks.value = n
       membersByNetwork.value = byNet
+      temporaryByNetwork.value = tempByNet
       blocked.value = b
       loaded.value = true
       error.value = null
@@ -61,10 +68,24 @@ export const useInventory = defineStore('inventory', () => {
     machines.value = []
     networks.value = []
     membersByNetwork.value = {}
+    temporaryByNetwork.value = {}
     blocked.value = []
     loaded.value = false
     error.value = null
   }
 
-  return { machines, networks, membersByNetwork, blocked, loaded, error, devices, primaryNetwork, deviceById, refresh, reset }
+  return {
+    machines,
+    networks,
+    membersByNetwork,
+    temporaryByNetwork,
+    blocked,
+    loaded,
+    error,
+    devices,
+    primaryNetwork,
+    deviceById,
+    refresh,
+    reset,
+  }
 })

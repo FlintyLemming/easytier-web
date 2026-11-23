@@ -60,6 +60,17 @@ describe('inventory', () => {
     expect(inv.error).toBe('boom')
   })
 
+  it('keeps temporary peers per network, all-or-nothing like members', async () => {
+    const temp = { peer_id: 7, credential_id: 'c1', credential_expiry_unix: null, hostname: 'phone', ipv4: '10.144.144.50/24', version: null }
+    m.listMembers.mockResolvedValue({ ...membersFx, temporary_peers: [temp] } as never)
+    const inv = useInventory()
+    await inv.refresh()
+    expect(inv.temporaryByNetwork).toEqual({ [net.network_id]: [temp] })
+    m.listMembers.mockRejectedValue(new Error('members down'))
+    await inv.refresh()
+    expect(inv.temporaryByNetwork).toEqual({ [net.network_id]: [temp] })
+  })
+
   it('a failing listMembers fails the whole refresh', async () => {
     const inv = useInventory()
     await inv.refresh()
@@ -78,10 +89,12 @@ describe('inventory reset', () => {
     await inv.refresh()
     expect(inv.machines.length).toBeGreaterThan(0)
     expect(inv.blocked).toHaveLength(1)
+    expect(Object.keys(inv.temporaryByNetwork)).toHaveLength(1)
     inv.reset()
     expect(inv.machines).toEqual([])
     expect(inv.networks).toEqual([])
     expect(inv.membersByNetwork).toEqual({})
+    expect(inv.temporaryByNetwork).toEqual({})
     expect(inv.blocked).toEqual([])
     expect(inv.loaded).toBe(false)
     expect(inv.error).toBeNull()

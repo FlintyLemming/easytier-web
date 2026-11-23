@@ -71,12 +71,12 @@ describe('useDeviceRuntime', () => {
     expect(rt.links.value).toBeNull()
   })
 
-  it('online: fetches routes+peers every 15s, temporary peers once', async () => {
+  it('online: fetches routes+peers every 15s and never lists members itself', async () => {
     const { rt } = setup()
     await vi.advanceTimersByTimeAsync(0)
     expect(m.nodeRoutes).toHaveBeenCalledWith(CORE1, NET)
     expect(m.nodePeers).toHaveBeenCalledWith(CORE1, NET)
-    expect(m.listMembers).toHaveBeenCalledTimes(1)
+    expect(m.listMembers).not.toHaveBeenCalled()
     expect(rt.links.value?.map((l) => l.name).sort()).toEqual(['core2', 'core3'])
     expect(rt.error.value).toBeNull()
     await vi.advanceTimersByTimeAsync(14_000)
@@ -85,7 +85,25 @@ describe('useDeviceRuntime', () => {
     expect(m.nodeRoutes).toHaveBeenCalledTimes(2)
     await vi.advanceTimersByTimeAsync(15_000)
     expect(m.nodeRoutes).toHaveBeenCalledTimes(3)
-    expect(m.listMembers).toHaveBeenCalledTimes(1)
+    expect(m.listMembers).not.toHaveBeenCalled()
+  })
+
+  it('temporary peers come from the store, so late joiners are relabelled', async () => {
+    const phone = {
+      peer_id: 999, hostname: 'phone', cost: 1, path_latency: 3, proxy_cidrs: [], version: '', next_hop_peer_id: 999,
+      ipv4_addr: { address: { addr: 177246258 } }, // 10.144.144.50
+    }
+    m.nodeRoutes.mockResolvedValue([...routesFx.routes, phone] as never)
+    const { rt } = setup()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(rt.links.value?.find((l) => l.peerId === 999)?.kind).toBe('infra')
+    const inv = useInventory()
+    inv.temporaryByNetwork = {
+      [NET]: [{ peer_id: 999, credential_id: 'c', credential_expiry_unix: null, hostname: 'phone', ipv4: '10.144.144.50/24', version: null }],
+    }
+    await nextTick()
+    expect(rt.links.value?.find((l) => l.peerId === 999)?.kind).toBe('temporary')
+    expect(m.listMembers).not.toHaveBeenCalled()
   })
 
   it('names follow the inventory (alias wins)', async () => {
@@ -148,7 +166,7 @@ describe('useDeviceRuntime', () => {
     expect(m.nodeRoutes).toHaveBeenCalledTimes(1)
   })
 
-  it('switching network refetches temporary peers and drops a stale in-flight result', async () => {
+  it('switching network refetches and drops a stale in-flight result', async () => {
     let release!: () => void
     m.nodeRoutes.mockImplementationOnce(
       () => new Promise((r) => { release = () => r(routesFx.routes as never) }),
@@ -159,8 +177,7 @@ describe('useDeviceRuntime', () => {
     await nextTick()
     await vi.advanceTimersByTimeAsync(0)
     expect(m.nodeRoutes).toHaveBeenLastCalledWith(CORE1, 'other-net')
-    expect(m.listMembers).toHaveBeenCalledTimes(2)
-    expect(m.listMembers).toHaveBeenLastCalledWith('other-net')
+    expect(m.listMembers).not.toHaveBeenCalled()
     const afterSwitch = rt.links.value
     release()
     await vi.advanceTimersByTimeAsync(0)

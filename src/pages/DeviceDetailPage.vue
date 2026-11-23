@@ -11,7 +11,7 @@ import JoinNetworkDialog from '../components/device-detail/JoinNetworkDialog.vue
 import MemberSettingsCard from '../components/device-detail/MemberSettingsCard.vue'
 import NotInNetworkState from '../components/device-detail/NotInNetworkState.vue'
 import OverviewCard from '../components/device-detail/OverviewCard.vue'
-import { errorMessage, refreshInventoryFresh } from '../components/device-detail/writes'
+import { errorMessage, pushIfStill, refreshInventoryFresh } from '../components/device-detail/writes'
 import DeleteDeviceDialog from '../components/devices/DeleteDeviceDialog.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import SkeletonRows from '../components/ui/SkeletonRows.vue'
@@ -66,6 +66,7 @@ async function joinNetwork(targetId: string) {
   const d = device.value
   if (!d || joining.value) return
   const net = inventory.networks.find((n) => n.network_id === targetId)
+  const startPath = router.currentRoute.value.fullPath
   joining.value = true
   try {
     await addMembers(targetId, [d.id])
@@ -73,7 +74,9 @@ async function joinNetwork(targetId: string) {
     joinOpen.value = false
     await refreshInventoryFresh()
     const def = inventory.deviceById(d.id)?.defaultNetworkId
-    await router.push(
+    await pushIfStill(
+      router,
+      startPath,
       def === targetId
         ? { name: 'device', params: { machineId: d.id } }
         : { name: 'device-network', params: { machineId: d.id, networkId: targetId } },
@@ -97,12 +100,13 @@ const deleting = ref(false)
 async function confirmDelete(block: boolean) {
   const d = deleteTarget.value
   if (!d) return
+  const startPath = router.currentRoute.value.fullPath
   deleting.value = true
   try {
     await deleteMachine(d.id, block)
     toast.success(t('devices.deleted', { name: d.name }))
     deleteTarget.value = null
-    await router.push({ name: 'devices' })
+    await pushIfStill(router, startPath, { name: 'devices' })
     void refreshInventoryFresh()
   } catch (e) {
     toast.error(t('devices.deleteFailed', { message: errorMessage(e) }))
@@ -133,6 +137,7 @@ async function confirmDelete(block: boolean) {
 
     <template v-else>
       <DetailHeader
+        :key="`header:${machineId}`"
         :device="device"
         :network-id="networkId"
         :ip="ip"
@@ -183,7 +188,13 @@ async function confirmDelete(block: boolean) {
               :member="member"
             />
             <DiagnosticsCard :key="`diagnostics:${networkKey}`" :device-id="device.id" :network-id="networkId" :online="online" />
-            <DangerZone :device="device" :network-id="networkId" :network-name="networkName" @delete="deleteTarget = device" />
+            <DangerZone
+              :key="`danger:${networkKey}`"
+              :device="device"
+              :network-id="networkId"
+              :network-name="networkName"
+              @delete="deleteTarget = device"
+            />
           </template>
         </div>
 

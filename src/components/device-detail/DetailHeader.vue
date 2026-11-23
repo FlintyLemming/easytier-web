@@ -51,6 +51,13 @@ function cancel() {
   editing.value = false
 }
 
+/** Enter also confirms an IME candidate (common for Chinese aliases); only a plain Enter saves. */
+function onEnter(e: KeyboardEvent) {
+  if (e.isComposing || e.keyCode === 229) return
+  e.preventDefault()
+  void commit()
+}
+
 async function commit() {
   if (!editing.value || saving.value || tooLong.value) return
   const alias = draft.value.trim()
@@ -109,7 +116,7 @@ const menuItems = computed<UiMenuItem[]>(() => [
               :disabled="saving"
               class="h-9 w-full max-w-[420px] rounded-control border bg-surface-card px-2 text-[20px] tracking-[-0.11px] text-ink focus:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
               :class="tooLong ? 'border-error' : 'border-hairline-strong'"
-              @keydown.enter.prevent="commit"
+              @keydown.enter="onEnter"
               @keydown.esc.prevent="cancel"
               @blur="commit"
             />
