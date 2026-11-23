@@ -23,11 +23,14 @@ export const useInventory = defineStore('inventory', () => {
   }
 
   let inflight: Promise<void> | null = null
+  /** Bumped by reset(); a refresh started under an older generation never writes its result. */
+  let generation = 0
 
-  async function doRefresh(): Promise<void> {
+  async function doRefresh(gen: number): Promise<void> {
     try {
       const [m, n, b] = await Promise.all([listMachines(), listNetworks(), listBlockedDevices()])
       const memberLists = await Promise.all(n.map((net) => listMembers(net.network_id)))
+      if (gen !== generation) return
       const byNet: Record<string, CentralNetworkMember[]> = {}
       n.forEach((net, i) => { byNet[net.network_id] = memberLists[i]!.members })
       machines.value = m
@@ -37,6 +40,7 @@ export const useInventory = defineStore('inventory', () => {
       loaded.value = true
       error.value = null
     } catch (e) {
+      if (gen !== generation) return
       error.value = e instanceof Error ? e.message : String(e)
     }
   }
@@ -44,10 +48,23 @@ export const useInventory = defineStore('inventory', () => {
   /** Single-flight; never rejects so pollers keep going. */
   function refresh(): Promise<void> {
     if (!inflight) {
-      inflight = doRefresh().finally(() => { inflight = null })
+      const p: Promise<void> = doRefresh(generation).finally(() => { if (inflight === p) inflight = null })
+      inflight = p
     }
     return inflight
   }
 
-  return { machines, networks, membersByNetwork, blocked, loaded, error, devices, primaryNetwork, deviceById, refresh }
+  /** Drop all data (logout / session expiry) and discard any refresh still in flight. */
+  function reset(): void {
+    generation++
+    inflight = null
+    machines.value = []
+    networks.value = []
+    membersByNetwork.value = {}
+    blocked.value = []
+    loaded.value = false
+    error.value = null
+  }
+
+  return { machines, networks, membersByNetwork, blocked, loaded, error, devices, primaryNetwork, deviceById, refresh, reset }
 })

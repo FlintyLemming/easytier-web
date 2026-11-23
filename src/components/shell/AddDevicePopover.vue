@@ -22,7 +22,7 @@ const command = computed(() => (session.info ? enrollCommand(session.info) : '')
       <p class="text-[13px] text-muted">{{ t('shell.enrollHint') }}</p>
       <p v-if="!command" class="text-[13px] text-muted">{{ t('shell.enrollLoading') }}</p>
       <div v-else class="flex items-start gap-2 rounded-control border border-hairline bg-canvas-soft p-2">
-        <code class="flex-1 break-all text-[12px] text-ink">{{ command }}</code>
+        <code class="flex-1 text-[12px] text-ink [overflow-wrap:anywhere]">{{ command }}</code>
         <CopyButton :text="command" :label="t('shell.enrollCopy')" />
       </div>
       <p class="text-[12px] text-muted">

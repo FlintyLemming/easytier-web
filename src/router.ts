@@ -1,6 +1,7 @@
 import { createRouter, createWebHashHistory, type LocationQueryRaw, type RouteLocationNormalized } from 'vue-router'
 import { ApiError, onUnauthorized } from './api/http'
 import { useSession } from './stores/session'
+import { useInventory } from './stores/inventory'
 import { useToast } from './composables/useToast'
 import { t } from './i18n'
 import AppShell from './components/shell/AppShell.vue'
@@ -70,6 +71,7 @@ onUnauthorized(() => {
   if (cur.meta.public) return // e.g. the 401 from probing the session on the login page
   redirecting = true
   useSession().reset()
+  useInventory().reset()
   void router
     .replace({ name: 'login', query: { next: cur.fullPath } })
     .finally(() => {

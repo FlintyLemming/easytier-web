@@ -71,6 +71,51 @@ describe('inventory', () => {
   })
 })
 
+describe('inventory reset', () => {
+  it('clears all state', async () => {
+    m.listBlockedDevices.mockResolvedValue([{ id: 'b', attempt_count: 1 }] as never)
+    const inv = useInventory()
+    await inv.refresh()
+    expect(inv.machines.length).toBeGreaterThan(0)
+    expect(inv.blocked).toHaveLength(1)
+    inv.reset()
+    expect(inv.machines).toEqual([])
+    expect(inv.networks).toEqual([])
+    expect(inv.membersByNetwork).toEqual({})
+    expect(inv.blocked).toEqual([])
+    expect(inv.loaded).toBe(false)
+    expect(inv.error).toBeNull()
+  })
+
+  it('a refresh in flight during reset does not write afterwards', async () => {
+    let release!: (v: never) => void
+    m.listMachines.mockReturnValue(new Promise((r) => { release = r as never }))
+    const inv = useInventory()
+    const p = inv.refresh()
+    inv.reset()
+    release(machinesFx.machines as never)
+    await p
+    expect(inv.machines).toEqual([])
+    expect(inv.networks).toEqual([])
+    expect(inv.loaded).toBe(false)
+    // and a fresh refresh after reset still works
+    m.listMachines.mockResolvedValue(machinesFx.machines as never)
+    await inv.refresh()
+    expect(inv.loaded).toBe(true)
+  })
+
+  it('a failing in-flight refresh does not set error after reset', async () => {
+    let fail!: (e: Error) => void
+    m.listMachines.mockReturnValue(new Promise((_, rej) => { fail = rej }))
+    const inv = useInventory()
+    const p = inv.refresh()
+    inv.reset()
+    fail(new Error('boom'))
+    await p
+    expect(inv.error).toBeNull()
+  })
+})
+
 describe('session', () => {
   it('load sets info and getters; errors propagate', async () => {
     const s = useSession()
