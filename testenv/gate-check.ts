@@ -3,7 +3,7 @@
 // Writes testenv/reports/gate-<YYYY-MM-DD>.md (first line `GATE: PASS` / `GATE: FAIL`).
 // Exit code: 0 on PASS, 1 on FAIL.
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { EtApi, EtApiError, MACHINES, strToUuid, uuidToStr, waitFor, waitForApi } from './lib/api.ts'
@@ -19,6 +19,9 @@ const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate
 const reportFile = join(here, 'reports', `gate-${today}.md`)
 
 const MAX_RAW = 2048
+const GATE_CIDR = '10.155.0.0/24'
+// Everything from this line on in an existing report is kept when the report is regenerated.
+const MANUAL_MARKER = '<!-- manual notes below are preserved by gate-check -->'
 const NAMES = ['core1', 'core2', 'core3'] as const
 
 // ---------- API wrapper that remembers the last raw response ----------
@@ -86,6 +89,21 @@ interface Route {
   hostname?: string
   peer_id?: number
   version?: string
+  // Observed: {"address":{"addr":177246209},"network_length":24}; addr is the IPv4 as a big-endian u32.
+  ipv4_addr?: { address?: { addr?: number }; network_length?: number } | null
+}
+
+function routeIpv4(r: Route): string | undefined {
+  const a = r.ipv4_addr?.address?.addr
+  if (typeof a !== 'number') return undefined
+  return [24, 16, 8, 0].map((s) => (a >>> s) & 255).join('.')
+}
+
+function ipv4InCidr(ip: string, cidr: string): boolean {
+  const toInt = (v: string) => v.split('.').reduce((n, o) => ((n << 8) | Number(o)) >>> 0, 0)
+  const [net, len] = cidr.split('/')
+  const mask = Number(len) === 0 ? 0 : (0xffffffff << (32 - Number(len))) >>> 0
+  return ((toInt(ip) & mask) >>> 0) === ((toInt(net!) & mask) >>> 0)
 }
 
 // ---------- check bookkeeping ----------
@@ -288,7 +306,7 @@ await check('G5', '中央网络能在 2.6.4 core 上运行', ['G1'], async (ev) 
       network_name: 'gate',
       networking_method: 'Manual',
       peer_urls: ['tcp://core2:11030'],
-      virtual_cidr: '10.155.0.0/24',
+      virtual_cidr: GATE_CIDR,
     },
     network_secret: 'gate-secret',
   })
@@ -330,16 +348,23 @@ await check('G5', '中央网络能在 2.6.4 core 上运行', ['G1'], async (ev) 
   })
   ev.push(`4. GET /networks/{id}/members（${(members.ms / 1000).toFixed(1)}s 后满足）：${members.status}`)
 
-  const routes = await poll(120_000, 'core2 route to core3 in gate network', async () => {
+  const routes = await poll(120_000, `core2 route to core3 with an IPv4 in ${GATE_CIDR}`, async () => {
     const r = await call<{ routes?: Route[] }>('POST', `/machines/${MACHINES.core2}/proxy-rpc`, {
       service_name: 'api.instance.PeerManageRpcService',
       method_name: 'list_route',
       payload: { instance: { id: strToUuid(networkId!) } },
     })
-    const hosts = (r.routes ?? []).map((x) => `${x.hostname}(${x.version ?? '?'})`)
-    return [(r.routes ?? []).some((x) => x.hostname === 'core3'), `routes=[${hosts.join(', ')}]`]
+    const rs = r.routes ?? []
+    const hosts = rs.map((x) => `${x.hostname}(${routeIpv4(x) ?? 'no ipv4'}/${x.ipv4_addr?.network_length ?? '?'}, ${x.version ?? '?'})`)
+    const ok = rs.some((x) => {
+      const ip = routeIpv4(x)
+      return x.hostname === 'core3' && ip !== undefined && ipv4InCidr(ip, GATE_CIDR)
+    })
+    return [ok, `routes=[${hosts.join(', ')}]`]
   })
-  ev.push(`5. core2 proxy-rpc list_route（${(routes.ms / 1000).toFixed(1)}s 后满足）：${routes.status}`)
+  ev.push(
+    `5. core2 proxy-rpc list_route（${(routes.ms / 1000).toFixed(1)}s 后满足 hostname=core3 且 IPv4 在 ${GATE_CIDR} 内）：${routes.status}`,
+  )
 })
 
 await check('G6', '清理和回归', ['G1'], async (ev) => {
@@ -399,8 +424,16 @@ for (const r of results) {
   lines.push('')
 }
 
+// Keep hand-written notes (everything from MANUAL_MARKER on) from an earlier report of the same day.
+let manual = `${MANUAL_MARKER}\n`
+if (existsSync(reportFile)) {
+  const old = readFileSync(reportFile, 'utf8')
+  const i = old.indexOf(MANUAL_MARKER)
+  if (i >= 0) manual = old.slice(i)
+}
+if (lines[lines.length - 1] !== '') lines.push('')
 mkdirSync(dirname(reportFile), { recursive: true })
-writeFileSync(reportFile, lines.join('\n'))
+writeFileSync(reportFile, `${lines.join('\n')}\n${manual}`)
 console.log(lines[0])
 console.log(`report: ${reportFile}`)
 process.exit(pass ? 0 : 1)

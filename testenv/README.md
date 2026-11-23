@@ -43,6 +43,8 @@ bash testenv/upgrade.sh v2.6.4 v2.7.1   # 停止 web → 把 testenv/data/ 整�
 node testenv/gate-check.ts              # 报告写到 testenv/reports/gate-<日期>.md，第一行 GATE: PASS / GATE: FAIL；通过时退出码 0
 ```
 
+同一天重跑会重新生成报告，但 `<!-- manual notes below are preserved by gate-check -->` 这一行及以下的人工补充内容会原样保留。
+
 回滚：web v2.6.4 打不开 v2.7.1 迁移过的数据库（启动即 panic：`Migration file of version '...' is missing`），所以必须恢复升级前的备份，路径就是升级时打印的那个：
 
 ```sh
