@@ -205,6 +205,7 @@ async function confirmDelete(block: boolean) {
               :virtual-cidr="network?.virtual_cidr ?? null"
               :online="online"
               :member="member"
+              :loaded="inventory.loaded"
             />
             <DiagnosticsCard :key="`diagnostics:${networkKey}`" :device-id="device.id" :network-id="networkId" :online="online" />
             <DangerZone
