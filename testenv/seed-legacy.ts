@@ -1,14 +1,22 @@
 // Seeds an easytier-web 2.6.4 test env with the legacy data set (idempotent).
 // Run: node testenv/seed-legacy.ts   (env started with ET_WEB_TAG=v2.6.4)
+//
+// Also records a pre-upgrade snapshot in testenv/data/seed-snapshot.json, which
+// gate-check G4b compares against after the upgrade: per seeded instance, the
+// config the web API returns (GET /machines/{id}/networks/config/{inst}) and, for
+// running instances, the TOML the core runs (show_node_info `config`). Records
+// already in the snapshot are kept, so the baseline stays the first 2.6.4 capture.
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { EtApi, MACHINES, uuidToStr, waitFor, waitForApi } from './lib/api.ts'
+import { EtApi, EtApiError, MACHINES, strToUuid, uuidToStr, waitFor, waitForApi } from './lib/api.ts'
 import type { UuidParts } from './lib/api.ts'
 
 const base = process.env.ET_API ?? 'http://localhost:11211'
-const stateFile = join(dirname(fileURLToPath(import.meta.url)), 'data', 'seed-state.json')
+const dataDir = join(dirname(fileURLToPath(import.meta.url)), 'data')
+const stateFile = join(dataDir, 'seed-state.json')
+const snapshotFile = join(dataDir, 'seed-snapshot.json')
 
 type Cfg = Record<string, unknown>
 type Names = 'core1' | 'core2' | 'core3'
@@ -53,6 +61,8 @@ const labConfig: Cfg = {
 
 type Id = UuidParts | string
 const idStr = (i: Id) => (typeof i === 'string' ? i : uuidToStr(i))
+// running_inst_ids: running on the core now; disabled_inst_ids: stored by the web but
+// not running on the core (a disabled config, or an enabled one not delivered yet).
 interface InstList {
   running_inst_ids: Id[]
   disabled_inst_ids: Id[]
@@ -153,3 +163,62 @@ console.log(`${running} running`)
 
 mkdirSync(dirname(stateFile), { recursive: true })
 writeFileSync(stateFile, JSON.stringify(state, null, 2) + '\n')
+
+// ---------- pre-upgrade snapshot for gate-check G4b ----------
+
+interface SnapshotRecord {
+  machine: string
+  name: Names
+  network: 'home' | 'lab'
+  captured_at: string
+  config: unknown // GET /machines/{id}/networks/config/{inst}
+  toml?: string // show_node_info node_info.config; only for running (home) instances
+}
+interface Snapshot {
+  instances: Record<string, SnapshotRecord>
+}
+
+// Only a legacy (2.6.4) web may provide the baseline; it has no /console-info (404).
+async function webIsLegacy(): Promise<boolean> {
+  try {
+    await api.get('/console-info')
+    return false
+  } catch (e) {
+    if (e instanceof EtApiError && e.status === 404) return true
+    throw e
+  }
+}
+
+const snapshot: Snapshot = existsSync(snapshotFile)
+  ? (JSON.parse(readFileSync(snapshotFile, 'utf8')) as Snapshot)
+  : { instances: {} }
+snapshot.instances ??= {}
+const wanted: { inst: string; machine: string; name: Names; network: 'home' | 'lab' }[] = []
+for (const name of ['core1', 'core2', 'core3'] as const) {
+  const machine = MACHINES[name]
+  wanted.push({ inst: state[machine]!.home, machine, name, network: 'home' })
+  if (state[machine]!.lab) wanted.push({ inst: state[machine]!.lab!, machine, name, network: 'lab' })
+}
+const missing = wanted.filter((w) => !snapshot.instances[w.inst])
+if (!missing.length) {
+  console.log(`snapshot: kept ${wanted.length} existing`)
+} else if (!(await webIsLegacy())) {
+  console.log(`snapshot: NOT captured for ${missing.length} instances (web is not 2.6.4; the baseline must come from 2.6.4)`)
+} else {
+  for (const w of missing) {
+    const config = await api.get<unknown>(`/machines/${w.machine}/networks/config/${w.inst}`)
+    const rec: SnapshotRecord = { machine: w.machine, name: w.name, network: w.network, captured_at: new Date().toISOString(), config }
+    if (w.network === 'home') {
+      const r = await api.post<{ node_info?: { config?: string } }>(`/machines/${w.machine}/proxy-rpc`, {
+        service_name: 'api.instance.PeerManageRpcService',
+        method_name: 'show_node_info',
+        payload: { instance: { id: strToUuid(w.inst) } },
+      })
+      if (typeof r?.node_info?.config !== 'string') throw new Error(`show_node_info for ${w.name} ${w.inst} returned no config`)
+      rec.toml = r.node_info.config
+    }
+    snapshot.instances[w.inst] = rec
+  }
+  writeFileSync(snapshotFile, JSON.stringify(snapshot, null, 2) + '\n')
+  console.log(`snapshot: captured ${missing.length}, kept ${wanted.length - missing.length}`)
+}

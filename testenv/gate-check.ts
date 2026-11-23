@@ -4,14 +4,17 @@
 // Exit code: 0 on PASS, 1 on FAIL.
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { EtApi, EtApiError, MACHINES, strToUuid, uuidToStr, waitFor, waitForApi } from './lib/api.ts'
 import type { UuidParts } from './lib/api.ts'
 
 const base = process.env.ET_API ?? 'http://localhost:11211'
 const here = dirname(fileURLToPath(import.meta.url))
+const composeFile = join(here, 'docker-compose.yml')
+// Written by seed-legacy.ts on web 2.6.4 (both are copied into the upgrade backup with the DB).
 const stateFile = join(here, 'data', 'seed-state.json')
+const snapshotFile = join(here, 'data', 'seed-snapshot.json')
 
 const now = new Date()
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -61,14 +64,18 @@ const idStr = (i: Id | null | undefined) => (i == null ? '' : typeof i === 'stri
 interface MachineItem {
   online?: boolean
   last_seen?: string | null
-  info?: { machine_id?: Id; hostname?: string; easytier_version?: string } | null
+  // inst_id: random per core heartbeat session, i.e. changes when the core process restarts.
+  info?: { machine_id?: Id; inst_id?: Id | null; hostname?: string; easytier_version?: string } | null
 }
+// running_inst_ids: running on the core now. disabled_inst_ids: stored by the web but NOT
+// running on the core (upstream computes it as stored configs minus the core's running list),
+// so it holds disabled configs and also enabled ones that have not been (re)delivered yet.
 interface InstList {
   running_inst_ids?: Id[]
   disabled_inst_ids?: Id[]
 }
 interface RunInfo {
-  info?: { map?: Record<string, { running?: boolean; error_msg?: string | null }> }
+  info?: { map?: Record<string, { running?: boolean; error_msg?: string | null; routes?: Route[] }> }
 }
 interface NetworkDetail {
   network_id: string
@@ -172,20 +179,47 @@ async function poll(timeoutMs: number, label: string, fn: () => Promise<[boolean
 
 // ---------- helpers ----------
 
-const seed = JSON.parse(readFileSync(stateFile, 'utf8')) as Record<string, { home: string; lab?: string }>
+type Seed = Record<string, { home: string; lab?: string }>
+// Loaded inside G4 (not at module load) so a missing file is a FAIL row with a reason, not a crash.
+let seed: Seed | undefined
 
-async function instIds(machine: string): Promise<{ running: string[]; disabled: string[] }> {
-  const r = await call<InstList>('GET', `/machines/${machine}/networks`)
-  return { running: (r.running_inst_ids ?? []).map(idStr), disabled: (r.disabled_inst_ids ?? []).map(idStr) }
+function readJsonFile<T>(file: string, hint: string): T {
+  const shown = relative(process.cwd(), file) || file
+  if (!existsSync(file)) throw new CheckFail(`${shown} not found: ${hint}`)
+  try {
+    return JSON.parse(readFileSync(file, 'utf8')) as T
+  } catch (e) {
+    throw new CheckFail(`${shown} is not valid JSON: ${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+const SEED_HINT = 'run `node testenv/seed-legacy.ts` on web v2.6.4 before upgrading'
+
+// show_node_info via proxy-rpc; returns the TOML config the core is running.
+async function nodeToml(machine: string, inst: string): Promise<string | undefined> {
+  const r = await call<{ node_info?: { config?: string } }>('POST', `/machines/${machine}/proxy-rpc`, {
+    service_name: 'api.instance.PeerManageRpcService',
+    method_name: 'show_node_info',
+    payload: { instance: { id: strToUuid(inst) } },
+  })
+  return r?.node_info?.config
 }
 
-async function instRunning(machine: string, inst: string): Promise<{ running: boolean; error?: string | null }> {
+async function instIds(machine: string): Promise<{ running: string[]; storedNotRunning: string[] }> {
+  const r = await call<InstList>('GET', `/machines/${machine}/networks`)
+  return { running: (r.running_inst_ids ?? []).map(idStr), storedNotRunning: (r.disabled_inst_ids ?? []).map(idStr) }
+}
+
+async function instRunning(
+  machine: string,
+  inst: string,
+): Promise<{ running: boolean; error?: string | null; routeHosts: string[] }> {
   const r = await call<RunInfo>('GET', `/machines/${machine}/networks/info/${inst}`)
   const i = r.info?.map?.[inst]
-  return { running: i?.running === true, error: i?.error_msg }
+  return { running: i?.running === true, error: i?.error_msg, routeHosts: (i?.routes ?? []).map((x) => x.hostname ?? '?') }
 }
 
 async function homesRunning(): Promise<[boolean, string]> {
+  if (!seed) return [false, 'seed-state.json not loaded (see G4)']
   const parts: string[] = []
   let ok = true
   for (const name of NAMES) {
@@ -196,6 +230,70 @@ async function homesRunning(): Promise<[boolean, string]> {
     parts.push(`${name} home ${home} running=${s.running}${s.error ? ` error=${s.error}` : ''}`)
   }
   return [ok, parts.join('; ')]
+}
+
+// ---------- G4b comparison (pre-upgrade snapshot vs now) ----------
+//
+// Normalisation, and nothing else (no field is stripped):
+// - JSON object key order is ignored (objects are compared key by key);
+// - null, [], {} and a missing key are all "unset" and compare equal. Reason: that is how
+//   protobuf JSON says "unset", and v2.7.1's NetworkConfig has 14 fields v2.6.4 lacks
+//   (socket_mark, peers, vpn_portal_config, managed_credentials, dns, ...): a v2.6.4 web
+//   cannot emit them, a v2.7.1 web emits them as null / []. A non-empty value on either side
+//   for such a field IS reported as a difference. false / 0 / "" are real values, not unset.
+// - TOML is compared line by line, exactly (both are produced by the same 2.6.4 core).
+// Array order is significant.
+
+const isUnset = (v: unknown) =>
+  v === null ||
+  v === undefined ||
+  (Array.isArray(v) && v.length === 0) ||
+  (typeof v === 'object' && !Array.isArray(v) && Object.keys(v as object).length === 0)
+
+function diffJson(a: unknown, b: unknown, path = '$', out: string[] = []): string[] {
+  if (isUnset(a) && isUnset(b)) return out
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) out.push(`${path}: length ${a.length} → ${b.length}: ${JSON.stringify(a)} → ${JSON.stringify(b)}`)
+    else a.forEach((x, i) => diffJson(x, b[i], `${path}[${i}]`, out))
+    return out
+  }
+  const isObj = (v: unknown) => v !== null && typeof v === 'object' && !Array.isArray(v)
+  if (isObj(a) && isObj(b)) {
+    const ao = a as Record<string, unknown>
+    const bo = b as Record<string, unknown>
+    for (const k of [...new Set([...Object.keys(ao), ...Object.keys(bo)])].sort()) diffJson(ao[k], bo[k], `${path}.${k}`, out)
+    return out
+  }
+  if (JSON.stringify(a) !== JSON.stringify(b)) out.push(`${path}: ${JSON.stringify(a) ?? '(missing)'} → ${JSON.stringify(b) ?? '(missing)'}`)
+  return out
+}
+
+// Minimal line diff (LCS); returns "- old" / "+ new" lines, empty when equal.
+function diffLines(a: string, b: string): string[] {
+  const x = a.split('\n')
+  const y = b.split('\n')
+  const L = Array.from({ length: x.length + 1 }, () => new Array<number>(y.length + 1).fill(0))
+  for (let i = x.length - 1; i >= 0; i--) for (let j = y.length - 1; j >= 0; j--) L[i]![j] = x[i] === y[j] ? L[i + 1]![j + 1]! + 1 : Math.max(L[i + 1]![j]!, L[i]![j + 1]!)
+  const out: string[] = []
+  let i = 0
+  let j = 0
+  while (i < x.length || j < y.length) {
+    if (i < x.length && j < y.length && x[i] === y[j]) {
+      i++
+      j++
+    } else if (i < x.length && (j >= y.length || L[i + 1]![j]! >= L[i]![j + 1]!)) out.push(`- ${x[i++]}`)
+    else out.push(`+ ${y[j++]}`)
+  }
+  return out
+}
+
+interface SnapshotRecord {
+  machine: string
+  name: string
+  network: 'home' | 'lab'
+  captured_at: string
+  config: unknown
+  toml?: string
 }
 
 function dockerImages(): string {
@@ -257,29 +355,33 @@ await check('G3', '设备登记（90s 内三台 online）', ['G1'], async (ev) =
 })
 
 await check('G4', '旧实例保留', ['G1'], async (ev) => {
-  ev.push(`seed-state.json: \`${JSON.stringify(seed)}\``)
-  for (const name of NAMES) must(seed[MACHINES[name]]?.home, `seed-state.json has no home instance for ${name}`)
-  must(seed[MACHINES.core2]?.lab, 'seed-state.json has no lab instance for core2')
-  const { status, ms } = await poll(60_000, 'legacy instances present, home running, lab disabled', async () => {
+  const s0 = readJsonFile<Seed>(stateFile, SEED_HINT)
+  ev.push(`seed-state.json: \`${JSON.stringify(s0)}\``)
+  for (const name of NAMES) must(s0[MACHINES[name]]?.home, `seed-state.json has no home instance for ${name}`)
+  must(s0[MACHINES.core2]?.lab, 'seed-state.json has no lab instance for core2')
+  seed = s0
+  const seedNow = s0
+  const { status, ms } = await poll(60_000, 'legacy instances present, home running, lab stored but not running', async () => {
     const parts: string[] = []
     let ok = true
     for (const name of NAMES) {
       const m = MACHINES[name]
-      const s = seed[m]!
+      const s = seedNow[m]!
       const ids = await instIds(m)
-      const all = new Set([...ids.running, ...ids.disabled])
+      const all = new Set([...ids.running, ...ids.storedNotRunning])
       const missing = [s.home, ...(s.lab ? [s.lab] : [])].filter((i) => !all.has(i))
       if (missing.length) ok = false
       const home = await instRunning(m, s.home)
       if (!home.running) ok = false
       let lab = ''
       if (name === 'core2' && s.lab) {
-        const labDisabled = ids.disabled.includes(s.lab) && !ids.running.includes(s.lab)
-        if (!labDisabled) ok = false
-        lab = ` lab ${s.lab} in disabled_inst_ids=${ids.disabled.includes(s.lab)} in running_inst_ids=${ids.running.includes(s.lab)}`
+        // lab was saved with disabled=true: it must be stored (in disabled_inst_ids) and not running.
+        const labStoredNotRunning = ids.storedNotRunning.includes(s.lab) && !ids.running.includes(s.lab)
+        if (!labStoredNotRunning) ok = false
+        lab = ` lab ${s.lab} in disabled_inst_ids=${ids.storedNotRunning.includes(s.lab)} in running_inst_ids=${ids.running.includes(s.lab)}`
       }
       parts.push(
-        `${name}: running_inst_ids=[${ids.running.join(',')}] disabled_inst_ids=[${ids.disabled.join(',')}]` +
+        `${name}: running_inst_ids=[${ids.running.join(',')}] disabled_inst_ids=[${ids.storedNotRunning.join(',')}]` +
           `${missing.length ? ` MISSING=[${missing.join(',')}]` : ''} home running=${home.running}${home.error ? ` error=${home.error}` : ''}${lab}`,
       )
     }
@@ -287,7 +389,101 @@ await check('G4', '旧实例保留', ['G1'], async (ev) => {
   })
   ev.push(`${(ms / 1000).toFixed(1)}s 后满足`)
   for (const p of status.split('; ')) ev.push(p)
-  ev.push('停用状态字段：`GET /machines/{id}/networks` 的 `disabled_inst_ids`（运行中的在 `running_inst_ids`）')
+  ev.push(
+    '字段含义：`GET /machines/{id}/networks` 的 `running_inst_ids` 是 core 上正在运行的实例；`disabled_inst_ids` 是 web 已保存、但 core 上没有在运行的实例（上游按“已保存的配置减去正在运行的”计算），不等于“已停用”。lab 保存时设了 disabled=true，所以应在 `disabled_inst_ids` 而不在 `running_inst_ids`',
+  )
+})
+
+await check('G4b', '重启 core 后由 v2.7.1 重新下发旧实例，配置与升级前一致', ['G1', 'G4'], async (ev) => {
+  const s = seed!
+  const snap = readJsonFile<{ instances?: Record<string, SnapshotRecord> }>(snapshotFile, SEED_HINT)
+  const homes = NAMES.map((name) => ({ name, machine: MACHINES[name], inst: s[MACHINES[name]]!.home }))
+  const lab = { name: 'core2' as const, machine: MACHINES.core2, inst: s[MACHINES.core2]!.lab! }
+  for (const h of homes) {
+    const r = snap.instances?.[h.inst]
+    must(r && typeof r.toml === 'string' && r.config, `seed-snapshot.json has no TOML/config for ${h.name} home ${h.inst}: ${SEED_HINT}`)
+  }
+  must(snap.instances?.[lab.inst]?.config, `seed-snapshot.json has no config for core2 lab ${lab.inst}: ${SEED_HINT}`)
+  ev.push(
+    `升级前快照（seed-legacy.ts 在 web v2.6.4 上抓取）：${[...homes, lab].map((x) => `${x.name} ${snap.instances![x.inst]!.network} ${snap.instances![x.inst]!.captured_at}`).join('; ')}`,
+  )
+
+  // Core session ids before the restart: answers must come from the NEW core processes,
+  // not from a stale session the web has not dropped yet.
+  const sessions = async () => {
+    const r = await call<{ machines: MachineItem[] }>('GET', '/machines')
+    const out: Record<string, string> = {}
+    for (const name of NAMES) {
+      const m = r.machines.find((x) => idStr(x.info?.machine_id) === MACHINES[name])
+      out[name] = m?.online ? idStr(m.info?.inst_id) : ''
+    }
+    return out
+  }
+  const before = await sessions()
+  for (const name of NAMES) must(before[name], `${name} has no online session before the restart`)
+
+  const t0 = Date.now()
+  execFileSync('docker', ['compose', '-f', composeFile, 'restart', 'core1', 'core2', 'core3'], { stdio: 'pipe' })
+  ev.push(`1. \`docker compose -f ${relative(process.cwd(), composeFile)} restart core1 core2 core3\` 完成（${((Date.now() - t0) / 1000).toFixed(1)}s）`)
+
+  let labSeenRunning: string | undefined
+  const back = await poll(90_000, 'new core sessions, home instances re-delivered and running, core1 routes to core2/core3, lab not running', async () => {
+    const parts: string[] = []
+    let ok = true
+    const now = await sessions()
+    const fresh = NAMES.filter((n) => now[n] && now[n] !== before[n])
+    if (fresh.length !== NAMES.length) ok = false
+    parts.push(`new core sessions=[${fresh.join(',')}]`)
+    for (const h of homes) {
+      const st = await instRunning(h.machine, h.inst)
+      if (!st.running) ok = false
+      let extra = ''
+      if (h.name === 'core1') {
+        const hasBoth = st.routeHosts.includes('core2') && st.routeHosts.includes('core3')
+        if (!hasBoth) ok = false
+        extra = ` routes=[${st.routeHosts.join(',')}]`
+      }
+      parts.push(`${h.name} home running=${st.running}${st.error ? ` error=${st.error}` : ''}${extra}`)
+    }
+    const ids = await instIds(lab.machine)
+    const labRunning = ids.running.includes(lab.inst)
+    const labStored = ids.storedNotRunning.includes(lab.inst)
+    if (labRunning) labSeenRunning ??= `${((Date.now() - t0) / 1000).toFixed(1)}s`
+    if (labRunning || !labStored) ok = false
+    parts.push(`core2 lab in running_inst_ids=${labRunning} in disabled_inst_ids=${labStored}`)
+    return [ok, parts.join('; ')]
+  })
+  ev.push(`2. 重启后 ${(back.ms / 1000).toFixed(1)}s 满足（时限 90s）：${back.status}`)
+  ev.push(`三台 core 的心跳会话 id（/machines 的 info.inst_id）都换了新的，说明回答来自重启后的新进程：${NAMES.map((n) => `${n} ${before[n]!.slice(0, 8)}…`).join(', ')} 都已变化`)
+  must(!labSeenRunning, `core2 lab ${lab.inst} was seen running at ${labSeenRunning} after the restart`)
+  ev.push('3. 轮询期间 core2 的 lab 一次也没有出现在 running_inst_ids 里')
+
+  const diffs: string[] = []
+  for (const h of homes) {
+    const pre = snap.instances![h.inst]!
+    const toml = await nodeToml(h.machine, h.inst)
+    must(typeof toml === 'string', `show_node_info for ${h.name} home returned no config`)
+    const cfg = await call<unknown>('GET', `/machines/${h.machine}/networks/config/${h.inst}`)
+    const dt = diffLines(pre.toml!, toml)
+    const dc = diffJson(pre.config, cfg)
+    ev.push(`4. ${h.name} home：show_node_info TOML ${dt.length ? `有 ${dt.length} 行差异` : '与升级前逐行相同'}（${toml.split('\n').length} 行）；GET networks/config ${dc.length ? `有 ${dc.length} 处差异` : '与升级前一致'}`)
+    if (dt.length) diffs.push(`${h.name} home TOML diff (- 升级前 2.6.4 / + 现在 v2.7.1):\n${dt.join('\n')}`)
+    if (dc.length) diffs.push(`${h.name} home config diff (升级前 → 现在):\n${dc.join('\n')}`)
+  }
+  {
+    const pre = snap.instances![lab.inst]!
+    const cfg = await call<unknown>('GET', `/machines/${lab.machine}/networks/config/${lab.inst}`)
+    const dc = diffJson(pre.config, cfg)
+    ev.push(`4. core2 lab（未运行，接口直接读数据库里的配置）：GET networks/config ${dc.length ? `有 ${dc.length} 处差异` : '与升级前一致'}`)
+    if (dc.length) diffs.push(`core2 lab config diff (升级前 → 现在):\n${dc.join('\n')}`)
+  }
+  ev.push(
+    '比较规则：不剔除任何字段；JSON 忽略键顺序，null / [] / {} / 缺失都算“未设置”（v2.7.1 的 NetworkConfig 比 v2.6.4 多 14 个字段，旧版不输出、新版输出 null 或 []）；TOML 逐行精确比较；数组顺序有意义',
+  )
+  if (diffs.length) {
+    for (const d of diffs) ev.push(`差异：\n\n\`\`\`\n${d}\n\`\`\``)
+    throw new CheckFail(`${diffs.length} snapshot comparison(s) differ (see evidence)`)
+  }
 })
 
 await check('G5', '中央网络能在 2.6.4 core 上运行', ['G1'], async (ev) => {
@@ -371,18 +567,22 @@ await check('G6', '清理和回归', ['G1'], async (ev) => {
   must(networkId, 'G5 did not create a network, nothing to delete')
   await call('DELETE', `/networks/${networkId}`)
   ev.push(`DELETE /networks/${networkId} → ${last?.status}${last?.body ? ` ${last.body}` : '（空响应体）'}`)
-  const gone = await poll(60_000, 'gate instance removed from core2 and core3', async () => {
+  // 90s: removal is heartbeat-driven and took 32–34s in earlier runs.
+  const gone = await poll(90_000, 'gate instance removed from core2 and core3', async () => {
     const parts: string[] = []
     let ok = true
     for (const name of ['core2', 'core3'] as const) {
       const ids = await instIds(MACHINES[name])
-      const present = ids.running.includes(networkId!) || ids.disabled.includes(networkId!)
+      const present = ids.running.includes(networkId!) || ids.storedNotRunning.includes(networkId!)
       if (present) ok = false
-      parts.push(`${name} has ${networkId}=${present} (running=[${ids.running.join(',')}] disabled=[${ids.disabled.join(',')}])`)
+      parts.push(
+        `${name} has ${networkId}=${present} (running_inst_ids=[${ids.running.join(',')}] disabled_inst_ids=[${ids.storedNotRunning.join(',')}])`,
+      )
     }
     return [ok, parts.join('; ')]
   })
-  ev.push(`实例消失（${(gone.ms / 1000).toFixed(1)}s 后满足）：${gone.status}`)
+  ev.push(`实例消失（${(gone.ms / 1000).toFixed(1)}s 后满足，时限 90s）：${gone.status}`)
+  must(seed, 'seed-state.json not loaded (G4 failed), cannot check the home instances')
   const [ok, homes] = await homesRunning()
   ev.push(`home 实例：${homes}`)
   must(ok, `home instances not all running: ${homes}`)
