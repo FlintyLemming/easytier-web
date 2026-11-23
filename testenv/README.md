@@ -56,3 +56,35 @@ node testenv/seed-legacy.ts                                            # 期望 
 ```
 
 要整个目录替换，不要把备份覆盖复制到旧目录上：`et.db-wal`、`et.db-shm` 必须和 `et.db` 是同一份，混入 v2.7.1 留下的 WAL 文件会损坏数据库。
+
+## 重新抓取 v2.7.1 中央网络模式 fixtures
+
+fixtures 是对真实 API 响应的原样抓取（已解析 JSON，2 空格缩进），放在 `tests/fixtures/v2.7.1/`，供 Playwright mock 和单元测试使用。要在全新的 v2.7.1 环境（web v2.7.1，core v2.6.4）上重新抓取：
+
+```sh
+docker compose -f testenv/docker-compose.yml down
+rm -rf testenv/data-central                     # 要全新环境就删掉旧数据；脚本对已有 home-central 网络可重跑
+ET_DATA_DIR=./data-central docker compose -f testenv/docker-compose.yml up -d
+node testenv/capture-fixtures.ts                # 约 1~3 分钟；中间会临时起 et-core4 并拉黑，结束后自动删除
+node --test testenv/capture-fixtures.test.ts
+```
+
+脚本会建网络 `home-central`（10.144.144.0/24），三台设备入网，core1 固定 `10.144.144.1` 并监听 11010，core3 带 `proxy_cidrs` 和 `hostname_override: lab-box`，写入一条 ACL 规则，并产生一条被拉黑设备的记录。
+
+| 文件 | 对应接口 |
+| --- | --- |
+| `console-info.json` | `GET /console-info` |
+| `summary.json` | `GET /summary` |
+| `machines.json` | `GET /machines` |
+| `networks.json` | `GET /networks` |
+| `network.json` | `GET /networks/{id}` |
+| `members.json` | `GET /networks/{id}/members` |
+| `member-config-core3.json` | `GET /networks/{id}/members/{core3}/config` |
+| `acl-policy.json` | `GET /networks/{id}/acl-policy` |
+| `gateway-info.json` | `GET /networks/gateway-info` |
+| `blocked-devices.json` | `GET /blocked-devices` |
+| `list-route-core1.json` | `POST /machines/{core1}/proxy-rpc`，`PeerManageRpcService.list_route` |
+| `list-peer-core1.json` | `POST /machines/{core1}/proxy-rpc`，`PeerManageRpcService.list_peer` |
+| `show-node-info-core3.json` | `POST /machines/{core3}/proxy-rpc`，`PeerManageRpcService.show_node_info` |
+| `logger-level.json` | `POST /machines/{core1}/proxy-rpc`，`api.logger.LoggerRpcService.get_logger_config` |
+| `index.json` | 非接口：`{ networkId, machines: {core1, core2, core3} }` |

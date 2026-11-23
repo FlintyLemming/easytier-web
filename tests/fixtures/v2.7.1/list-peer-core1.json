@@ -1,0 +1,92 @@
+{
+  "peer_infos": [
+    {
+      "conns": [
+        {
+          "conn_id": "4ff6c474-2ff0-4e28-ba86-86707baa3d8c",
+          "my_peer_id": 565694132,
+          "network_name": "home-central",
+          "peer_id": 2256402620,
+          "stats": {
+            "latency_us": "345",
+            "rx_bytes": "17850",
+            "rx_packets": "157",
+            "tx_bytes": "18834",
+            "tx_packets": "157"
+          },
+          "tunnel": {
+            "local_addr": {
+              "url": "tcp://0.0.0.0:11010"
+            },
+            "remote_addr": {
+              "url": "tcp://192.168.97.4:46563"
+            },
+            "resolved_remote_addr": {
+              "url": "tcp://192.168.97.4:46563"
+            },
+            "tunnel_type": "tcp"
+          }
+        }
+      ],
+      "default_conn_id": {
+        "part1": 1341572212,
+        "part2": 804277800,
+        "part3": 3129378416,
+        "part4": 2074754444
+      },
+      "directly_connected_conns": [
+        {
+          "part1": 1341572212,
+          "part2": 804277800,
+          "part3": 3129378416,
+          "part4": 2074754444
+        }
+      ],
+      "peer_id": 2256402620
+    },
+    {
+      "conns": [
+        {
+          "conn_id": "9aa70837-64cf-48ac-9bc1-9f3348b36a22",
+          "my_peer_id": 565694132,
+          "network_name": "home-central",
+          "peer_id": 451161871,
+          "stats": {
+            "latency_us": "445",
+            "rx_bytes": "26349",
+            "rx_packets": "217",
+            "tx_bytes": "29315",
+            "tx_packets": "217"
+          },
+          "tunnel": {
+            "local_addr": {
+              "url": "tcp://0.0.0.0:11010"
+            },
+            "remote_addr": {
+              "url": "tcp://192.168.97.5:45137"
+            },
+            "resolved_remote_addr": {
+              "url": "tcp://192.168.97.5:45137"
+            },
+            "tunnel_type": "tcp"
+          }
+        }
+      ],
+      "default_conn_id": {
+        "part1": 2594637879,
+        "part2": 1691306156,
+        "part3": 2613157683,
+        "part4": 1219717666
+      },
+      "directly_connected_conns": [
+        {
+          "part1": 2594637879,
+          "part2": 1691306156,
+          "part3": 2613157683,
+          "part4": 1219717666
+        }
+      ],
+      "peer_id": 451161871
+    }
+  ]
+}

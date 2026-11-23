@@ -1,0 +1,61 @@
+{
+  "routes": [
+    {
+      "cost": 1,
+      "cost_latency_first": 1,
+      "feature_flag": {
+        "kcp_input": true,
+        "quic_input": true,
+        "support_conn_list_sync": true
+      },
+      "hostname": "core2",
+      "inst_id": "da81b9b7-6a07-43c2-ae54-28b7a3061bae",
+      "ipv4_addr": {
+        "address": {
+          "addr": 177246210
+        },
+        "network_length": 24
+      },
+      "next_hop_peer_id": 451161871,
+      "next_hop_peer_id_latency_first": 451161871,
+      "path_latency": 1,
+      "path_latency_latency_first": 1,
+      "peer_id": 451161871,
+      "stun_info": {
+        "tcp_nat_type": "Symmetric",
+        "udp_nat_type": "PortRestricted"
+      },
+      "version": "2.6.4-8428a89d"
+    },
+    {
+      "cost": 1,
+      "cost_latency_first": 1,
+      "feature_flag": {
+        "kcp_input": true,
+        "quic_input": true,
+        "support_conn_list_sync": true
+      },
+      "hostname": "lab-box",
+      "inst_id": "da81b9b7-6a07-43c2-ae54-28b7a3061bae",
+      "ipv4_addr": {
+        "address": {
+          "addr": 177246211
+        },
+        "network_length": 24
+      },
+      "next_hop_peer_id": 2256402620,
+      "next_hop_peer_id_latency_first": 2256402620,
+      "path_latency": 1,
+      "path_latency_latency_first": 1,
+      "peer_id": 2256402620,
+      "proxy_cidrs": [
+        "192.168.77.0/24"
+      ],
+      "stun_info": {
+        "tcp_nat_type": "Symmetric",
+        "udp_nat_type": "Symmetric"
+      },
+      "version": "2.6.4-8428a89d"
+    }
+  ]
+}

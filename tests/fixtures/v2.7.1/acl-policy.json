@@ -1,0 +1,33 @@
+{
+  "policy": {
+    "default_action": "allow",
+    "rules": [
+      {
+        "id": "r1",
+        "name": "deny-lab-ssh",
+        "enabled": true,
+        "action": "deny",
+        "sources": [
+          {
+            "type": "all"
+          }
+        ],
+        "destinations": [
+          {
+            "type": "member",
+            "member_id": "030318ce-51e8-4928-b219-7d4dc37acc0b"
+          }
+        ],
+        "protocols": [
+          {
+            "protocol": "tcp",
+            "ports": [
+              "22"
+            ],
+            "stateful": true
+          }
+        ]
+      }
+    ]
+  }
+}

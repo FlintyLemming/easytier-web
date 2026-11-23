@@ -1,0 +1,14 @@
+{
+  "networks": [
+    {
+      "network_id": "da81b9b7-6a07-43c2-ae54-28b7a3061bae",
+      "display_name": "home-central",
+      "network_name": "home-central",
+      "networking_method": "Manual",
+      "virtual_cidr": "10.144.144.0/24",
+      "secure_mode": false,
+      "member_count": 3,
+      "online_member_count": 3
+    }
+  ]
+}

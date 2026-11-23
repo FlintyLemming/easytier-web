@@ -1,0 +1,42 @@
+{
+  "node_info": {
+    "config": "hostname = \"lab-box\"\ninstance_name = \"home-central\"\ninstance_id = \"da81b9b7-6a07-43c2-ae54-28b7a3061bae\"\nipv4 = \"10.144.144.3/24\"\ndhcp = false\nlisteners = []\n\n[network_identity]\nnetwork_name = \"home-central\"\nnetwork_secret = \"home-secret\"\n\n[[peer]]\nuri = \"tcp://core1:11010\"\n\n[[proxy_network]]\ncidr = \"192.168.77.0/24\"\n\n[flags]\n\n[[acl.acl_v1.chains]]\nname = \"inbound\"\nchain_type = 1\ndescription = \"compiled from central network intent\"\nenabled = true\ndefault_action = 1\n\n[[acl.acl_v1.chains.rules]]\nname = \"r1:tcp\"\ndescription = \"deny-lab-ssh\"\npriority = 100\nenabled = true\nprotocol = 1\nports = [\"22\"]\nsource_ips = []\ndestination_ips = []\nsource_ports = []\naction = 2\nrate_limit = 0\nburst_limit = 0\nstateful = true\nsource_groups = []\ndestination_groups = []\n\n[[acl.acl_v1.chains]]\nname = \"forward\"\nchain_type = 3\ndescription = \"compiled from central network intent\"\nenabled = true\nrules = []\ndefault_action = 1\n\n[acl.acl_v1.group]\nmembers = [\"member:030318ce-51e8-4928-b219-7d4dc37acc0b\"]\n\n[[acl.acl_v1.group.declares]]\ngroup_name = \"member:4ef3a1eb-1c51-449b-82c2-05007a49f3bf\"\ngroup_secret = \"redacted-group-secret\"\n\n[[acl.acl_v1.group.declares]]\ngroup_name = \"member:83097f42-1067-4e2e-b708-4a543d0a4102\"\ngroup_secret = \"redacted-group-secret\"\n\n[[acl.acl_v1.group.declares]]\ngroup_name = \"member:030318ce-51e8-4928-b219-7d4dc37acc0b\"\ngroup_secret = \"redacted-group-secret\"\n\n[source]\nsource = \"webhook\"\n",
+    "feature_flag": {
+      "kcp_input": true,
+      "quic_input": true,
+      "support_conn_list_sync": true
+    },
+    "hostname": "lab-box",
+    "inst_id": "da81b9b7-6a07-43c2-ae54-28b7a3061bae",
+    "ip_list": {
+      "interface_ipv4s": [
+        {
+          "addr": 3232260356
+        }
+      ],
+      "public_ipv4": {
+        "addr": 3405803786
+      }
+    },
+    "ipv4_addr": "10.144.144.3/24",
+    "listeners": [
+      "ring://da81b9b7-6a07-43c2-ae54-28b7a3061bae"
+    ],
+    "peer_id": 2256402620,
+    "proxy_cidrs": [
+      "192.168.77.0/24"
+    ],
+    "stun_info": {
+      "last_update_time": "1795425366",
+      "max_port": 47924,
+      "min_port": 22401,
+      "public_ip": [
+        "203.0.113.10",
+        "198.51.100.20"
+      ],
+      "tcp_nat_type": "Symmetric",
+      "udp_nat_type": "Symmetric"
+    },
+    "version": "2.6.4-8428a89d"
+  }
+}
