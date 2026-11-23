@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref } from 'vue'
+import { useToast } from '../../composables/useToast'
+import { t } from '../../i18n'
+import { copyText } from '../../lib/clipboard'
 
 const props = defineProps<{ text: string; label?: string }>()
+const toast = useToast()
 const copied = ref(false)
 let timer: ReturnType<typeof setTimeout> | undefined
 
 async function copy() {
-  try {
-    await navigator.clipboard.writeText(props.text)
-  } catch {
+  if (!(await copyText(props.text))) {
+    toast.error(t('common.copyFailed'))
     return
   }
   copied.value = true
@@ -22,7 +25,7 @@ onBeforeUnmount(() => clearTimeout(timer))
 <template>
   <button
     type="button"
-    :aria-label="label ?? 'Copy'"
+    :aria-label="label ?? t('common.copy')"
     class="inline-flex h-6 w-6 items-center justify-center rounded-control text-muted hover:text-ink hover:bg-surface-strong cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
     @click="copy"
   >

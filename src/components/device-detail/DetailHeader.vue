@@ -6,6 +6,7 @@ import type { CentralNetworkSummary } from '../../api/types'
 import { useToast } from '../../composables/useToast'
 import type { DeviceView } from '../../domain/devices'
 import { locationText } from '../../domain/format'
+import { copyText } from '../../lib/clipboard'
 import DeviceStatus from '../devices/DeviceStatus.vue'
 import UiMenu, { type UiMenuItem } from '../ui/UiMenu.vue'
 import NetworkSwitcher from './NetworkSwitcher.vue'
@@ -88,10 +89,8 @@ async function commit() {
 
 // --- ⋯ menu ---
 async function copyId() {
-  try {
-    await navigator.clipboard.writeText(props.device.id)
-    toast.success(t('detail.copied'))
-  } catch { /* clipboard unavailable */ }
+  if (await copyText(props.device.id)) toast.success(t('detail.copied'))
+  else toast.error(t('common.copyFailed'))
 }
 
 const menuItems = computed<UiMenuItem[]>(() => {

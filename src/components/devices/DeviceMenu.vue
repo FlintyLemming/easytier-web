@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { DeviceView } from '../../domain/devices'
 import { useToast } from '../../composables/useToast'
+import { copyText } from '../../lib/clipboard'
 import UiMenu, { type UiMenuItem } from '../ui/UiMenu.vue'
 
 // `central: false` (webhook mode): alias and delete act on the central device registry, which webhook
@@ -13,10 +14,8 @@ const { t } = useI18n()
 const toast = useToast()
 
 async function copy(text: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-    toast.success(t('devices.copied'))
-  } catch { /* clipboard unavailable */ }
+  if (await copyText(text)) toast.success(t('devices.copied'))
+  else toast.error(t('common.copyFailed'))
 }
 
 const items = computed<UiMenuItem[]>(() => {

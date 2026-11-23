@@ -182,3 +182,19 @@ test('empty inventory explains how to add a device', async ({ page }) => {
   await open(page, { 'GET /machines': () => ({ machines: [] }) })
   await expect(page.getByText('还没有设备')).toBeVisible()
 })
+
+test('复制设备 ID works without navigator.clipboard (plain-HTTP LAN access)', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(Navigator.prototype, 'clipboard', { get: () => undefined, configurable: true })
+    // Record what the copy command puts on the clipboard.
+    document.addEventListener('copy', (e) => {
+      ;(window as unknown as { __copied: string }).__copied = e.clipboardData?.getData('text/plain') ?? ''
+    })
+  })
+  await open(page)
+  expect(await page.evaluate(() => typeof navigator.clipboard)).toBe('undefined')
+  await page.getByRole('row').filter({ hasText: 'core1' }).getByRole('button', { name: '更多操作' }).click()
+  await page.getByRole('menuitem', { name: '复制设备 ID' }).click()
+  await expect(page.getByRole('status').filter({ hasText: '已复制' })).toBeVisible()
+  expect(await page.evaluate(() => (window as unknown as { __copied?: string }).__copied)).toBe(CORE1)
+})

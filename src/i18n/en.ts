@@ -4,6 +4,12 @@ export default {
     confirm: 'Confirm',
     save: 'Save',
     loading: 'Loading…',
+    copy: 'Copy',
+    copyItem: 'Copy {label}',
+    copyFailed: 'Copy failed',
+    dismiss: 'Dismiss',
+    online: 'Online',
+    offline: 'Offline',
   },
   nav: {
     label: 'Main navigation',

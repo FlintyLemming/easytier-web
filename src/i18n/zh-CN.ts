@@ -4,6 +4,12 @@ export default {
     confirm: '确认',
     save: '保存',
     loading: '加载中…',
+    copy: '复制',
+    copyItem: '复制{label}',
+    copyFailed: '复制失败',
+    dismiss: '关闭',
+    online: '在线',
+    offline: '离线',
   },
   nav: {
     label: '主导航',

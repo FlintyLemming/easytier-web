@@ -42,6 +42,19 @@ test('blocked bell shows a count badge and unblocks a device', async ({ page }) 
   await expect.poll(() => requests.some((r) => r.method === 'DELETE' && r.path === `/blocked-devices/${id}`)).toBe(true)
 })
 
+test('blocked bell shows the last attempt relative to now, with a local-time tooltip', async ({ page }) => {
+  const last: string = fixture('blocked-devices.json').blocked[0].last_attempt_time
+  await page.clock.setFixedTime(new Date(Date.parse(last) + 3 * 3_600_000 + 60_000))
+  await mockApi(page)
+  await page.goto('/#/devices')
+  await page.getByRole('button', { name: '被拉黑的设备' }).click()
+  const line = page.getByTestId('blocked-attempt')
+  await expect(line).toHaveText('最近尝试 3 小时前，共 2 次')
+  const title = await line.getAttribute('title')
+  expect(title).toBe(await page.evaluate((s) => new Date(s).toLocaleString('zh-CN'), last))
+  expect(title).not.toMatch(/\dT\d/)
+})
+
 test('webhook banner appears when webhook_auth is true', async ({ page }) => {
   await mockApi(page, {}, { webhook: true })
   await page.goto('/#/devices')

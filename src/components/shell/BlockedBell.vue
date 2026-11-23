@@ -1,20 +1,30 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { unblockDevice } from '../../api/client'
+import { relativeTime } from '../../domain/format'
 import { useInventory } from '../../stores/inventory'
 import { useToast } from '../../composables/useToast'
 import UiButton from '../ui/UiButton.vue'
 import UiPopover from '../ui/UiPopover.vue'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const inventory = useInventory()
 const toast = useToast()
 
 const attempted = computed(() => inventory.blocked.filter((d) => d.attempt_count > 0).length)
 const busy = ref<string | null>(null)
 
-const fmtTime = (s?: string | null) => (s ?? '').replace('T', ' ').slice(0, 19)
+// Backend times are UTC; show them relative to now, with the local absolute time as a tooltip.
+const now = ref(new Date())
+const tick = setInterval(() => { now.value = new Date() }, 30_000)
+onBeforeUnmount(() => clearInterval(tick))
+const lang = computed(() => (locale.value === 'en' ? 'en' : 'zh-CN'))
+const ago = (s?: string | null) => (s ? relativeTime(s, now.value, lang.value) : '—')
+const absolute = (s?: string | null) => {
+  const d = s ? new Date(s) : null
+  return d && !Number.isNaN(d.getTime()) ? d.toLocaleString(lang.value) : undefined
+}
 
 async function unblock(id: string) {
   busy.value = id
@@ -56,9 +66,9 @@ async function unblock(id: string) {
           <div class="min-w-0">
             <p class="truncate text-[14px] text-ink">{{ d.alias || d.hostname }}</p>
             <p class="font-mono text-[11px] text-muted">{{ d.id }}</p>
-            <p class="text-[12px] text-muted">
+            <p data-testid="blocked-attempt" class="text-[12px] text-muted" :title="d.attempt_count > 0 ? absolute(d.last_attempt_time) : undefined">
               <template v-if="d.attempt_count > 0">
-                {{ t('shell.blocked.attempted', { time: fmtTime(d.last_attempt_time), count: d.attempt_count }) }}
+                {{ t('shell.blocked.attempted', { time: ago(d.last_attempt_time), count: d.attempt_count }) }}
               </template>
               <template v-else>{{ t('shell.blocked.noAttempt') }}</template>
             </p>

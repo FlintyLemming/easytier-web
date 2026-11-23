@@ -132,7 +132,7 @@ describe('CopyButton', () => {
     expect(w.find('path[d="M20 6 9 17l-5-5"]').exists()).toBe(false)
   })
 
-  it('rejected clipboard write shows no check and does not throw', async () => {
+  it('rejected clipboard write without a fallback shows no check and toasts 复制失败', async () => {
     const writeText = vi.fn().mockRejectedValue(new Error('denied'))
     vi.stubGlobal('navigator', { clipboard: { writeText } })
     const w = track(mount(CopyButton, { props: { text: 'x', label: 'Copy IP' } }))
@@ -140,6 +140,23 @@ describe('CopyButton', () => {
     await w.trigger('click')
     await flushPromises()
     expect(w.find('path[d="M20 6 9 17l-5-5"]').exists()).toBe(false)
+    expect(toasts.map((x) => [x.kind, x.message])).toEqual([['error', 'Copy failed']])
+  })
+
+  it('copies over plain HTTP through the execCommand fallback', async () => {
+    vi.stubGlobal('navigator', {})
+    const exec = vi.fn(() => true)
+    Object.defineProperty(document, 'execCommand', { value: exec, configurable: true, writable: true })
+    try {
+      const w = track(mount(CopyButton, { props: { text: '10.144.144.1' } }))
+      await w.trigger('click')
+      await flushPromises()
+      expect(exec).toHaveBeenCalledWith('copy')
+      expect(w.find('path[d="M20 6 9 17l-5-5"]').exists()).toBe(true)
+      expect(toasts).toHaveLength(0)
+    } finally {
+      delete (document as { execCommand?: unknown }).execCommand
+    }
   })
 })
 
