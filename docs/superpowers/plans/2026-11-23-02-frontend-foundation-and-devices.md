@@ -28,7 +28,7 @@
 - 修改成员时只提交变化了的字段（`PATCH`）。网络配置对象的读写必须经过移植过来的 `normalizeNetworkConfig` 和 `toBackendNetworkConfig`。
 - 支持中文和英文两种语言（zh-CN / en）。浏览器语言以 `zh` 开头时默认中文，用户的选择保存在 `localStorage['et.locale']`。
 - 从上游复制过来的文件，开头要加注释：`// Ported from EasyTier v2.7.1 (https://github.com/EasyTier/EasyTier), LGPL-3.0-or-later`。
-- 测试用的 fixtures 来自计划 1：`tests/fixtures/v2.7.1/*.json`。在开发服务器里，`/api` 代理到 `process.env.ET_API ?? 'http://localhost:11211'`。
+- 测试用的 fixtures 来自计划 1：`tests/fixtures/v2.7.1/*.json`。fixtures 中返回结构的实际形态以 `testenv/README.md` 的「Observed response shapes」一节为准，例如：`runtime_virtual_ipv4` 带前缀长度（`"10.144.144.1/24"`）；64 位计数器（`latency_us`、`rx_bytes`、`tx_bytes`）是 JSON 字符串；`is_closed` 为 false 时字段直接缺省；`get_logger_config` 在级别为 0 时返回 `{}`；`alias` 未设置时字段缺省；成员的 `hostname` 会体现 `hostname_override`。在开发服务器里，`/api` 代理到 `process.env.ET_API ?? 'http://localhost:11211'`。
 
 ## Review Focus
 
@@ -48,7 +48,7 @@
 **Interfaces:**
 - Produces：npm 脚本 `dev`、`build`、`preview`、`typecheck`（`vue-tsc --noEmit`）、`test`（`vitest run`）、`e2e`（`playwright test tests/e2e`）、`codegen`（Task 2 提供）。全局类型 `interface Window { __ET_CONFIG__?: { apiBase?: string } }`。Tailwind 主题里的颜色名和 spec token 同名，例如 `bg-canvas`、`text-ink`、`border-hairline`、`bg-primary`、`text-muted`；字体为 `font-sans`（Inter）、`font-mono`（JetBrains Mono）。
 
-- [ ] **Step 1:** 用 npm 初始化，安装 Tech Stack 里列出的依赖。`vite.config.ts` 中：`base: './'`；`server.proxy['/api']` 指向 `process.env.ET_API ?? 'http://localhost:11211'`，并设置 `changeOrigin: true`；插件 `@vitejs/plugin-vue`、`@tailwindcss/vite`。
+- [ ] **Step 1:** 用 npm 初始化，安装 Tech Stack 里列出的依赖。`vitest.config.ts` 设置 `test.include: ['tests/unit/**/*.test.ts']`（`testenv/` 下的 `node:test` 测试不能被 Vitest 收集）。`vite.config.ts` 中：`base: './'`；`server.proxy['/api']` 指向 `process.env.ET_API ?? 'http://localhost:11211'`，并设置 `changeOrigin: true`；插件 `@vitejs/plugin-vue`、`@tailwindcss/vite`。
 - [ ] **Step 2:** `index.html` 在应用脚本之前，先加载 `<script src="./config.js"></script>`。`public/config.js` 的内容是 `window.__ET_CONFIG__ = window.__ET_CONFIG__ || {};`。
 - [ ] **Step 3:** `src/styles/tokens.css` 用 Tailwind v4 的 `@theme` 定义 Global Constraints 中的全部颜色、圆角和字体。`base.css` 设置：`body` 背景 canvas、文字 ink、字体 Inter；`h1`–`h3` 字重 400，并按对应字号设置字距；`code, .mono` 使用 JetBrains Mono。
 - [ ] **Step 4:** 写 `tests/unit/smoke.test.ts`：断言 `src/styles/tokens.css` 的文本里包含 `#f7f7f4`、`#26251e`、`#f54e00`、`#cfcdc4`，并且不包含 `box-shadow`。
@@ -83,7 +83,7 @@
 
 **Interfaces:**
 - Produces（`http.ts`）：`class ApiError extends Error { status: number; body: unknown }`；`request<T>(method: 'GET'|'POST'|'PUT'|'PATCH'|'DELETE', path: string, opts?: { body?: unknown; query?: Record<string, string | boolean> }): Promise<T>`；`onUnauthorized(handler: () => void): void`；`apiUrl(path: string): string`。`ApiError` 的 message 取响应 JSON 里的 `message` 字段，没有就用响应文本。
-- Produces（`types.ts`）：从上游 v2.7.1 的 `frontend/src/modules/api.ts` 复制这些接口：`ConsoleInfo`（其中 `config_server_host?: string | null`）、`Summary`、`CentralNetworkSummary`、`CentralNetworkDetail`、`CentralNetworkMember`、`TemporaryPeer`、`BlockedDevice`、`NodeRouteInfo`、`NodePeerConn`、`NodePeerInfo`、`NodeAclRuleStat`。另外新增：
+- Produces（`types.ts`）：从上游 v2.7.1 的 `frontend/src/modules/api.ts` 复制这些接口：`ConsoleInfo`（其中 `config_server_host?: string | null`）、`Summary`、`CentralNetworkSummary`、`CentralNetworkDetail`、`CentralNetworkMember`、`TemporaryPeer`、`BlockedDevice`、`NodeRouteInfo`、`NodePeerConn`、`NodePeerInfo`、`NodeAclRuleStat`。复制时做以下修正，使类型和真实返回一致：`NodePeerConn.stats` 的 `latency_us`、`rx_bytes`、`tx_bytes` 类型为 `number | string`；`NodePeerConn.is_closed` 为可选；`CentralNetworkMember.alias` 为可选。另外新增：
   - `interface RawMachine { client_url?: string | null; info?: HeartbeatInfo | null; location?: GeoText | null; alias?: string | null; networks?: { network_id: string; display_name: string; network_name: string }[]; online?: boolean; last_seen?: string | null }`
   - `interface HeartbeatInfo { machine_id?: UuidParts; hostname?: string; easytier_version?: string; report_time?: string; running_network_instances?: UuidParts[]; device_os?: unknown }`
   - `interface GeoText { country: string; region?: string | null; city?: string | null }`
@@ -93,7 +93,7 @@
   - 控制台：`getConsoleInfo()`；
   - 设备：`listMachines(): Promise<RawMachine[]>`、`deleteMachine(id: string, block: boolean)`、`setMachineAlias(id: string, alias: string)`、`listBlockedDevices(): Promise<BlockedDevice[]>`、`unblockDevice(id: string)`；
   - 网络和成员：`listNetworks()`、`listMembers(networkId): Promise<{ members: CentralNetworkMember[]; temporary_peers: TemporaryPeer[] }>`、`addMembers(networkId, deviceIds: string[])`、`updateMember(networkId, deviceId, patch: MemberPatch)`、`removeMember(networkId, deviceId)`、`getMemberConfig(networkId, deviceId): Promise<Record<string, unknown>>`、`setMemberConfig(networkId, deviceId, config: object)`、`clearMemberConfig(networkId, deviceId)`；
-  - proxy-rpc：`proxyRpc<T>(machineId, service, method, payload): Promise<T>`、`nodeRoutes(machineId, instId): Promise<NodeRouteInfo[]>`、`nodePeers(machineId, instId): Promise<NodePeerInfo[]>`、`nodeAclStats(machineId, instId): Promise<NodeAclRuleStat[]>`、`nodeInfo(machineId, instId): Promise<{ config: string; interfaceIpv4s: string[] }>`、`getLoggerLevel(machineId): Promise<number>`、`setLoggerLevel(machineId, level: number)`。
+  - proxy-rpc：`proxyRpc<T>(machineId, service, method, payload): Promise<T>`、`nodeRoutes(machineId, instId): Promise<NodeRouteInfo[]>`、`nodePeers(machineId, instId): Promise<NodePeerInfo[]>`、`nodeAclStats(machineId, instId): Promise<NodeAclRuleStat[]>`、`nodeInfo(machineId, instId): Promise<{ config: string; interfaceIpv4s: string[] }>`、`getLoggerLevel(machineId): Promise<number>`（响应为 `{}` 时返回 0）、`setLoggerLevel(machineId, level: number)`。
   - 每个接口的路径和请求体，都和上游 `api.ts` 中的同名方法一致。proxy-rpc 调用中的 `instance.id` 用 `strToUuid(instId)` 转换。
 
 - [ ] **Step 1:** 写失败的测试（用 `vi.stubGlobal('fetch', …)` 记录每次请求）：
@@ -118,7 +118,7 @@
 - Consumes：Task 3 的类型。
 - Produces：
   - `version.ts`：`parseVersion(v: string): [number, number, number] | null`（只取 `-` 之前的 `x.y.z`）、`compareVersions(a: string, b: string): number`、`latestVersion(vs: string[]): string | null`、`isOutdated(v: string, latest: string | null): boolean`；
-  - `format.ts`：`ipv4FromU32(n: number): string`、`publicIpFromClientUrl(url?: string | null): string | null`（取 URL 的 host 部分，IPv6 去掉方括号）、`osLabel(deviceOs: unknown): string`（具体字段以 fixture `machines.json` 中 `info.device_os` 的实际结构为准，无法识别时返回 `''`）、`relativeTime(iso: string, now: Date, locale: 'zh-CN' | 'en'): string`、`formatBytes(n: number): string`、`locationText(g: GeoText | null | undefined): string | null`（优先 city，没有则 region，再没有则 country；`null` 时返回 `null`）；
+  - `format.ts`：`ipv4FromU32(n: number): string`、`publicIpFromClientUrl(url?: string | null): string | null`（取 URL 的 host 部分，IPv6 去掉方括号）、`osLabel(deviceOs: unknown): string`（`device_os` 的实际结构是 `{ os_type, version, distribution }`；有 `distribution` 时返回它，否则返回 `os_type`，都没有时返回 `''`）、`relativeTime(iso: string, now: Date, locale: 'zh-CN' | 'en'): string`、`formatBytes(n: number): string`、`locationText(g: GeoText | null | undefined): string | null`（优先 city，没有则 region，再没有则 country；`null` 时返回 `null`）；
   - `devices.ts`：
     ```ts
     export interface DeviceView {
@@ -132,7 +132,7 @@
     }
     export function primaryNetworkId(networks: CentralNetworkSummary[]): string | null
     export function defaultNetworkId(deviceNetworkIds: string[], primaryId: string | null): string | null
-    export function memberIp(m: CentralNetworkMember): string | null
+    export function memberIp(m: CentralNetworkMember): string | null   // 结果去掉前缀长度，只保留地址
     export function buildDeviceViews(machines: RawMachine[], networks: CentralNetworkSummary[],
       membersByNetwork: Record<string, CentralNetworkMember[]>): DeviceView[]
     ```
@@ -140,8 +140,9 @@
 - [ ] **Step 1:** 写失败的测试：
   - `primaryNetworkId`：成员数为 `[3, 5, 5]` 时，返回第一个成员数为 5 的网络；空数组返回 `null`；
   - `defaultNetworkId`：`(['b', 'a'], 'a')` 返回 `'a'`；`(['b', 'c'], 'a')` 返回 `'b'`；`([], 'a')` 返回 `null`；
-  - `memberIp`：优先级是 `runtime_virtual_ipv4`，然后 `virtual_ipv4`，然后 `allocated_ipv4`，都没有时返回 `null`；
-  - `buildDeviceViews` 基于 fixture `machines.json`、`networks.json`、`members.json`：core1 的 `ip === '10.144.144.1'`；`name` 依次退回 alias、hostname、id；设备不在任何网络时，`defaultNetworkId === null` 并且 `ip === null`；`location === null` 时不会抛错；hostname 为 `''` 时 `name` 等于 id；
+  - `memberIp`：优先级是 `runtime_virtual_ipv4`，然后 `virtual_ipv4`，然后 `allocated_ipv4`，都没有时返回 `null`；`runtime_virtual_ipv4: '10.144.144.1/24'` 返回 `'10.144.144.1'`；
+  - `osLabel({ os_type: 'linux', version: '3.23.4', distribution: 'Alpine Linux' }) === 'Alpine Linux'`，`osLabel({ os_type: 'linux' }) === 'linux'`，`osLabel(undefined) === ''`；
+  - `buildDeviceViews` 基于 fixture `machines.json`、`networks.json`、`members.json`：core1 的 `ip === '10.144.144.1'`；`name` 依次退回 alias、hostname、id；设备不在任何网络时，`defaultNetworkId === null` 并且 `ip === null`；fixture 中所有设备的 location 都是 `{ country: '本地网络' }`，另外构造一份 `location === null` 的数据，确认不会抛错；hostname 为 `''` 时 `name` 等于 id；
   - `version`：`isOutdated('2.6.4-8428a89d', '2.7.1') === true`，`isOutdated('2.7.1-abc', '2.7.1') === false`，`latestVersion(['2.6.4-x', '2.7.1', 'garbage']) === '2.7.1'`；
   - `format`：`publicIpFromClientUrl('udp://1.2.3.4:5678') === '1.2.3.4'`，`publicIpFromClientUrl('tcp://[2001:db8::1]:11010') === '2001:db8::1'`；`locationText({ country: '中国', region: '浙江', city: '杭州' }) === '杭州'`；`locationText({ country: '本地网络' }) === '本地网络'`；`relativeTime` 输入 2 天前的时间，在 zh-CN 下返回 `'2 天前'`；`formatBytes(1536) === '1.5 KB'`。
 - [ ] **Step 2:** 运行 `npx vitest run tests/unit/devices.test.ts tests/unit/version.test.ts tests/unit/format.test.ts`。Expected：FAIL。
@@ -259,7 +260,7 @@
     - core1 这一行显示 `10.144.144.1`，下方小字是网络名；
     - 点击这一行的任意位置，跳转到 `/#/devices/11111111-1111-4111-8111-111111111111`；
     - 用 override 加入一台不在任何网络中的设备：这一行显示「加入 home-central」，点击后发起 `POST /networks/<primary>/members`，请求体为 `{ device_ids: [<id>] }`；
-    - 版本为 2.6.4 的设备，显示「可更新」标签；
+    - fixture 中三台设备都是 2.6.4，没有人落后；用 override 再加入一台版本为 `2.7.1` 的设备后，三台 2.6.4 设备显示「可更新」标签，新加入的设备不显示；
     - 通过 ⋯ 菜单重命名时，发起 `PUT /machines/<id>/alias`，请求体为 `{ alias }`；删除时勾选「同时拉黑」，发起 `DELETE /machines/<id>?block=true`；
     - **Review Focus 1**：location 为 `null` 时，这一列显示「—」；country 为「本地网络」时显示「本地网络」；
     - **Review Focus 5**：别名设为 80 个字符并包含 emoji，在 390px 宽的视口下，`document.documentElement.scrollWidth <= 390`，名字元素的 `title` 属性等于完整的别名；
@@ -286,18 +287,20 @@
     mode: LinkMode; latencyMs: number | null; rxBytes: number | null; txBytes: number | null;
   }
   export function classifyPeers(i: { routes: NodeRouteInfo[]; peers: NodePeerInfo[];
-    members: CentralNetworkMember[]; temporaryPeers: TemporaryPeer[] }): PeerLink[]
+    members: CentralNetworkMember[]; temporaryPeers: TemporaryPeer[];
+    deviceNames: Record<string, string> }): PeerLink[]   // deviceNames: device_id → DeviceView.name
   export function pairStats(linksByDevice: Record<string, PeerLink[]>):
     { direct: number; relayed: number; rate: number | null }
   ```
   规则见 spec §6.4：
+  - 64 位计数器是 JSON 字符串，一律用 `Number()` 转换后再计算；`is_closed` 缺省视为未关闭。
   - 只要在 peers 中存在至少一条 `!is_closed` 的连接，就判定为 p2p。`tunnel` 取第一条连接的 `tunnel.tunnel_type`，转成小写，没有时为 `'unknown'`。延迟取所有打开的连接中最小的 `stats.latency_us / 1000`。rx 和 tx 是所有打开连接的总和。
   - 否则判定为 relay。`via` 是 `next_hop_peer_id` 对应路由解析出来的名字，解析不到时用 `#<id>`。延迟取 `path_latency`，单位以上游 `Status.vue` 的渲染方式为准，并对照 fixture `list-route-core1.json` 确认。
-  - 区分 kind：路由的 `ipv4_addr` 能和成员的 `memberIp` 对上，就是 member；否则 `hostname` 等于成员的 `hostname`，也是 member；`peer_id` 或 IP 能和 `temporaryPeers` 对上，就是 temporary；其余都是 infra。名字取值的顺序：成员的 `alias`、`hostname_override`、`hostname`，最后用路由里的 `hostname`。
+  - 区分 kind：路由的 `ipv4_addr` 能和成员的 `memberIp` 对上，就是 member；否则 `hostname` 等于成员的 `hostname`，也是 member；`peer_id` 或 IP 能和 `temporaryPeers` 对上，就是 temporary；其余都是 infra。名字取值的顺序：对 member，先取 `deviceNames[member.device_id]`（和设备列表显示的名字一致），再取成员的 `hostname`，最后用路由里的 `hostname`；对 temporary 和 infra，用路由里的 `hostname`。这样设了 `hostname_override` 的设备（fixture 中 core3 的覆盖名是 `lab-box`）在连接表里仍显示为它在设备列表中的名字。
   - `pairStats` 只统计 kind 为 member 的链接。设备对以排好序的 `[a, b]` 去重，任意一方报告了 p2p，这一对就算直连。`rate = direct / (direct + relayed)`，没有任何设备对时为 `null`。
 
 - [ ] **Step 1:** 写失败的测试（用 fixture 加上手工构造的数据）：
-  - `fixture: core1 sees core2 and core3 as members`：基于 `list-route-core1.json`、`list-peer-core1.json`、`members.json`，结果的 kind 都是 `member`，名字和 `members.json` 一致；
+  - `fixture: core1 sees core2 and core3 as members`：基于 `list-route-core1.json`、`list-peer-core1.json`、`members.json`，以及由 `machines.json` 得到的 `deviceNames`，结果的 kind 都是 `member`，名字分别是 `core2` 和 `core3`（core3 的路由主机名是 `lab-box`，靠 IP 对上成员）；mode 都是 `{ type: 'p2p', tunnel: 'tcp' }`；core3 链接的 `rxBytes` 等于 fixture 中对应连接 `rx_bytes` 字符串经 `Number()` 转换后的值，`latencyMs` 等于 `Number(latency_us) / 1000`（在测试里从 fixture 读出这些值再比较，不写死数字）；
   - `relay via next hop`：路由 `{ peer_id: 3, next_hop_peer_id: 2, path_latency: 40 }`，peers 里只有 2 → `mode` 为 `{ type: 'relay', via: <2 的名字> }`，`latencyMs === 40`；
   - `closed conns are not p2p`：peer 3 只有一条连接，且 `is_closed: true` → 判定为 relay；
   - `unknown peer is infra; temporary matched by peer_id`；
@@ -320,7 +323,7 @@
   - `CENTRAL_OWNED_FIELDS: readonly string[]` 包含：`instance_id`、`dhcp`、`dhcp_ipv4_cidr`、`dhcpv6`、`dhcp_ipv6_cidr`、`virtual_ipv4`、`network_length`、`hostname`、`network_name`、`network_secret`、`networking_method`、`public_server_url`、`peer_urls`、`peers`、`secure_mode`、`managed_credentials`、`acl`、`credential_file`（依据：上游 `central_network/compiler.rs` 中的 `apply_member_override`）。计划 6 的迁移向导也会使用这个常量；
   - `overrideState(config: Record<string, unknown> | null | undefined): 'default' | 'overridden'`：去掉 `CENTRAL_OWNED_FIELDS` 和 `proxy_cidrs` 之后，只要有任意字段的值不属于 `null`、`undefined`、`[]`、`''`，就返回 overridden；
   - `resetOverridePlan(config): { kind: 'delete' } | { kind: 'put'; config: { proxy_cidrs: string[] } }`：`proxy_cidrs` 不为空时返回 put，否则返回 delete；
-  - `useDeviceRuntime(deviceId: Ref<string>, networkId: Ref<string | null>, online: Ref<boolean>): { links: Ref<PeerLink[] | null>; error: Ref<string | null>; loading: Ref<boolean>; retry(): void }`：每 15 秒轮询一次。`online` 为 false 或 `networkId` 为空时，不发任何请求，`links` 保持为 `null`。
+  - `useDeviceRuntime(deviceId: Ref<string>, networkId: Ref<string | null>, online: Ref<boolean>): { links: Ref<PeerLink[] | null>; error: Ref<string | null>; loading: Ref<boolean>; retry(): void }`：每 15 秒轮询一次。调用 `classifyPeers` 时，`deviceNames` 由 `useInventory().devices` 构造。`online` 为 false 或 `networkId` 为空时，不发任何请求，`links` 保持为 `null`。
   - 页面路由参数：`machineId`，以及可选的 `networkId`（不传时使用设备的 `defaultNetworkId`）。
 
 - [ ] **Step 1:** 写失败的测试：
