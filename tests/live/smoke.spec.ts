@@ -1,5 +1,7 @@
 import { expect, request as pwRequest, test, type APIRequestContext } from '@playwright/test'
 
+import { LIVE_API } from './env'
+
 const CORE2 = '22222222-2222-4222-8222-222222222222'
 const CORE1 = '11111111-1111-4111-8111-111111111111'
 const FIXED_IP = '10.144.144.20'
@@ -27,50 +29,49 @@ test('live smoke: login, devices, connections, fixed IP round trip', async ({ pa
   await page.addInitScript(() => {
     try { localStorage.setItem('et.locale', 'zh-CN') } catch { /* ignore */ }
   })
-  {
-    // 1. login
-    await page.goto('/#/login')
-    await page.getByLabel('用户名').fill('admin')
-    await page.getByLabel('密码').fill('admin')
-    await page.getByRole('button', { name: '登录' }).click()
-    await expect(page).toHaveURL(/#\/devices$/)
+  // 1. login
+  await page.goto('/#/login')
+  await page.getByLabel('用户名').fill('admin')
+  await page.getByLabel('密码').fill('admin')
+  await page.getByRole('button', { name: '登录' }).click()
+  await expect(page).toHaveURL(/#\/devices$/)
 
-    // 2. device list
-    for (const name of ['core1', 'core2', 'core3']) {
-      const row = page.getByRole('row').filter({ has: page.getByTestId('device-name').getByText(name, { exact: true }) })
-      await expect(row).toHaveCount(1)
-      await expect(row.getByText(/^10\.144\.144\.\d+$/)).toBeVisible()
-    }
-
-    // 3. core1 detail: connections to core2 and core3
-    await page.getByTestId('device-name').getByText('core1', { exact: true }).click()
-    await expect(page).toHaveURL(new RegExp(`#/devices/${CORE1}`))
-    const conns = page.getByTestId('connections-card')
-    await expect(conns.getByText('core2', { exact: true })).toBeVisible()
-    await expect(conns.getByText('core3', { exact: true })).toBeVisible()
-    await page.screenshot({ path: testInfo.outputPath('live-detail.png'), fullPage: true })
-
-    // 4. core2: set fixed IP, verify via API
-    const net = await networkId(page.request)
-    expect((await core2Member(page.request, net)).virtual_ipv4).toBeNull()
-    await page.goto(`/#/devices/${CORE2}`)
-    const settings = page.getByTestId('settings-card')
-    await settings.getByTestId('setting-ip').getByRole('button', { name: '设为固定' }).click()
-    await settings.getByPlaceholder('10.144.144.9').fill(FIXED_IP)
-    await settings.getByTestId('setting-ip').getByRole('button', { name: '保存' }).click()
-    await expect.poll(async () => (await core2Member(page.request, net)).virtual_ipv4).toBe(FIXED_IP)
-    await expect(settings.getByTestId('setting-ip')).toContainText(`固定 · ${FIXED_IP}`)
-
-    // restore via the UI
-    await settings.getByTestId('setting-ip').getByRole('button', { name: '改回自动' }).click()
-    await expect.poll(async () => (await core2Member(page.request, net)).virtual_ipv4).toBeNull()
+  // 2. device list
+  for (const name of ['core1', 'core2', 'core3']) {
+    const row = page.getByRole('row').filter({ has: page.getByTestId('device-name').getByText(name, { exact: true }) })
+    await expect(row).toHaveCount(1)
+    await expect(row.getByText(/^10\.144\.144\.\d+$/)).toBeVisible()
   }
+
+  // 3. core1 detail: connections to core2 and core3
+  await page.getByTestId('device-name').getByText('core1', { exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`#/devices/${CORE1}`))
+  const conns = page.getByTestId('connections-card')
+  await expect(conns.getByText('core2', { exact: true })).toBeVisible()
+  await expect(conns.getByText('core3', { exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('live-detail.png'), fullPage: true })
+
+  // 4. core2: set fixed IP, verify via API
+  const net = await networkId(page.request)
+  expect((await core2Member(page.request, net)).virtual_ipv4).toBeNull()
+  await page.goto(`/#/devices/${CORE2}`)
+  const settings = page.getByTestId('settings-card')
+  await settings.getByTestId('setting-ip').getByRole('button', { name: '设为固定' }).click()
+  await settings.getByPlaceholder('10.144.144.9').fill(FIXED_IP)
+  await settings.getByTestId('setting-ip').getByRole('button', { name: '保存' }).click()
+  await expect.poll(async () => (await core2Member(page.request, net)).virtual_ipv4).toBe(FIXED_IP)
+  await expect(settings.getByTestId('setting-ip')).toContainText(`固定 · ${FIXED_IP}`)
+
+  // restore via the UI
+  await settings.getByTestId('setting-ip').getByRole('button', { name: '改回自动' }).click()
+  await expect.poll(async () => (await core2Member(page.request, net)).virtual_ipv4).toBeNull()
 })
 
 // Independent safety net: own API context + explicit login, so it works even after a page crash or
 // test timeout. Cleanup errors are logged and never replace the test's own failure.
+// Only resets core2: the test asserts core2 starts on automatic IP and is the only member it changes.
 test.afterEach(async ({}, testInfo) => {
-  const api = await pwRequest.newContext({ baseURL: 'http://localhost:11211' })
+  const api = await pwRequest.newContext({ baseURL: LIVE_API })
   try {
     const login = await api.post('/api/v1/auth/login', {
       data: { username: 'admin', password: '21232f297a57a5a743894a0e4a801fc3' }, // MD5('admin'), like the app
