@@ -33,3 +33,24 @@ ET_WEB_TAG=v2.7.1 docker compose -f testenv/docker-compose.yml up -d
 - 旧前端（内嵌）：http://localhost:11211/
 - API：`http://localhost:11211/api/v1/...`，设备登记端口 `22020/udp`
 - 固定 machine id：core1 `11111111-1111-4111-8111-111111111111`，core2 `22222222-2222-4222-8222-222222222222`，core3 `33333333-3333-4333-8333-333333333333`
+
+## 升级、关卡与回滚
+
+升级 web 并跑可行性关卡（只动 web，core1..3 不重启）：
+
+```sh
+bash testenv/upgrade.sh v2.6.4 v2.7.1   # 停止 web → 把 testenv/data/ 整个复制到 testenv/backups/<时间戳>/ → 用 v2.7.1 启动 web，最后打印备份路径
+node testenv/gate-check.ts              # 报告写到 testenv/reports/gate-<日期>.md，第一行 GATE: PASS / GATE: FAIL；通过时退出码 0
+```
+
+回滚：web v2.6.4 打不开 v2.7.1 迁移过的数据库（启动即 panic：`Migration file of version '...' is missing`），所以必须恢复升级前的备份，路径就是升级时打印的那个：
+
+```sh
+bash testenv/upgrade.sh v2.7.1 v2.6.4                                  # 切回 v2.6.4（会先把 v2.7.1 的数据再备份一份）
+docker compose -f testenv/docker-compose.yml stop web                  # 先停止 web
+rm -rf testenv/data && cp -a testenv/backups/<时间戳> testenv/data       # 再把备份复制回 testenv/data/（整个目录替换）
+ET_WEB_TAG=v2.6.4 docker compose -f testenv/docker-compose.yml up -d web
+node testenv/seed-legacy.ts                                            # 期望 skipped 4 existing / 3 running
+```
+
+要整个目录替换，不要把备份覆盖复制到旧目录上：`et.db-wal`、`et.db-shm` 必须和 `et.db` 是同一份，混入 v2.7.1 留下的 WAL 文件会损坏数据库。
