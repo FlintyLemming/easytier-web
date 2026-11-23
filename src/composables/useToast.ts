@@ -8,8 +8,11 @@ export interface ToastItem {
 
 export const toasts = reactive<ToastItem[]>([])
 let seq = 0
+const timers = new Map<number, ReturnType<typeof setTimeout>>()
 
 export function dismissToast(id: number) {
+  clearTimeout(timers.get(id))
+  timers.delete(id)
   const i = toasts.findIndex((t) => t.id === id)
   if (i >= 0) toasts.splice(i, 1)
 }
@@ -17,7 +20,7 @@ export function dismissToast(id: number) {
 function push(kind: ToastItem['kind'], message: string) {
   const id = ++seq
   toasts.push({ id, kind, message })
-  setTimeout(() => dismissToast(id), kind === 'error' ? 5000 : 3000)
+  timers.set(id, setTimeout(() => dismissToast(id), kind === 'error' ? 5000 : 3000))
 }
 
 export function useToast() {

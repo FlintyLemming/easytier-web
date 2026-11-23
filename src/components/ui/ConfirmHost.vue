@@ -1,30 +1,27 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { confirmQueue } from '../../composables/useConfirm'
+import { confirmQueue, settleConfirm } from '../../composables/useConfirm'
 import UiButton from './UiButton.vue'
 import UiDialog from './UiDialog.vue'
 
-const current = computed(() => confirmQueue[0])
-
-function settle(ok: boolean) {
-  const req = confirmQueue.shift()
-  req?.resolve(ok)
-}
+// Only the queue head is rendered; handlers capture that request's own id so a
+// late event can never settle a different request.
+const head = computed(() => confirmQueue.slice(0, 1))
 </script>
 
 <template>
   <UiDialog
-    v-if="current"
-    :key="confirmQueue.length + current.title"
+    v-for="req in head"
+    :key="req.id"
     :open="true"
-    :title="current.title"
-    @update:open="(v: boolean) => !v && settle(false)"
+    :title="req.title"
+    @update:open="(v: boolean) => !v && settleConfirm(req.id, false)"
   >
-    <p v-if="current.body">{{ current.body }}</p>
+    <p v-if="req.body">{{ req.body }}</p>
     <template #footer>
-      <UiButton variant="secondary" @click="settle(false)">{{ current.cancelLabel ?? 'Cancel' }}</UiButton>
-      <UiButton :variant="current.danger ? 'danger' : 'primary'" @click="settle(true)">
-        {{ current.confirmLabel ?? 'Confirm' }}
+      <UiButton variant="secondary" @click="settleConfirm(req.id, false)">{{ req.cancelLabel ?? 'Cancel' }}</UiButton>
+      <UiButton :variant="req.danger ? 'danger' : 'primary'" @click="settleConfirm(req.id, true)">
+        {{ req.confirmLabel ?? 'Confirm' }}
       </UiButton>
     </template>
   </UiDialog>

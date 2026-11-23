@@ -34,7 +34,7 @@ defineProps<{ items: UiMenuItem[] }>()
           <DropdownMenuItem
             v-else
             :disabled="item.disabled"
-            class="flex cursor-pointer items-center justify-between gap-4 rounded-control px-3 py-2 text-[14px] outline-none data-[highlighted]:bg-canvas data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50"
+            class="flex cursor-pointer items-center justify-between gap-4 rounded-control px-3 py-2 text-[14px] outline-none data-[highlighted]:bg-canvas data-[highlighted]:outline data-[highlighted]:outline-2 data-[highlighted]:-outline-offset-2 data-[highlighted]:outline-ink data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50"
             :class="item.danger ? 'text-error' : 'text-ink'"
             @select="item.onSelect?.()"
           >

@@ -14,7 +14,7 @@ const id = useId()
       v-model="model"
       :placeholder="placeholder"
       :aria-invalid="error ? 'true' : undefined"
-      class="h-10 w-full rounded-control border bg-surface-card px-3 text-[14px] text-ink placeholder:text-muted-soft outline-none focus:border-ink"
+      class="h-10 w-full rounded-control border bg-surface-card px-3 text-[14px] text-ink placeholder:text-muted-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink focus:border-ink"
       :class="[error ? 'border-error' : 'border-hairline-strong', mono ? 'font-mono' : 'font-sans']"
     />
     <p v-if="error" class="text-[12px] text-error">{{ error }}</p>

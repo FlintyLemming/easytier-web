@@ -23,7 +23,7 @@ onBeforeUnmount(() => clearTimeout(timer))
   <button
     type="button"
     :aria-label="label ?? 'Copy'"
-    class="inline-flex h-6 w-6 items-center justify-center rounded-control text-muted hover:text-ink hover:bg-surface-strong cursor-pointer"
+    class="inline-flex h-6 w-6 items-center justify-center rounded-control text-muted hover:text-ink hover:bg-surface-strong cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
     @click="copy"
   >
     <svg

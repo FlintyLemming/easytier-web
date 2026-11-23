@@ -32,7 +32,7 @@ const sizeClass = computed(() => (props.size === 'sm' ? 'h-[30px] px-3' : 'h-10 
     :type="type"
     :disabled="disabled || loading"
     :aria-busy="loading ? 'true' : undefined"
-    class="inline-flex items-center justify-center gap-2 rounded-control text-[14px] font-medium whitespace-nowrap cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+    class="inline-flex items-center justify-center gap-2 rounded-control text-[14px] font-medium whitespace-nowrap cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50 disabled:cursor-not-allowed"
     :class="[variantClass, sizeClass]"
   >
     <span
