@@ -4,9 +4,7 @@ import ToastHost from './components/ui/ToastHost.vue'
 </script>
 
 <template>
-  <main class="p-8">
-    <h1>EasyTier Console</h1>
-  </main>
+  <RouterView />
   <ToastHost />
   <ConfirmHost />
 </template>

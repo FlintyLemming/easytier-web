@@ -6,5 +6,8 @@ import '@fontsource/jetbrains-mono/500.css'
 import './styles/tokens.css'
 import './styles/base.css'
 import App from './App.vue'
+import { i18n } from './i18n'
+import { router } from './router'
 
-createApp(App).use(createPinia()).mount('#app')
+// Pinia first: the router guard uses stores during the initial navigation.
+createApp(App).use(createPinia()).use(i18n).use(router).mount('#app')

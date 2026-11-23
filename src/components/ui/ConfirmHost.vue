@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { confirmQueue, settleConfirm } from '../../composables/useConfirm'
+import { t } from '../../i18n'
 import UiButton from './UiButton.vue'
 import UiDialog from './UiDialog.vue'
 
@@ -19,9 +20,9 @@ const head = computed(() => confirmQueue.slice(0, 1))
   >
     <p v-if="req.body">{{ req.body }}</p>
     <template #footer>
-      <UiButton variant="secondary" @click="settleConfirm(req.id, false)">{{ req.cancelLabel ?? 'Cancel' }}</UiButton>
+      <UiButton variant="secondary" @click="settleConfirm(req.id, false)">{{ req.cancelLabel ?? t('common.cancel') }}</UiButton>
       <UiButton :variant="req.danger ? 'danger' : 'primary'" @click="settleConfirm(req.id, true)">
-        {{ req.confirmLabel ?? 'Confirm' }}
+        {{ req.confirmLabel ?? t('common.confirm') }}
       </UiButton>
     </template>
   </UiDialog>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useId } from 'vue'
 
-defineProps<{ label?: string; error?: string; mono?: boolean; placeholder?: string }>()
+withDefaults(defineProps<{ label?: string; error?: string; mono?: boolean; placeholder?: string; type?: string; autocomplete?: string }>(), { type: 'text' })
 const model = defineModel<string>({ default: '' })
 const id = useId()
 </script>
@@ -12,6 +12,8 @@ const id = useId()
     <input
       :id="id"
       v-model="model"
+      :type="type"
+      :autocomplete="autocomplete"
       :placeholder="placeholder"
       :aria-invalid="error ? 'true' : undefined"
       class="h-10 w-full rounded-control border bg-surface-card px-3 text-[14px] text-ink placeholder:text-muted-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink focus:border-ink"
