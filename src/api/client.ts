@@ -15,6 +15,9 @@ import type {
   TemporaryPeer,
 } from './types'
 
+/** Every interpolated path segment goes through this (ids may contain `/`, spaces, …). */
+const seg = (s: string) => encodeURIComponent(s)
+
 // --- auth ---
 
 export async function login(username: string, password: string): Promise<void> {
@@ -80,11 +83,11 @@ export async function listMachines(): Promise<RawMachine[]> {
 }
 
 export async function deleteMachine(id: string, block: boolean): Promise<void> {
-  await request('DELETE', `/machines/${id}`, block ? { query: { block: true } } : undefined)
+  await request('DELETE', `/machines/${seg(id)}`, block ? { query: { block: true } } : undefined)
 }
 
 export async function setMachineAlias(id: string, alias: string): Promise<void> {
-  await request('PUT', `/machines/${id}/alias`, { body: { alias } })
+  await request('PUT', `/machines/${seg(id)}/alias`, { body: { alias } })
 }
 
 export async function listBlockedDevices(): Promise<BlockedDevice[]> {
@@ -93,7 +96,7 @@ export async function listBlockedDevices(): Promise<BlockedDevice[]> {
 }
 
 export async function unblockDevice(id: string): Promise<void> {
-  await request('DELETE', `/blocked-devices/${id}`)
+  await request('DELETE', `/blocked-devices/${seg(id)}`)
 }
 
 // --- networks and members ---
@@ -108,13 +111,13 @@ export async function listMembers(
 ): Promise<{ members: CentralNetworkMember[]; temporary_peers: TemporaryPeer[] }> {
   const r = await request<{ members?: CentralNetworkMember[]; temporary_peers?: TemporaryPeer[] }>(
     'GET',
-    `/networks/${networkId}/members`,
+    `/networks/${seg(networkId)}/members`,
   )
   return { members: r?.members ?? [], temporary_peers: r?.temporary_peers ?? [] }
 }
 
 export async function addMembers(networkId: string, deviceIds: string[]): Promise<void> {
-  await request('POST', `/networks/${networkId}/members`, {
+  await request('POST', `/networks/${seg(networkId)}/members`, {
     body: { device_ids: deviceIds, temporary: false },
   })
 }
@@ -124,23 +127,23 @@ export function updateMember(
   deviceId: string,
   patch: MemberPatch,
 ): Promise<CentralNetworkMember> {
-  return request('PATCH', `/networks/${networkId}/members/${deviceId}`, { body: patch })
+  return request('PATCH', `/networks/${seg(networkId)}/members/${seg(deviceId)}`, { body: patch })
 }
 
 export async function removeMember(networkId: string, deviceId: string): Promise<void> {
-  await request('DELETE', `/networks/${networkId}/members/${deviceId}`)
+  await request('DELETE', `/networks/${seg(networkId)}/members/${seg(deviceId)}`)
 }
 
 export function getMemberConfig(networkId: string, deviceId: string): Promise<Record<string, unknown>> {
-  return request('GET', `/networks/${networkId}/members/${deviceId}/config`)
+  return request('GET', `/networks/${seg(networkId)}/members/${seg(deviceId)}/config`)
 }
 
 export async function setMemberConfig(networkId: string, deviceId: string, config: object): Promise<void> {
-  await request('PUT', `/networks/${networkId}/members/${deviceId}/config`, { body: { config } })
+  await request('PUT', `/networks/${seg(networkId)}/members/${seg(deviceId)}/config`, { body: { config } })
 }
 
 export async function clearMemberConfig(networkId: string, deviceId: string): Promise<void> {
-  await request('DELETE', `/networks/${networkId}/members/${deviceId}/config`)
+  await request('DELETE', `/networks/${seg(networkId)}/members/${seg(deviceId)}/config`)
 }
 
 // --- proxy-rpc ---
@@ -165,13 +168,31 @@ function releaseRpcSlot(): void {
   else rpcActive--
 }
 
+/** A proxy-rpc still unanswered after this long is aborted so it frees its slot. */
+export const RPC_TIMEOUT_MS = 8_000
+
 export async function proxyRpc<T>(machineId: string, service: string, method: string, payload: unknown): Promise<T> {
   await acquireRpcSlot()
+  // The clock starts once the call holds a slot (queue time does not count). The race guarantees the
+  // slot is freed on time even if the transport ignores the abort signal.
+  const ctrl = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      ctrl.abort()
+      reject(new ApiError(0, undefined, 'timeout'))
+    }, RPC_TIMEOUT_MS)
+  })
   try {
-    return await request<T>('POST', `/machines/${machineId}/proxy-rpc`, {
-      body: { service_name: service, method_name: method, payload },
-    })
+    return await Promise.race([
+      request<T>('POST', `/machines/${seg(machineId)}/proxy-rpc`, {
+        body: { service_name: service, method_name: method, payload },
+        signal: ctrl.signal,
+      }),
+      timeout,
+    ])
   } finally {
+    clearTimeout(timer)
     releaseRpcSlot()
   }
 }

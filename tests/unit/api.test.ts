@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { strToUuid } from '../../src/lib/uuid'
 import { apiUrl, onUnauthorized, ApiError } from '../../src/api/http'
-import { login, nodeRoutes, deleteMachine, nodeInfo, logout, checkLogin, proxyRpc } from '../../src/api/client'
+import {
+  login, nodeRoutes, deleteMachine, nodeInfo, logout, checkLogin, proxyRpc, RPC_TIMEOUT_MS,
+  setMachineAlias, unblockDevice, listMembers, updateMember, getMemberConfig,
+} from '../../src/api/client'
 
 interface Call { url: string; init: RequestInit }
 let calls: Call[]
@@ -120,5 +123,85 @@ describe('api client', () => {
     expect(results.every((r) => r.status === 'rejected')).toBe(true)
     stub(() => json({ ok: true }))
     await expect(proxyRpc('m', 's', 'x', {})).resolves.toEqual({ ok: true })
+  })
+
+  it('a hung proxy-rpc times out after 8 s, frees its slot, and the next queued call runs', async () => {
+    vi.useFakeTimers()
+    try {
+      calls = []
+      // Never resolves and ignores the abort signal: the timeout alone must free the slot.
+      vi.stubGlobal('fetch', vi.fn((url: string, init: RequestInit) => {
+        calls.push({ url, init })
+        return new Promise<Response>(() => {})
+      }))
+      const settled: PromiseSettledResult<unknown>[] = []
+      const ps = Array.from({ length: 5 }, (_, i) =>
+        proxyRpc(`m${i}`, 's', 'x', {}).then(
+          (v) => { settled[i] = { status: 'fulfilled', value: v } },
+          (e) => { settled[i] = { status: 'rejected', reason: e } },
+        ),
+      )
+      await vi.advanceTimersByTimeAsync(0)
+      expect(calls).toHaveLength(4)
+      expect(calls.every((c) => c.init.signal instanceof AbortSignal && !c.init.signal.aborted)).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(RPC_TIMEOUT_MS - 1)
+      expect(settled.filter(Boolean)).toHaveLength(0)
+      expect(calls).toHaveLength(4)
+
+      await vi.advanceTimersByTimeAsync(1)
+      for (let i = 0; i < 4; i++) {
+        const r = settled[i] as PromiseRejectedResult
+        expect(r.status).toBe('rejected')
+        expect(r.reason).toBeInstanceOf(ApiError)
+        expect(r.reason.status).toBe(0)
+        expect(r.reason.message).toBe('timeout')
+        expect(calls[i]!.init.signal!.aborted).toBe(true)
+      }
+      // The queued fifth call got a freed slot.
+      expect(calls).toHaveLength(5)
+      expect(calls[4]!.url.endsWith('/machines/m4/proxy-rpc')).toBe(true)
+
+      // Drain it so the module-level limiter is clean for other tests.
+      await vi.advanceTimersByTimeAsync(RPC_TIMEOUT_MS)
+      await Promise.all(ps)
+      expect(settled).toHaveLength(5)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a proxy-rpc answered in time clears its timeout timer', async () => {
+    vi.useFakeTimers()
+    try {
+      stub(() => json({ ok: true }))
+      await expect(proxyRpc('m', 's', 'x', {})).resolves.toEqual({ ok: true })
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('encodes every interpolated path segment', async () => {
+    stub(() => new Response(null, { status: 204 }))
+    const odd = 'a/b c'
+    const enc = 'a%2Fb%20c'
+    await deleteMachine(odd, false)
+    await setMachineAlias(odd, 'x')
+    await unblockDevice(odd)
+    await listMembers(odd)
+    await updateMember(odd, odd, { hostname_override: 'h' })
+    await getMemberConfig(odd, odd)
+    await proxyRpc(odd, 's', 'x', {})
+    const paths = calls.map((c) => c.url.replace(/^.*\/api\/v1/, ''))
+    expect(paths).toEqual([
+      `/machines/${enc}`,
+      `/machines/${enc}/alias`,
+      `/blocked-devices/${enc}`,
+      `/networks/${enc}/members`,
+      `/networks/${enc}/members/${enc}`,
+      `/networks/${enc}/members/${enc}/config`,
+      `/machines/${enc}/proxy-rpc`,
+    ])
   })
 })

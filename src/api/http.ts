@@ -26,7 +26,7 @@ export function apiUrl(path: string): string {
 export async function request<T>(
   method: Method,
   path: string,
-  opts: { body?: unknown; query?: Record<string, string | boolean> } = {},
+  opts: { body?: unknown; query?: Record<string, string | boolean>; signal?: AbortSignal } = {},
 ): Promise<T> {
   let url = apiUrl(path)
   if (opts.query) {
@@ -36,6 +36,7 @@ export async function request<T>(
     if (s) url += '?' + s
   }
   const init: RequestInit = { method, credentials: 'include' }
+  if (opts.signal) init.signal = opts.signal
   if (opts.body !== undefined) {
     init.headers = { 'Content-Type': 'application/json' }
     init.body = JSON.stringify(opts.body)
