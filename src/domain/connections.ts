@@ -2,18 +2,35 @@ import type { CentralNetworkMember, NodePeerInfo, NodeRouteInfo, TemporaryPeer }
 import { memberIp } from './devices'
 import { ipv4FromU32 } from './format'
 
-export type LinkMode = { type: 'p2p'; tunnel: string } | { type: 'relay'; via: string }
+/** How an infrastructure node is labelled (spec §6.4): 「网关」 in Gateway networks, else 「服务器」. */
+export type InfraLabel = 'gateway' | 'server'
+
+/**
+ * `via` is the next hop's resolved name; `viaKind` says what that hop is, so the UI can render
+ * 「中继 · 经 网关/服务器」 for infrastructure hops (`viaInfra`, present only when `viaKind` is
+ * `'infra'`). `'unknown'`: the hop is absent from the route table (`via` is then `#<peer id>`).
+ */
+export type LinkMode =
+  | { type: 'p2p'; tunnel: string }
+  | { type: 'relay'; via: string; viaKind: PeerLink['kind'] | 'unknown'; viaInfra?: InfraLabel }
 
 export interface PeerLink {
   peerId: number
   name: string
   ip: string | null
   kind: 'member' | 'temporary' | 'infra'
+  /** Present only when `kind === 'infra'`. */
+  infra?: InfraLabel
   deviceId: string | null
   mode: LinkMode
   latencyMs: number | null
   rxBytes: number | null
   txBytes: number | null
+}
+
+/** `networking_method` of the network the links belong to → infra label. */
+export function infraLabelFor(networkingMethod: string | null | undefined): InfraLabel {
+  return networkingMethod === 'Gateway' ? 'gateway' : 'server'
 }
 
 function num(x: unknown): number | null {
@@ -31,6 +48,7 @@ interface Identity {
   name: string
   ip: string | null
   kind: PeerLink['kind']
+  infra?: InfraLabel
   deviceId: string | null
 }
 
@@ -40,7 +58,10 @@ export function classifyPeers(i: {
   members: CentralNetworkMember[]
   temporaryPeers: TemporaryPeer[]
   deviceNames: Record<string, string>
+  /** Label for infrastructure nodes; default `'server'` (PublicServer / Manual networks). */
+  infraLabel?: InfraLabel
 }): PeerLink[] {
+  const infraLabel = i.infraLabel ?? 'server'
   const memberByIp = new Map<string, CentralNetworkMember>()
   const memberByHost = new Map<string, CentralNetworkMember>()
   for (const m of i.members) {
@@ -72,7 +93,7 @@ export function classifyPeers(i: {
     if (t) {
       return { name: r.hostname, ip: ip ?? t.ipv4?.split('/')[0] ?? null, kind: 'temporary', deviceId: null }
     }
-    return { name: r.hostname, ip, kind: 'infra', deviceId: null }
+    return { name: r.hostname, ip, kind: 'infra', infra: infraLabel, deviceId: null }
   }
 
   const identities = new Map<number, Identity>()
@@ -98,7 +119,9 @@ export function classifyPeers(i: {
       }
       latencyMs = minLat === null ? null : minLat / 1000
     } else {
-      mode = { type: 'relay', via: identities.get(r.next_hop_peer_id)?.name ?? `#${r.next_hop_peer_id}` }
+      const hop = identities.get(r.next_hop_peer_id)
+      mode = { type: 'relay', via: hop?.name ?? `#${r.next_hop_peer_id}`, viaKind: hop?.kind ?? 'unknown' }
+      if (hop?.infra) mode.viaInfra = hop.infra
       latencyMs = num(r.path_latency) // already milliseconds
     }
     return { peerId: r.peer_id, ...id, mode, latencyMs, rxBytes, txBytes }

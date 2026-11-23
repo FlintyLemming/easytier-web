@@ -21,9 +21,12 @@ const meta = computed(() => {
 })
 
 function modeLabel(l: PeerLink): string {
-  return l.mode.type === 'p2p'
-    ? t('detail.connections.p2p', { tunnel: l.mode.tunnel.toUpperCase() })
-    : t('detail.connections.relay', { via: l.mode.via })
+  if (l.mode.type === 'p2p') return t('detail.connections.p2p', { tunnel: l.mode.tunnel.toUpperCase() })
+  // Spec §6.4: relays through infrastructure read 「中继 · 经 网关/服务器」, not the node's hostname.
+  if (l.mode.viaKind === 'infra') {
+    return t('detail.connections.relay', { via: t(`detail.connections.infra.${l.mode.viaInfra ?? 'server'}`) })
+  }
+  return t('detail.connections.relay', { via: l.mode.via })
 }
 
 function latency(ms: number | null): string {
@@ -38,7 +41,11 @@ function traffic(l: PeerLink): string {
 }
 
 const badge = (l: PeerLink) =>
-  l.kind === 'temporary' ? t('detail.connections.temporary') : l.kind === 'infra' ? t('detail.connections.infra') : null
+  l.kind === 'temporary'
+    ? t('detail.connections.temporary')
+    : l.kind === 'infra'
+      ? t(`detail.connections.infra.${l.infra ?? 'server'}`)
+      : null
 </script>
 
 <template>

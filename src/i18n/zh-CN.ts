@@ -160,7 +160,7 @@ export default {
       p2p: 'P2P · {tunnel}',
       relay: '中继 · 经 {via}',
       temporary: '临时',
-      infra: '网关',
+      infra: { gateway: '网关', server: '服务器' },
       offline: '设备离线，恢复连接后显示',
       empty: '此网络中暂时没有其他节点',
       error: '无法获取连接信息：{message}',

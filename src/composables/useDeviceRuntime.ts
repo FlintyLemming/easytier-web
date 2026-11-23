@@ -1,7 +1,7 @@
 import { computed, onScopeDispose, ref, shallowRef, watch, type Ref } from 'vue'
 import { nodePeers, nodeRoutes } from '../api/client'
 import type { NodePeerInfo, NodeRouteInfo } from '../api/types'
-import { classifyPeers, type PeerLink } from '../domain/connections'
+import { classifyPeers, infraLabelFor, type PeerLink } from '../domain/connections'
 import { useInventory } from '../stores/inventory'
 import { usePolling } from './usePolling'
 
@@ -38,6 +38,7 @@ export function useDeviceRuntime(
       members: inventory.membersByNetwork[r.networkId] ?? [],
       temporaryPeers: inventory.temporaryByNetwork[r.networkId] ?? [],
       deviceNames,
+      infraLabel: infraLabelFor(inventory.networks.find((n) => n.network_id === r.networkId)?.networking_method),
     })
   })
 

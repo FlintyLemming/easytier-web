@@ -160,7 +160,7 @@ export default {
       p2p: 'P2P · {tunnel}',
       relay: 'Relay · via {via}',
       temporary: 'Temporary',
-      infra: 'Gateway',
+      infra: { gateway: 'Gateway', server: 'Server' },
       offline: 'Device is offline. Connections appear once it is back.',
       empty: 'No other nodes in this network yet',
       error: 'Could not load connections: {message}',

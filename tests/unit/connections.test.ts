@@ -4,7 +4,7 @@ import peersFx from '../fixtures/v2.7.1/list-peer-core1.json'
 import membersFx from '../fixtures/v2.7.1/members.json'
 import machinesFx from '../fixtures/v2.7.1/machines.json'
 import type { CentralNetworkMember, NodePeerInfo, NodeRouteInfo, TemporaryPeer } from '../../src/api/types'
-import { classifyPeers, pairStats, type PeerLink } from '../../src/domain/connections'
+import { classifyPeers, infraLabelFor, pairStats, type PeerLink } from '../../src/domain/connections'
 import { uuidToStr } from '../../src/lib/uuid'
 
 const routes = routesFx.routes as unknown as NodeRouteInfo[]
@@ -41,14 +41,14 @@ describe('classifyPeers', () => {
       peers: [{ peer_id: 2, conns: [conn()] }],
     })
     const l = links.find(x => x.peerId === 3)!
-    expect(l.mode).toEqual({ type: 'relay', via: 'two' })
+    expect(l.mode).toEqual({ type: 'relay', via: 'two', viaKind: 'infra', viaInfra: 'server' })
     expect(l.latencyMs).toBe(40)
     expect(l.rxBytes).toBeNull()
   })
 
   it('relay via falls back to #id', () => {
     const [l] = classifyPeers({ ...base, routes: [route(3, { next_hop_peer_id: 9 })], peers: [] })
-    expect(l!.mode).toEqual({ type: 'relay', via: '#9' })
+    expect(l!.mode).toEqual({ type: 'relay', via: '#9', viaKind: 'unknown' })
   })
 
   it('closed conns are not p2p', () => {
@@ -115,9 +115,56 @@ describe('classifyPeers', () => {
   })
 })
 
+describe('infra labels and relay hop kinds (spec §6.4)', () => {
+  const temp: TemporaryPeer = { peer_id: 6, credential_id: null, credential_expiry_unix: null, hostname: 'guest', ipv4: '10.0.0.6/24', version: null }
+  const member = { ...members[0]!, device_id: 'dev-m', hostname: 'mbox', runtime_virtual_ipv4: '10.0.0.2/24' } as CentralNetworkMember
+  const input = {
+    members: [member],
+    temporaryPeers: [temp],
+    deviceNames: { 'dev-m': 'Member Box' },
+    routes: [
+      route(2, { hostname: 'mbox', ipv4_addr: { address: { addr: (10 << 24) + 2 } } }), // member, direct
+      route(5, { hostname: 'gw.example.net' }), // infra, direct
+      route(6, { hostname: 'guest' }), // temporary, direct
+      route(10, { next_hop_peer_id: 5 }), // relayed via infra
+      route(11, { next_hop_peer_id: 2 }), // relayed via member
+      route(12, { next_hop_peer_id: 6 }), // relayed via temporary
+    ],
+    peers: [
+      { peer_id: 2, conns: [conn()] },
+      { peer_id: 5, conns: [conn()] },
+      { peer_id: 6, conns: [conn()] },
+    ],
+  }
+
+  it('infra nodes default to server; gateway when asked; non-infra links carry no label', () => {
+    const def = classifyPeers(input)
+    expect(def.find((l) => l.peerId === 5)).toMatchObject({ kind: 'infra', infra: 'server', name: 'gw.example.net' })
+    const gw = classifyPeers({ ...input, infraLabel: 'gateway' })
+    expect(gw.find((l) => l.peerId === 5)).toMatchObject({ kind: 'infra', infra: 'gateway' })
+    for (const l of gw.filter((x) => x.kind !== 'infra')) expect(l.infra).toBeUndefined()
+  })
+
+  it('relay links say what their next hop is', () => {
+    const links = classifyPeers({ ...input, infraLabel: 'gateway' })
+    const mode = (id: number) => links.find((l) => l.peerId === id)!.mode
+    expect(mode(10)).toEqual({ type: 'relay', via: 'gw.example.net', viaKind: 'infra', viaInfra: 'gateway' })
+    expect(mode(11)).toEqual({ type: 'relay', via: 'Member Box', viaKind: 'member' })
+    expect(mode(12)).toEqual({ type: 'relay', via: 'guest', viaKind: 'temporary' })
+    expect(classifyPeers(input).find((l) => l.peerId === 10)!.mode).toMatchObject({ viaKind: 'infra', viaInfra: 'server' })
+  })
+
+  it('infraLabelFor maps networking_method', () => {
+    expect(infraLabelFor('Gateway')).toBe('gateway')
+    expect(infraLabelFor('PublicServer')).toBe('server')
+    expect(infraLabelFor('Manual')).toBe('server')
+    expect(infraLabelFor(undefined)).toBe('server')
+  })
+})
+
 const L = (deviceId: string | null, p2p: boolean, kind: PeerLink['kind'] = 'member'): PeerLink => ({
   peerId: 1, name: 'n', ip: null, kind, deviceId,
-  mode: p2p ? { type: 'p2p', tunnel: 'tcp' } : { type: 'relay', via: 'x' },
+  mode: p2p ? { type: 'p2p', tunnel: 'tcp' } : { type: 'relay', via: 'x', viaKind: 'member' },
   latencyMs: null, rxBytes: null, txBytes: null,
 })
 

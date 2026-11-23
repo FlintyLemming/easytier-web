@@ -183,4 +183,16 @@ describe('useDeviceRuntime', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(rt.links.value).toBe(afterSwitch)
   })
+
+  it("labels infra nodes from the network's networking_method (Gateway → gateway, else server)", async () => {
+    const infraRoute = { ...routesFx.routes[0]!, peer_id: 4242, hostname: 'et-web-gateway', ipv4_addr: null, next_hop_peer_id: 4242 }
+    m.nodeRoutes.mockResolvedValue([...routesFx.routes, infraRoute] as never)
+    const { rt } = setup()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(rt.links.value?.find((l) => l.peerId === 4242)).toMatchObject({ kind: 'infra', infra: 'server' })
+    // The inventory says the network is a Gateway network now; the computed links follow.
+    useInventory().networks = [{ ...networksFx.networks[0]!, networking_method: 'Gateway' }]
+    await nextTick()
+    expect(rt.links.value?.find((l) => l.peerId === 4242)).toMatchObject({ kind: 'infra', infra: 'gateway' })
+  })
 })

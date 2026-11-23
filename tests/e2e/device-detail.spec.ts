@@ -146,6 +146,48 @@ test('3: connections table lists core2 and core3 with mode labels', async ({ pag
   await expect(page.getByText('2 个直连 · 0 个中继 · 每 15 秒刷新')).toBeVisible()
 })
 
+/** core1's routes plus an infra node (peer 7000, no member IP) and a peer relayed through it. */
+function routesWithInfra(): Overrides {
+  return {
+    'POST /machines/*/proxy-rpc': (req: Request) => {
+      const name = (req.postDataJSON() as { method_name: string }).method_name
+      if (name === 'list_route') {
+        const r = fixture('list-route-core1.json')
+        const tpl = r.routes[0]
+        r.routes.push(
+          { ...tpl, peer_id: 7000, next_hop_peer_id: 7000, hostname: 'relay.example.net', ipv4_addr: null, proxy_cidrs: [] },
+          { ...tpl, peer_id: 7001, next_hop_peer_id: 7000, hostname: 'far-node', ipv4_addr: null, proxy_cidrs: [], path_latency: 42 },
+        )
+        return r
+      }
+      return RPC[name] ? fixture(RPC[name]) : {}
+    },
+  }
+}
+
+test('3b: infra nodes read 服务器 in a Manual network; relays through them read 中继 · 经 服务器', async ({ page }) => {
+  await open(page, CORE1, routesWithInfra())
+  const table = page.getByRole('table', { name: '连接' })
+  const infra = table.locator('tbody tr').filter({ hasText: 'relay.example.net' })
+  await expect(infra).toContainText('服务器')
+  await expect(infra).not.toContainText('网关')
+  await expect(table.locator('tbody tr').filter({ hasText: 'far-node' }).getByTestId('link-mode')).toHaveText('中继 · 经 服务器')
+})
+
+test('3c: infra nodes read 网关 in a Gateway network', async ({ page }) => {
+  await open(page, CORE1, {
+    ...routesWithInfra(),
+    'GET /networks': () => {
+      const n = fixture('networks.json')
+      n.networks[0].networking_method = 'Gateway'
+      return n
+    },
+  })
+  const table = page.getByRole('table', { name: '连接' })
+  await expect(table.locator('tbody tr').filter({ hasText: 'relay.example.net' })).toContainText('网关')
+  await expect(table.locator('tbody tr').filter({ hasText: 'far-node' }).getByTestId('link-mode')).toHaveText('中继 · 经 网关')
+})
+
 test('4a: 设为固定 sends exactly { virtual_ipv4 }', async ({ page }) => {
   const { requests } = await open(page, CORE1, {
     'GET /networks/*/members': () =>
