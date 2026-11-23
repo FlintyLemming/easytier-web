@@ -75,6 +75,13 @@ test('webhook mode: a session without a heartbeat yet is listed under its client
   await expect(row).toHaveCount(1)
   await expect(row.getByRole('button', { name: '更多操作' })).toHaveCount(0)
   await expect(row.getByTestId('ip-none')).toHaveText('—')
+
+  // Its detail page (id = client_url) shows the header and overview, with nothing to act on.
+  await row.getByTestId('device-name').click()
+  await expect(page.getByRole('heading', { name: pendingUrl })).toBeVisible()
+  await expect(page.getByTestId('overview-card')).toContainText('203.0.113.9')
+  await expect(page.getByRole('button', { name: '更多操作' })).toHaveCount(0)
+  await expect(page.getByText('找不到这台设备')).toHaveCount(0)
 })
 
 test('webhook mode at 390px: cards show — instead of a join button', async ({ page }) => {
