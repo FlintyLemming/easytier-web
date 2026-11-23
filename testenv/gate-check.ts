@@ -236,13 +236,24 @@ async function homesRunning(): Promise<[boolean, string]> {
 //
 // Normalisation, and nothing else (no field is stripped):
 // - JSON object key order is ignored (objects are compared key by key);
-// - null, [], {} and a missing key are all "unset" and compare equal. Reason: that is how
-//   protobuf JSON says "unset", and v2.7.1's NetworkConfig has 14 fields v2.6.4 lacks
-//   (socket_mark, peers, vpn_portal_config, managed_credentials, dns, ...): a v2.6.4 web
-//   cannot emit them, a v2.7.1 web emits them as null / []. A non-empty value on either side
-//   for such a field IS reported as a difference. false / 0 / "" are real values, not unset.
+// - null, [], {} and a missing key are all "unset" and compare equal. Reason: these are the
+//   protobuf-JSON spellings of "unset": the v2.6.4 web writes unset fields as null / [], the
+//   v2.7.1 web omits them, and v2.7.1's NetworkConfig has 14 fields v2.6.4 lacks (socket_mark,
+//   peers, vpn_portal_config, managed_credentials, dns, ...). A non-empty value on either side
+//   IS reported as a difference. false / 0 / "" are real values, not unset.
+// - networking_method (proto enum NetworkingMethod, identical in both versions: PublicServer=0,
+//   Manual=1, Standalone=2) is compared by value: v2.6.4 writes the number (1), v2.7.1 the name
+//   ("Manual"); both are valid protobuf-JSON for the same value. An unknown name stays a diff.
 // - TOML is compared line by line, exactly (both are produced by the same 2.6.4 core).
 // Array order is significant.
+
+const NETWORKING_METHOD: Record<string, number> = { PublicServer: 0, Manual: 1, Standalone: 2 }
+function normConfig(c: unknown): unknown {
+  if (!c || typeof c !== 'object' || Array.isArray(c)) return c
+  const o = c as Record<string, unknown>
+  const m = o.networking_method
+  return typeof m === 'string' && m in NETWORKING_METHOD ? { ...o, networking_method: NETWORKING_METHOD[m] } : o
+}
 
 const isUnset = (v: unknown) =>
   v === null ||
@@ -465,7 +476,7 @@ await check('G4b', '重启 core 后由 v2.7.1 重新下发旧实例，配置与�
     must(typeof toml === 'string', `show_node_info for ${h.name} home returned no config`)
     const cfg = await call<unknown>('GET', `/machines/${h.machine}/networks/config/${h.inst}`)
     const dt = diffLines(pre.toml!, toml)
-    const dc = diffJson(pre.config, cfg)
+    const dc = diffJson(normConfig(pre.config), normConfig(cfg))
     ev.push(`4. ${h.name} home：show_node_info TOML ${dt.length ? `有 ${dt.length} 行差异` : '与升级前逐行相同'}（${toml.split('\n').length} 行）；GET networks/config ${dc.length ? `有 ${dc.length} 处差异` : '与升级前一致'}`)
     if (dt.length) diffs.push(`${h.name} home TOML diff (- 升级前 2.6.4 / + 现在 v2.7.1):\n${dt.join('\n')}`)
     if (dc.length) diffs.push(`${h.name} home config diff (升级前 → 现在):\n${dc.join('\n')}`)
@@ -473,12 +484,12 @@ await check('G4b', '重启 core 后由 v2.7.1 重新下发旧实例，配置与�
   {
     const pre = snap.instances![lab.inst]!
     const cfg = await call<unknown>('GET', `/machines/${lab.machine}/networks/config/${lab.inst}`)
-    const dc = diffJson(pre.config, cfg)
+    const dc = diffJson(normConfig(pre.config), normConfig(cfg))
     ev.push(`4. core2 lab（未运行，接口直接读数据库里的配置）：GET networks/config ${dc.length ? `有 ${dc.length} 处差异` : '与升级前一致'}`)
     if (dc.length) diffs.push(`core2 lab config diff (升级前 → 现在):\n${dc.join('\n')}`)
   }
   ev.push(
-    '比较规则：不剔除任何字段；JSON 忽略键顺序，null / [] / {} / 缺失都算“未设置”（v2.7.1 的 NetworkConfig 比 v2.6.4 多 14 个字段，旧版不输出、新版输出 null 或 []）；TOML 逐行精确比较；数组顺序有意义',
+    '比较规则：不剔除任何字段；JSON 忽略键顺序；null / [] / {} / 缺失都算“未设置”（v2.6.4 把未设置字段写成 null 或 []，v2.7.1 直接省略，且 v2.7.1 的 NetworkConfig 多 14 个字段）；`networking_method` 按枚举值比较（v2.6.4 写数字 1，v2.7.1 写名字 "Manual"，proto 里 Manual = 1，两版相同）；TOML 逐行精确比较；数组顺序有意义',
   )
   if (diffs.length) {
     for (const d of diffs) ev.push(`差异：\n\n\`\`\`\n${d}\n\`\`\``)
