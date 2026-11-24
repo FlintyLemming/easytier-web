@@ -7,6 +7,7 @@ import {
   instanceInfo,
   instanceMetas,
   listInstances,
+  parseToml,
   runInstance,
   saveInstanceConfig,
   setInstanceDisabled,
@@ -41,6 +42,7 @@ const deleteApi = vi.mocked(deleteInstance)
 const saveApi = vi.mocked(saveInstanceConfig)
 const runApi = vi.mocked(runInstance)
 const configApi = vi.mocked(getInstanceConfig)
+const parseApi = vi.mocked(parseToml)
 
 const A = '5eed0000-0000-4000-8000-00000000000a'
 const B = '5eed0000-0000-4000-8000-00000000000b'
@@ -80,11 +82,18 @@ const RowStub = defineComponent({
     row: { type: Object as PropType<InstanceRow>, required: true },
     card: Boolean,
     busy: Boolean,
+    editLocked: Boolean,
   },
   emits: ['edit', 'toggle', 'export', 'delete'],
   setup(props, { emit }) {
+    // The buttons emit even when the real row would disable them, so the tests reach the panel's guards.
     return () =>
-      h('tr', { 'data-row': props.row.id, 'data-state': props.row.state, 'data-name': props.row.name }, [
+      h('tr', {
+        'data-row': props.row.id,
+        'data-state': props.row.state,
+        'data-name': props.row.name,
+        'data-edit-locked': String(props.editLocked),
+      }, [
         h('td', [
           // The menu items the real row would offer.
           props.row.editable ? h('button', { 'data-act': 'edit', onClick: () => emit('edit') }) : null,
@@ -494,5 +503,205 @@ describe('InstancesPanel rows without a meta (R14c)', () => {
     expect(metasApi.mock.calls[1]![1]).toEqual([A])
     expect(rowsOf(w).find((r) => r.id === A)!.name).toBe('alpha')
     expect(acts(w, A)).toEqual(['edit', 'toggle', 'delete'])
+  })
+})
+
+describe('InstancesPanel editor openings never overlap (F2)', () => {
+  // The real dialog: it takes its draft from `initial` only as it opens, which is what made an
+  // overlapping opening save one instance's config under another one's id.
+  const T = (key: string, named: Record<string, unknown> = {}) => i18n.global.t(key, named)
+  const CONFIG_A = { instance_id: A, network_name: 'alpha', network_secret: 'alpha-secret', networking_method: 'Manual' }
+  const CONFIG_B = { instance_id: B, network_name: 'beta', network_secret: 'beta-secret', networking_method: 'Manual' }
+
+  function mountWithEditor() {
+    const w = mount(InstancesPanel, {
+      props: { device: device(), centralIds: [] },
+      global: { plugins: [i18n], stubs: { InstanceRowView: RowStub } },
+      attachTo: document.body,
+    })
+    wrappers.push(w)
+    return w
+  }
+
+  const dialog = () => document.body.querySelector<HTMLElement>('[role="dialog"]')
+  const title = () => dialog()?.querySelector('h2')?.textContent?.trim()
+  function networkName(): string {
+    const label = Array.from(dialog()!.querySelectorAll('label')).find((l) => l.textContent?.trim() === T('config.field.networkName'))!
+    return (document.getElementById(label.htmlFor) as HTMLInputElement).value
+  }
+  async function press(label: string) {
+    const b = Array.from(dialog()!.querySelectorAll('button')).find((x) => x.textContent?.trim() === label)
+    expect(b, `dialog button ${label}`).toBeTruthy()
+    b!.click()
+    await flushPromises()
+  }
+  const newButton = (w: VueWrapper) => w.find('button.bg-primary')
+  const importButton = (w: VueWrapper) => w.findAll('button').find((b) => b.text().trim() === T('instances.import'))!
+  const locks = (w: VueWrapper) => w.findAll('[data-row]').map((r) => r.attributes('data-edit-locked'))
+  async function pickFile(w: VueWrapper, text: string) {
+    const input = w.find('input[type="file"]').element as HTMLInputElement
+    Object.defineProperty(input, 'files', { value: [new File([text], 'net.toml')], configurable: true })
+    input.dispatchEvent(new Event('change'))
+    await flushPromises()
+  }
+
+  beforeEach(() => {
+    runApi.mockResolvedValue(undefined)
+    saveApi.mockResolvedValue(undefined)
+  })
+
+  it('1: 编辑 B while A is being read sends nothing; A then opens, and 保存 writes A\'s config under A\'s id', async () => {
+    const a = deferred<Record<string, unknown>>()
+    configApi.mockImplementation((_m, id) => (id === A ? a.promise : Promise.resolve(CONFIG_B)))
+    const w = mountWithEditor()
+    await flushPromises()
+    expect(locks(w)).toEqual(['false', 'false'])
+
+    await w.find(`[data-row="${A}"] [data-act="edit"]`).trigger('click')
+    expect(configApi).toHaveBeenCalledTimes(1)
+    // Every row's 编辑 waits for this opening.
+    expect(locks(w)).toEqual(['true', 'true'])
+    await w.find(`[data-row="${B}"] [data-act="edit"]`).trigger('click')
+    await flushPromises()
+    expect(configApi).toHaveBeenCalledTimes(1)
+    expect(dialog()).toBeNull()
+
+    a.resolve(CONFIG_A)
+    await flushPromises()
+    expect(title()).toBe(T('instances.editTitle', { name: 'alpha' }))
+    expect(networkName()).toBe('alpha')
+    expect(locks(w)).toEqual(['false', 'false'])
+
+    await press(T('instances.save'))
+    expect(runApi).toHaveBeenCalledTimes(1)
+    expect(runApi.mock.calls[0]).toEqual(['m1', expect.objectContaining({ instance_id: A, network_name: 'alpha', network_secret: 'alpha-secret' }), true])
+    expect(saveApi).not.toHaveBeenCalled()
+  })
+
+  it('1b: 编辑 B while A\'s editor is open opens nothing; A\'s editor still saves A', async () => {
+    configApi.mockImplementation(async (_m, id) => (id === A ? CONFIG_A : CONFIG_B))
+    const w = mountWithEditor()
+    await flushPromises()
+    await w.find(`[data-row="${A}"] [data-act="edit"]`).trigger('click')
+    await flushPromises()
+    expect(title()).toBe(T('instances.editTitle', { name: 'alpha' }))
+
+    await w.find(`[data-row="${B}"] [data-act="edit"]`).trigger('click')
+    await flushPromises()
+    expect(configApi).toHaveBeenCalledTimes(1)
+    expect(title()).toBe(T('instances.editTitle', { name: 'alpha' }))
+
+    await press(T('instances.save'))
+    expect(runApi.mock.calls).toEqual([['m1', expect.objectContaining({ instance_id: A, network_name: 'alpha' }), true]])
+  })
+
+  it('2: 新建实例 is disabled while A is being read; A then opens with its own config and saves under its id', async () => {
+    const a = deferred<Record<string, unknown>>()
+    configApi.mockReturnValueOnce(a.promise)
+    const w = mountWithEditor()
+    await flushPromises()
+    await w.find(`[data-row="${A}"] [data-act="edit"]`).trigger('click')
+    expect(newButton(w).attributes('disabled')).toBeDefined()
+    expect(importButton(w).attributes('disabled')).toBeDefined()
+    await newButton(w).trigger('click')
+    await flushPromises()
+    expect(dialog()).toBeNull()
+
+    a.resolve(CONFIG_A)
+    await flushPromises()
+    expect(title()).toBe(T('instances.editTitle', { name: 'alpha' }))
+    expect(networkName()).toBe('alpha')
+    await press(T('instances.save'))
+    expect(runApi.mock.calls).toEqual([['m1', expect.objectContaining({ instance_id: A, network_name: 'alpha', network_secret: 'alpha-secret' }), true]])
+    expect(saveApi).not.toHaveBeenCalled()
+  })
+
+  it('2b: 编辑 A while 新建实例 is open sends nothing; the new instance saves under a new id', async () => {
+    configApi.mockResolvedValue(CONFIG_A)
+    const w = mountWithEditor()
+    await flushPromises()
+    await newButton(w).trigger('click')
+    await flushPromises()
+    expect(title()).toBe(T('instances.createTitle'))
+
+    await w.find(`[data-row="${A}"] [data-act="edit"]`).trigger('click')
+    await flushPromises()
+    expect(configApi).not.toHaveBeenCalled()
+    expect(title()).toBe(T('instances.createTitle'))
+    expect(networkName()).toBe('easytier')
+
+    await press(T('instances.createSave'))
+    expect(runApi).not.toHaveBeenCalled()
+    expect(saveApi).toHaveBeenCalledTimes(1)
+    const [machine, id, body] = saveApi.mock.calls[0]!
+    expect(machine).toBe('m1')
+    expect([A, B]).not.toContain(id)
+    expect(body).toEqual(expect.objectContaining({ instance_id: id, network_name: 'easytier' }))
+  })
+
+  it('3: while a TOML import is parsed, 编辑 sends nothing and 新建实例 is disabled; the import then opens as a new instance', async () => {
+    const parsed = deferred<{ config: Record<string, unknown> }>()
+    parseApi.mockReturnValueOnce(parsed.promise)
+    configApi.mockResolvedValue(CONFIG_A)
+    const w = mountWithEditor()
+    await flushPromises()
+    await pickFile(w, 'network_name = "imported"\n')
+    expect(parseApi).toHaveBeenCalledTimes(1)
+    expect(newButton(w).attributes('disabled')).toBeDefined()
+    expect(importButton(w).attributes('aria-busy')).toBe('true')
+    expect(locks(w)).toEqual(['true', 'true'])
+
+    await w.find(`[data-row="${A}"] [data-act="edit"]`).trigger('click')
+    await flushPromises()
+    expect(configApi).not.toHaveBeenCalled()
+    expect(dialog()).toBeNull()
+
+    // The file carries A's id; an import is a new instance all the same.
+    parsed.resolve({ config: { instance_id: A, network_name: 'imported', networking_method: 'Manual' } })
+    await flushPromises()
+    expect(title()).toBe(T('instances.createTitle'))
+    expect(networkName()).toBe('imported')
+    await press(T('instances.createSave'))
+    expect(runApi).not.toHaveBeenCalled()
+    const [, id, body] = saveApi.mock.calls[0]!
+    expect([A, B]).not.toContain(id)
+    expect(body).toEqual(expect.objectContaining({ instance_id: id, network_name: 'imported' }))
+  })
+
+  it('3b: an import picked while A is being read parses nothing; A then opens and saves under its id', async () => {
+    const a = deferred<Record<string, unknown>>()
+    configApi.mockReturnValueOnce(a.promise)
+    parseApi.mockResolvedValue({ config: { network_name: 'imported', networking_method: 'Manual' } })
+    const w = mountWithEditor()
+    await flushPromises()
+    await w.find(`[data-row="${A}"] [data-act="edit"]`).trigger('click')
+    expect(importButton(w).attributes('disabled')).toBeDefined()
+    await pickFile(w, 'network_name = "imported"\n')
+    expect(parseApi).not.toHaveBeenCalled()
+
+    a.resolve(CONFIG_A)
+    await flushPromises()
+    expect(title()).toBe(T('instances.editTitle', { name: 'alpha' }))
+    expect(networkName()).toBe('alpha')
+    await press(T('instances.save'))
+    expect(runApi.mock.calls).toEqual([['m1', expect.objectContaining({ instance_id: A, network_name: 'alpha' }), true]])
+    expect(saveApi).not.toHaveBeenCalled()
+  })
+
+  it('a failed read ends the opening: 编辑, 新建实例 and 导入 TOML work again', async () => {
+    configApi.mockRejectedValueOnce(new Error('rpc timeout'))
+    const w = mountWithEditor()
+    await flushPromises()
+    await w.find(`[data-row="${A}"] [data-act="edit"]`).trigger('click')
+    await flushPromises()
+    expect(dialog()).toBeNull()
+    expect(locks(w)).toEqual(['false', 'false'])
+    expect(newButton(w).attributes('disabled')).toBeUndefined()
+    expect(importButton(w).attributes('disabled')).toBeUndefined()
+
+    configApi.mockResolvedValueOnce(CONFIG_B)
+    await w.find(`[data-row="${B}"] [data-act="edit"]`).trigger('click')
+    await flushPromises()
+    expect(title()).toBe(T('instances.editTitle', { name: 'beta' }))
   })
 })

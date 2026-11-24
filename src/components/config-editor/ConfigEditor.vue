@@ -148,7 +148,7 @@ defineExpose({ flush })
       <SectionProxy :draft="draft" />
       <SectionPortForwards :draft="draft" />
       <SectionDns :draft="draft" />
-      <SectionVpnPortal :draft="draft" :core-version="coreVersion" :opened="opened" />
+      <SectionVpnPortal :draft="draft" :mode="mode" :core-version="coreVersion" :opened="opened" />
       <SectionFlags :draft="draft" />
     </div>
 

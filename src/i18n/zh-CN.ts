@@ -459,14 +459,19 @@ export default {
     add: '添加',
     remove: '删除',
     item: '{label} 第 {n} 项',
+    network: {
+      credentialNote: '这个实例使用凭据加入网络，不使用网络密钥。',
+    },
     vpn: {
       legacyHint: '这台设备的 core 早于 2.7，使用旧版 VPN Portal：所有客户端共用一份 WireGuard 配置。',
+      memberLegacyNote: '2.7 之前的 core 不能通过中央网络开启 VPN Portal；可以升级 core，或者使用手动实例。',
     },
     toml: {
       loading: '正在生成 TOML…',
       generateError: '无法生成 TOML：{message}',
       parseError: '无法解析：{message}',
       memberHint: '网络名、密钥、组网方式、IP、主机名、ACL 由中央网络管理，这里的修改会被忽略。',
+      memberProxyHint: '子网代理在「子网代理」一行里修改，这里的修改会被忽略。',
       legacyHint: '旧版 VPN Portal 设置（2.7 之前的 core 使用）不在 TOML 中显示，保存时会原样保留。',
       backToForm: '回到表单',
     },

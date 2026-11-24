@@ -3,7 +3,10 @@ import { useId } from 'vue'
 import { inputNumber } from './rules'
 
 defineProps<{ label: string; error?: string; hint?: string; placeholder?: string; min?: number; max?: number }>()
-/** null when blank. NaN (a required number left blank) shows as blank too. */
+/**
+ * null when blank. NaN (text the browser cannot parse, or a required number left blank) shows as
+ * blank; unparseable text stays on screen as typed, as the browser already reports it as ''.
+ */
 const model = defineModel<number | null | undefined>({ required: true })
 const id = useId()
 const hintId = useId()

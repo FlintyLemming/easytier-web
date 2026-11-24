@@ -155,25 +155,56 @@ const editorActions = computed(() =>
       ],
 )
 
-function openEditor(target: EditorTarget, initial: NetworkConfig) {
+// The dialog takes its draft from `initial` only as it opens, while its title, actions and note follow
+// `editorTarget` live. So an editor opening may never overtake another: an edit (reading the config)
+// or an import (parsing the file) is one opening at a time, 编辑, 新建实例 and 导入 TOML wait for it,
+// and a result that finds the editor open or a newer opening started is dropped. The target and the
+// draft then always come from the same opening (else a save could write one instance's config under
+// another one's id).
+
+/** The edit or import reading what the editor will open with, if any. */
+const opening = ref<'edit' | 'import' | null>(null)
+/** Bumped per opening: only the latest one may open the editor. */
+let openings = 0
+
+/** Starts an opening; null while another is under way or the editor is open. */
+function beginOpening(kind: 'edit' | 'import'): number | null {
+  if (opening.value !== null || editorOpen.value) return null
+  opening.value = kind
+  return ++openings
+}
+
+function endOpening(token: number) {
+  if (token === openings) opening.value = null
+}
+
+function openEditor(token: number, target: EditorTarget, initial: NetworkConfig) {
+  if (token !== openings || editorOpen.value) return
   editorMachine = props.device.id
   editorTarget.value = target
   editorInitial.value = initial
   editorOpen.value = true
 }
 
-function create(initial: NetworkConfig = DEFAULT_NETWORK_CONFIG()) {
-  openEditor({ kind: 'create' }, initial)
+function create() {
+  if (opening.value !== null || editorOpen.value) return
+  openEditor(++openings, { kind: 'create' }, DEFAULT_NETWORK_CONFIG())
 }
 
 function edit(row: InstanceRow) {
   return rowTask(row, async (machineId) => {
     if (!stillOnline()) return
-    const config = normalizeNetworkConfig((await getInstanceConfig(machineId, row.id)) as NetworkConfig)
-    // Offline by the time the config arrived: no editor whose save could not be sent.
-    if (!stillOnline()) return
-    // Running covers starting and failed ones too: the instance is in the running list.
-    openEditor({ kind: 'edit', id: row.id, name: row.name, running: row.state !== 'disabled' }, config)
+    const token = beginOpening('edit')
+    if (token === null) return
+    try {
+      const config = normalizeNetworkConfig((await getInstanceConfig(machineId, row.id)) as NetworkConfig)
+      // Offline by the time the config arrived: no editor whose save could not be sent.
+      if (!stillOnline()) return
+      // Running covers starting and failed ones too: the instance is in the running list.
+      openEditor(token, { kind: 'edit', id: row.id, name: row.name, running: row.state !== 'disabled' }, config)
+    } finally {
+      endOpening(token)
+    }
   })
 }
 
@@ -217,16 +248,16 @@ function openVpn(row: InstanceRow) {
 // --- 导入 TOML ---
 
 const fileInput = ref<HTMLInputElement | null>(null)
-const importing = ref(false)
+const importing = computed(() => opening.value === 'import')
 
 async function importFile(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
-  if (!file || importing.value) {
+  const token = file ? beginOpening('import') : null
+  if (!file || token === null) {
     input.value = ''
     return
   }
-  importing.value = true
   try {
     const text = await file.text()
     if (!stillOnline()) return
@@ -239,13 +270,13 @@ async function importFile(e: Event) {
     const config = normalizeNetworkConfig(r.config as unknown as NetworkConfig)
     config.instance_id = uuidv4()
     if (!stillOnline()) return
-    create(config)
+    openEditor(token, { kind: 'create' }, config)
   } catch (err) {
     toast.error(t('instances.parseFailed', { message: errorMessage(err) }))
   } finally {
     // Cleared so picking the same file again fires `change` again.
     input.value = ''
-    importing.value = false
+    endOpening(token)
   }
 }
 </script>
@@ -256,8 +287,8 @@ async function importFile(e: Event) {
       <h2 class="caption-uppercase text-muted">{{ t('instances.title') }}</h2>
       <div v-if="online" class="flex flex-wrap items-center gap-2">
         <!-- The page's single main action, so it carries the orange primary style. -->
-        <UiButton variant="primary" size="sm" @click="create()">{{ t('instances.new') }}</UiButton>
-        <UiButton size="sm" :loading="importing" @click="fileInput?.click()">{{ t('instances.import') }}</UiButton>
+        <UiButton variant="primary" size="sm" :disabled="opening !== null" @click="create()">{{ t('instances.new') }}</UiButton>
+        <UiButton size="sm" :loading="importing" :disabled="opening !== null" @click="fileInput?.click()">{{ t('instances.import') }}</UiButton>
         <input ref="fileInput" type="file" accept=".toml,text/plain" class="hidden" @change="importFile" />
       </div>
     </header>
@@ -290,6 +321,7 @@ async function importFile(e: Event) {
           :row="row"
           card
           :busy="pending.has(row.id)"
+          :edit-locked="opening !== null"
           @edit="edit(row)"
           @vpn="openVpn(row)"
           @toggle="toggle(row)"
@@ -311,6 +343,7 @@ async function importFile(e: Event) {
             :row="row"
             :card="false"
             :busy="pending.has(row.id)"
+            :edit-locked="opening !== null"
             @edit="edit(row)"
             @vpn="openVpn(row)"
             @toggle="toggle(row)"

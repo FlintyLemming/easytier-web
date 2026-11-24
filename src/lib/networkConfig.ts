@@ -444,6 +444,14 @@ export function normalizeNetworkConfig(config: NetworkConfig): NetworkConfig {
   return normalized
 }
 
+/**
+ * The credential a credential-mode config joins with, trimmed; '' when it joins with a network
+ * secret. Non-empty means `toBackendNetworkConfig` drops `network_secret`.
+ */
+export function credentialOf(config: NetworkConfig): string {
+  return (config.credential_secret ?? '').trim()
+}
+
 export function toBackendNetworkConfig(config: NetworkConfig): NetworkConfig {
   const { dns, ...protoConfig } = prepareNetworkConfigForProtoJson(config)
   const backend = NetworkConfigPb.fromJson(protoConfig as any, {
@@ -460,7 +468,7 @@ export function toBackendNetworkConfig(config: NetworkConfig): NetworkConfig {
   // The form credential field compiles into the credential-identity shape:
   // empty network secret plus secure mode keyed by the credential (the CLI
   // `--credential` equivalent); the node derives the matching public key.
-  const credentialSecret = (config.credential_secret ?? '').trim()
+  const credentialSecret = credentialOf(config)
   if (credentialSecret) {
     backend.network_secret = undefined
     backend.secure_mode = { enabled: true, local_private_key: credentialSecret }

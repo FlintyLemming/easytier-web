@@ -326,12 +326,20 @@ export async function patchVpnPortalClients(machineId: string, instId: string, p
 
 // --- TOML ---
 
+/**
+ * The error for a 2xx TOML answer that carries neither an error nor a result. Read as an empty
+ * config it would become an almost empty draft, and saving that would wipe the config, so it is
+ * an error; in English like the backend's own TOML errors, which the callers show as they are.
+ */
+export const TOML_EMPTY_ANSWER = 'The server answered without a result.'
+
 export async function generateToml(config: object): Promise<{ toml: string } | { error: string }> {
   const r = await request<{ error?: string | null; toml_config?: string | null }>('POST', '/generate-config', {
     body: { config },
   })
   if (r?.error) return { error: r.error }
-  return { toml: r?.toml_config ?? '' }
+  if (typeof r?.toml_config !== 'string') return { error: TOML_EMPTY_ANSWER }
+  return { toml: r.toml_config }
 }
 
 export async function parseToml(toml: string): Promise<{ config: Record<string, unknown> } | { error: string }> {
@@ -339,5 +347,7 @@ export async function parseToml(toml: string): Promise<{ config: Record<string, 
     body: { toml_config: toml },
   })
   if (r?.error) return { error: r.error }
-  return { config: r?.config ?? {} }
+  const config = r?.config
+  if (config === null || typeof config !== 'object' || Array.isArray(config)) return { error: TOML_EMPTY_ANSWER }
+  return { config }
 }

@@ -10,7 +10,7 @@ import { toasts } from '../../src/composables/useToast'
 import type { DeviceView } from '../../src/domain/devices'
 import type { InstanceRow } from '../../src/domain/instances'
 import { i18n } from '../../src/i18n'
-import { normalizeVpnPortalInfo, type VpnPortalInfo } from '../../src/lib/networkConfig'
+import { normalizeVpnPortalInfo, VpnPortalClientState, type VpnPortalInfo } from '../../src/lib/networkConfig'
 
 vi.mock('../../src/api/client', () => ({
   deleteInstance: vi.fn(),
@@ -103,6 +103,7 @@ afterEach(() => {
   confirmQueue.splice(0)
   toasts.splice(0)
   i18n.global.locale.value = 'en'
+  vi.useRealTimers()
 })
 
 describe('VpnPortalDialog sends nothing to an offline device (R14)', () => {
@@ -275,6 +276,105 @@ describe('VpnPortalDialog while the instance network is unknown (R16b)', () => {
     document.body.querySelector('form')!.dispatchEvent(new Event('submit'))
     await flushPromises()
     expect(patchApi).not.toHaveBeenCalled()
+  })
+})
+
+describe('VpnPortalDialog polls while open (F3)', () => {
+  /** phone as it was before its device connected. */
+  const waiting = () => {
+    const p = portal()
+    p.clients[0]!.state = VpnPortalClientState.OFFLINE
+    return p
+  }
+  const phoneState = () => document.body.querySelector('[data-testid="vpn-client"]')?.textContent ?? ''
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  })
+
+  it('reads again after 5 s, so a client that connects shows as 已连接; what is typed stays', async () => {
+    portalApi.mockResolvedValueOnce(waiting()).mockResolvedValue(portal())
+    mountDialog()
+    await flushPromises()
+    expect(portalApi).toHaveBeenCalledTimes(1)
+    expect(phoneState()).toContain('未连接')
+    await type('名称', 'tablet')
+    await type('地址', '10.88.0.40')
+
+    await vi.advanceTimersByTimeAsync(4_999)
+    expect(portalApi).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    await flushPromises()
+    expect(portalApi).toHaveBeenCalledTimes(2)
+    expect(portalApi).toHaveBeenLastCalledWith('m1', A)
+    expect(phoneState()).toContain('已连接')
+    expect(field('名称').value).toBe('tablet')
+    expect(field('地址').value).toBe('10.88.0.40')
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(portalApi).toHaveBeenCalledTimes(3)
+  })
+
+  it('sends nothing while the device is offline, and reads once it is back', async () => {
+    const w = mountDialog()
+    await flushPromises()
+    expect(portalApi).toHaveBeenCalledTimes(1)
+
+    await w.setProps({ online: false })
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(portalApi).toHaveBeenCalledTimes(1)
+
+    // The state after the outage, at once rather than at the next tick.
+    portalApi.mockResolvedValue(portal('tablet', '10.88.0.30'))
+    await w.setProps({ online: true })
+    await flushPromises()
+    expect(portalApi).toHaveBeenCalledTimes(2)
+    expect(text()).toContain('tablet')
+    expect(text()).not.toContain('phone')
+  })
+
+  it('skips the ticks while a patch is pending; the patch reads again itself', async () => {
+    const sent = deferred<void>()
+    patchApi.mockReturnValue(sent.promise)
+    mountDialog()
+    await flushPromises()
+    button('添加')!.click()
+    await flushPromises()
+    expect(patchApi).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(portalApi).toHaveBeenCalledTimes(1)
+
+    sent.resolve()
+    await flushPromises()
+    expect(portalApi).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(portalApi).toHaveBeenCalledTimes(3)
+  })
+
+  it('never has two reads in flight: a slow read holds the next tick back', async () => {
+    mountDialog()
+    await flushPromises()
+    const slow = deferred<VpnPortalInfo>()
+    portalApi.mockReturnValueOnce(slow.promise)
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(portalApi).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(portalApi).toHaveBeenCalledTimes(2)
+
+    slow.resolve(portal())
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(portalApi).toHaveBeenCalledTimes(3)
+  })
+
+  it('stops reading once closed', async () => {
+    const w = mountDialog()
+    await flushPromises()
+    w.unmount()
+    wrappers.splice(wrappers.indexOf(w), 1)
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(portalApi).toHaveBeenCalledTimes(1)
   })
 })
 

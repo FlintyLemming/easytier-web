@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { patchVpnPortalClients, vpnPortalInfo } from '../../api/client'
 import type { InstanceRunningInfo, VpnClientPatch } from '../../api/types'
 import { useConfirm } from '../../composables/useConfirm'
+import { usePolling } from '../../composables/usePolling'
 import { useToast } from '../../composables/useToast'
 import { ipv4FromU32 } from '../../domain/format'
 import type { InstanceRow } from '../../domain/instances'
@@ -82,12 +83,20 @@ async function read(): Promise<void> {
   }
 }
 
-onMounted(read)
-// A first read the device was offline for (or that failed meanwhile) is made once it is back.
+// Read on opening and then every 5 s while open, like the panel: a client's state changes as its
+// device connects. A tick sends nothing while the device is offline (R14) and leaves a read or a
+// patch under way alone (the patch reads again itself). Only the list, states and listener are
+// refreshed; what is typed in the add form stays.
+const poller = usePolling(async () => {
+  if (disposed || !props.online || loading.value || busy.value) return
+  await read()
+}, 5000)
+onMounted(poller.start)
+// Back online: read at once (a first read the device was offline for, or the state after the outage).
 watch(
   () => props.online,
   (on) => {
-    if (on && !loaded.value && !loading.value) void read()
+    if (on && !loading.value && !busy.value) void read()
   },
 )
 

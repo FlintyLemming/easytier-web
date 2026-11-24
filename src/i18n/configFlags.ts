@@ -1,6 +1,7 @@
 // Ported from EasyTier v2.7.1 (https://github.com/EasyTier/EasyTier), LGPL-3.0-or-later
 // Labels and help texts of the boolean config flags (easytier-web/frontend-lib/src/locales/{cn,en}.yaml).
-// Flags without an upstream entry (enable_udp_fec*) fall back to the field name.
+// enable_udp_fec* have no entry there: their help is the core's CLI help (easytier/locales/app.yml),
+// their labels are written to match.
 export const configFlagText: Record<'zh-CN' | 'en', Record<string, { label: string; help: string }>> = {
   'zh-CN': {
     disable_encryption: { label: "禁用加密", help: "禁用对等节点通信的加密。注意：默认启用加密，若勾选此项则关闭，必须与对等节点设置一致。" },
@@ -30,9 +31,9 @@ export const configFlagText: Record<'zh-CN' | 'en', Record<string, { label: stri
     disable_relay_data: { label: "不转发数据", help: "不转发其他节点的数据包，本节点不承载自身以外的流量。" },
     enable_udp_broadcast_relay: { label: "UDP 广播中继", help: "仅 Windows：捕获物理网卡上的本机 UDP 广播包并转发给 EasyTier 对等节点，帮助局域网游戏发现房间。需要管理员权限。" },
     prefer_peer_relay: { label: "优先凭证节点转发", help: "优先通过已经转发到目标节点的凭证节点转发，而不是为同一目标再通告一条直连路径。" },
-    enable_udp_fec: { label: "enable_udp_fec", help: "enable_udp_fec" },
-    enable_udp_fec_kcp: { label: "enable_udp_fec_kcp", help: "enable_udp_fec_kcp" },
-    enable_udp_fec_quic: { label: "enable_udp_fec_quic", help: "enable_udp_fec_quic" },
+    enable_udp_fec: { label: "启用 UDP FEC", help: "请求在支持前向纠错的 UDP 对等连接上双向启用纠错，仅需一端开启。" },
+    enable_udp_fec_kcp: { label: "KCP 代理使用 UDP FEC", help: "任一端启用 UDP 前向纠错时，将 KCP 代理流量纳入纠错。" },
+    enable_udp_fec_quic: { label: "QUIC 代理使用 UDP FEC", help: "任一端启用 UDP 前向纠错时，将 QUIC 代理流量纳入纠错。" },
   },
   en: {
     disable_encryption: { label: "Disable Encryption", help: "Disable encryption for peers communication. Encryption is enabled by default, this option must be same with peers." },
@@ -62,8 +63,8 @@ export const configFlagText: Record<'zh-CN' | 'en', Record<string, { label: stri
     disable_relay_data: { label: "Disable Data Relay", help: "Do not relay data packets for other peers, so this node carries no traffic it did not originate." },
     enable_udp_broadcast_relay: { label: "UDP Broadcast Relay", help: "Windows only: capture local UDP broadcast packets from physical interfaces and forward them to EasyTier peers. Helps games to find rooms in local network. Requires administrator privileges." },
     prefer_peer_relay: { label: "Prefer Peer Relay", help: "Prefer a credential peer that already relays to a destination over advertising another direct edge to the same destination." },
-    enable_udp_fec: { label: "Enable_udp_fec", help: "Enable_udp_fec" },
-    enable_udp_fec_kcp: { label: "Enable_udp_fec_kcp", help: "Enable_udp_fec_kcp" },
-    enable_udp_fec_quic: { label: "Enable_udp_fec_quic", help: "Enable_udp_fec_quic" },
+    enable_udp_fec: { label: "Enable UDP FEC", help: "Request bidirectional forward error correction on UDP connections with supporting peers; only one peer needs to enable it." },
+    enable_udp_fec_kcp: { label: "UDP FEC for KCP Proxy", help: "Include KCP proxy traffic in UDP forward error correction when either peer enables UDP FEC." },
+    enable_udp_fec_quic: { label: "UDP FEC for QUIC Proxy", help: "Include QUIC proxy traffic in UDP forward error correction when either peer enables UDP FEC." },
   },
 }

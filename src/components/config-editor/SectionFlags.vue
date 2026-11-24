@@ -8,10 +8,11 @@ import { flagOn, SECTION_FLAGS, setFlag } from './rules'
 defineProps<{ draft: NetworkConfig }>()
 const { t } = useI18n()
 
-// Flags without upstream text fall back to the field name; repeating it as help says nothing.
+// A help text that only repeats the label (or the field name) says nothing, so it is left out.
+const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
 function help(field: string): string | undefined {
   const text = t(`config.flags.${field}.help`)
-  return text === field ? undefined : text
+  return same(text, field) || same(text, t(`config.flags.${field}.label`)) ? undefined : text
 }
 
 const fields = formFlags()

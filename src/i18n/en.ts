@@ -459,14 +459,19 @@ export default {
     add: 'Add',
     remove: 'Remove',
     item: '{label} item {n}',
+    network: {
+      credentialNote: 'This instance joins with a credential, not a network secret.',
+    },
     vpn: {
       legacyHint: 'This device runs a core older than 2.7, which uses the legacy VPN Portal: all clients share one WireGuard config.',
+      memberLegacyNote: 'Cores before 2.7 cannot enable the VPN Portal through the central network; upgrade the core or use a manual instance.',
     },
     toml: {
       loading: 'Generating TOML…',
       generateError: 'Could not generate TOML: {message}',
       parseError: 'Could not parse: {message}',
       memberHint: 'Network name, secret, networking method, IP, hostname and ACL are managed by the central network; changes to them here are ignored.',
+      memberProxyHint: 'Subnet proxies are edited in their own row; changes made here are ignored.',
       legacyHint: 'Legacy VPN Portal settings (used by cores older than 2.7) are not shown in the TOML and are kept as they are when you save.',
       backToForm: 'Back to form',
     },

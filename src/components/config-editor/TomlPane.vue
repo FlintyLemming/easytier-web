@@ -94,7 +94,11 @@ defineExpose({ leave })
 
 <template>
   <div class="flex flex-col gap-3">
-    <p v-if="mode === 'member'" class="text-[13px] text-muted">{{ t('config.toml.memberHint') }}</p>
+    <template v-if="mode === 'member'">
+      <p class="text-[13px] text-muted">{{ t('config.toml.memberHint') }}</p>
+      <!-- A member's save always carries its subnet proxies from their own row (R12). -->
+      <p class="text-[13px] text-muted">{{ t('config.toml.memberProxyHint') }}</p>
+    </template>
     <p v-if="hasLegacy" class="text-[13px] text-muted">{{ t('config.toml.legacyHint') }}</p>
 
     <div v-if="state === 'loading'" class="flex flex-col gap-3">

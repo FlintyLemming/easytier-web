@@ -6,6 +6,7 @@ import {
   setMachineAlias, unblockDevice, listMembers, updateMember, getMemberConfig,
   listInstances, instanceMetas, instanceInfo, getInstanceConfig, saveInstanceConfig, runInstance,
   setInstanceDisabled, deleteInstance, vpnPortalInfo, patchVpnPortalClients, generateToml, parseToml,
+  TOML_EMPTY_ANSWER,
 } from '../../src/api/client'
 import instancesFx from '../fixtures/v2.7.1/instances-core2.json'
 import metasFx from '../fixtures/v2.7.1/instance-metas-core2.json'
@@ -331,6 +332,34 @@ describe('api client', () => {
       expect(await parseToml('network_name = [')).toEqual({ error: parseErrFx.error })
       stub(() => json({ message: 'boom' }, 500))
       await expect(parseToml('x')).rejects.toBeInstanceOf(ApiError)
+    })
+
+    // F7: read as `{}` / '', such an answer became an almost empty draft whose save wiped the config.
+    it('generateToml: a 2xx answer with neither an error nor a TOML is an error', async () => {
+      for (const answer of [{ error: null, toml_config: null }, { error: '' }, {}]) {
+        stub(() => json(answer))
+        expect(await generateToml({ network_name: 'x' }), JSON.stringify(answer)).toEqual({ error: TOML_EMPTY_ANSWER })
+      }
+      stub(() => new Response(null, { status: 200 }))
+      expect(await generateToml({})).toEqual({ error: TOML_EMPTY_ANSWER })
+      stub(() => new Response(null, { status: 204 }))
+      expect(await generateToml({})).toEqual({ error: TOML_EMPTY_ANSWER })
+    })
+
+    it('parseToml: a 2xx answer with neither an error nor a config is an error', async () => {
+      for (const answer of [{ error: null, config: null }, { error: '', config: null }, {}, { config: 'x' }, { config: [] }]) {
+        stub(() => json(answer))
+        expect(await parseToml('a = 1'), JSON.stringify(answer)).toEqual({ error: TOML_EMPTY_ANSWER })
+      }
+      stub(() => new Response(null, { status: 200 }))
+      expect(await parseToml('a = 1')).toEqual({ error: TOML_EMPTY_ANSWER })
+      stub(() => new Response(null, { status: 204 }))
+      expect(await parseToml('a = 1')).toEqual({ error: TOML_EMPTY_ANSWER })
+      // An error and a non-2xx answer are as before.
+      stub(() => json({ error: 'bad', config: null }))
+      expect(await parseToml('a = 1')).toEqual({ error: 'bad' })
+      stub(() => json({ message: 'boom' }, 500))
+      await expect(parseToml('a = 1')).rejects.toBeInstanceOf(ApiError)
     })
   })
 })

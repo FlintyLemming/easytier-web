@@ -57,4 +57,22 @@ describe('i18n catalogs', () => {
       }
     }
   })
+
+  it('no form flag is labelled with its field name; the UDP FEC flags have help beyond their label (F10)', () => {
+    const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
+    for (const catalog of [zh, en] as unknown as { config: { flags: Record<string, { label: string; help: string }> } }[]) {
+      for (const { field } of formFlags()) {
+        const { label } = catalog.config.flags[field]!
+        expect(same(label, field), field).toBe(false)
+        expect(label, field).not.toContain('_')
+      }
+      // (Some upstream help only repeats its label, e.g. en disable_udp_hole_punching; SectionFlags hides those.)
+      for (const field of ['enable_udp_fec', 'enable_udp_fec_kcp', 'enable_udp_fec_quic']) {
+        const { label, help } = catalog.config.flags[field]!
+        expect(same(help, label), field).toBe(false)
+      }
+    }
+    expect(zh.config.flags.enable_udp_fec!.label).toBe('启用 UDP FEC')
+    expect(en.config.flags.enable_udp_fec!.label).toBe('Enable UDP FEC')
+  })
 })

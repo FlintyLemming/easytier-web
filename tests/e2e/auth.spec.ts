@@ -85,7 +85,8 @@ test('a 401 on the poller redirects to login exactly once, then re-login returns
   })
 
   await page.goto(`/#/devices/${core1}`)
-  await expect(page.getByRole('link', { name: '设备', exact: true })).toBeVisible()
+  // The main navigation's link: the device page's breadcrumb has a 设备 link too.
+  await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '设备', exact: true })).toBeVisible()
   const before = urls.length
 
   authed = false // session expires; next 5s inventory poll gets 401s

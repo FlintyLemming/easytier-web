@@ -8,6 +8,7 @@ import ConfigEditor from '../../src/components/config-editor/ConfigEditor.vue'
 import ConfigEditorDialog from '../../src/components/config-editor/ConfigEditorDialog.vue'
 import { proxyCidrRule } from '../../src/components/config-editor/rules'
 import { LEGACY_VPN_FIELDS, splitLegacyVpn } from '../../src/domain/vpnPortal'
+import { configFlagText } from '../../src/i18n/configFlags'
 import { i18n } from '../../src/i18n'
 import { normalizeNetworkConfig, toBackendNetworkConfig, type NetworkConfig } from '../../src/lib/networkConfig'
 
@@ -109,6 +110,39 @@ describe('ConfigEditor form', () => {
     expect({ ...draft, mtu: null }).toStrictEqual({ ...value, mtu: null })
   })
 
+  it('text a number field cannot parse is an error, not a blank that saves the default (T3)', async () => {
+    // Browsers report '' plus validity.badInput for '1e', '12-' or (Firefox) letters; jsdom has no
+    // badInput, so it is set by hand.
+    async function typeUnparseable(el: DOMWrapper<HTMLInputElement>) {
+      Object.defineProperty(el.element, 'validity', { value: { badInput: true }, configurable: true })
+      el.element.value = ''
+      await el.trigger('input')
+      Object.defineProperty(el.element, 'validity', { value: { badInput: false }, configurable: true })
+    }
+    const value = input()
+    const w = mountEditor({ modelValue: value })
+    expect(lastValid(w)).toBe(true)
+
+    const mtu = control(w, 'MTU')
+    await typeUnparseable(mtu)
+    expect(lastValid(w)).toBe(false)
+    expect('mtu' in lastDraft(w)).toBe(true)
+    expect(lastDraft(w).mtu).toBeNaN()
+    expect(section(w, 'connection').text()).toContain('MTU 范围 400–1380')
+    await expect(flushOf(w)()).resolves.toBeNull()
+
+    // A field really left blank still means the default MTU.
+    await mtu.setValue('')
+    expect(lastValid(w)).toBe(true)
+    expect(lastDraft(w).mtu).toBeNull()
+
+    const length = control(section(w, 'network'), '前缀长度')
+    await typeUnparseable(length)
+    expect(lastValid(w)).toBe(false)
+    expect(lastDraft(w).network_length).toBeNaN()
+    expect(section(w, 'network').text()).toContain('前缀长度范围 1–32')
+  })
+
   it('an unset flag shows its default and is removed when set back to it', async () => {
     const w = mountEditor({ modelValue: input((raw) => delete raw.multi_thread) })
     const box = control(section(w, 'flags'), '启用多线程')
@@ -121,11 +155,76 @@ describe('ConfigEditor form', () => {
     expect('multi_thread' in lastDraft(w)).toBe(false)
   })
 
+  it('其他开关: the UDP FEC switches have real labels and help; a help that only repeats its label is left out (F10)', async () => {
+    let flags = section(mountEditor({ modelValue: input() }), 'flags')
+    // Looked up inside this editor: ids from useId repeat across the editors mounted here.
+    const helpOf = (box: DOMWrapper<HTMLInputElement>) => {
+      const id = box.attributes('aria-describedby')
+      return id ? flags.find(`[id="${id}"]`).text().trim() : undefined
+    }
+    expect(helpOf(control(flags, '启用 UDP FEC'))).toBe('请求在支持前向纠错的 UDP 对等连接上双向启用纠错，仅需一端开启。')
+    expect(helpOf(control(flags, 'KCP 代理使用 UDP FEC'))).toBe('任一端启用 UDP 前向纠错时，将 KCP 代理流量纳入纠错。')
+    expect(helpOf(control(flags, 'QUIC 代理使用 UDP FEC'))).toBe('任一端启用 UDP 前向纠错时，将 QUIC 代理流量纳入纠错。')
+
+    i18n.global.locale.value = 'en'
+    const original = { ...configFlagText.en.enable_udp_fec! }
+    try {
+      flags = section(mountEditor({ modelValue: input() }), 'flags')
+      expect(helpOf(control(flags, 'Enable UDP FEC'))).toBe(
+        'Request bidirectional forward error correction on UDP connections with supporting peers; only one peer needs to enable it.')
+      expect(flags.findAll('label').map((l) => l.text())).not.toContain('Enable_udp_fec')
+      // Upstream's own 'Disable udp hole punching' says no more than its label either.
+      expect(helpOf(control(flags, 'Disable UDP Hole Punching'))).toBeUndefined()
+
+      // Help that says no more than the label (whatever the case) is not shown under it.
+      i18n.global.mergeLocaleMessage('en', { config: { flags: { enable_udp_fec: { label: 'Enable UDP FEC', help: 'enable udp fec' } } } })
+      flags = section(mountEditor({ modelValue: input() }), 'flags')
+      expect(helpOf(control(flags, 'Enable UDP FEC'))).toBeUndefined()
+      expect(flags.text()).not.toContain('enable udp fec')
+    } finally {
+      i18n.global.mergeLocaleMessage('en', { config: { flags: { enable_udp_fec: original } } })
+    }
+  })
+
   it('the network section only shows for instances', () => {
     expect(section(mountEditor({ modelValue: input(), mode: 'member' }), 'network').exists()).toBe(false)
     const w = mountEditor({ modelValue: input(), mode: 'instance' })
     expect(section(w, 'network').exists()).toBe(true)
     expect(control(section(w, 'network'), '网络名').element.value).toBe('lab-manual')
+  })
+
+  it('a credential-mode instance locks 网络密钥 with a note, and an untouched save keeps the credential (F6)', async () => {
+    const NOTE = '这个实例使用凭据加入网络，不使用网络密钥。'
+    const KEY = 'aGVsbG8tY3JlZGVudGlhbC1rZXktMDAwMDAwMDAwMDA='
+    // As a device that joined with --credential reports it: no secret, a private key in secure_mode.
+    const value = input((raw) => {
+      delete raw.network_secret
+      raw.secure_mode = { enabled: true, local_private_key: KEY }
+    })
+    expect(value.credential_secret).toBe(KEY)
+    const w = mountEditor({ modelValue: value })
+    const net = section(w, 'network')
+    const secret = control(net, '网络密钥')
+    expect(secret.element.disabled).toBe(true)
+    expect(secret.element.value).toBe('')
+    expect(net.text()).toContain(NOTE)
+    expect(lastValid(w)).toBe(true)
+
+    // An unrelated edit saves the credential exactly as read, and still no network secret.
+    await control(w, 'MTU').setValue('1300')
+    const saved = await flushOf(w)()
+    expect(saved).toStrictEqual({ ...value, mtu: 1300 })
+    const backend = toBackendNetworkConfig(saved!)
+    expect(backend.secure_mode).toEqual({ enabled: true, local_private_key: KEY })
+    expect(backend.network_secret).toBeUndefined()
+    expect({ ...backend, mtu: undefined }).toStrictEqual({ ...toBackendNetworkConfig(value), mtu: undefined })
+
+    // A network-secret instance keeps an editable field and no note.
+    const plain = mountEditor({ modelValue: input() })
+    const plainNet = section(plain, 'network')
+    expect(control(plainNet, '网络密钥').element.disabled).toBe(false)
+    expect(control(plainNet, '网络密钥').element.value).toBe('fixture-secret')
+    expect(plainNet.text()).not.toContain(NOTE)
   })
 
   it('a static instance may have no virtual IP, as the core allows', async () => {
@@ -356,6 +455,21 @@ describe('ConfigEditor TOML', () => {
     await openToml(w)
     expect(w.text()).toContain('网络名、密钥、组网方式、IP、主机名、ACL 由中央网络管理，这里的修改会被忽略。')
   })
+
+  it('member mode also says subnet proxies are edited in their own row (F9); instance mode says neither', async () => {
+    const MEMBER = '网络名、密钥、组网方式、IP、主机名、ACL 由中央网络管理，这里的修改会被忽略。'
+    const PROXY = '子网代理在「子网代理」一行里修改，这里的修改会被忽略。'
+    const member = mountEditor({ modelValue: input(), mode: 'member' })
+    await openToml(member)
+    const hints = member.findAll('p').map((p) => p.text())
+    expect(hints).toContain(MEMBER)
+    expect(hints).toContain(PROXY)
+
+    const inst = mountEditor({ modelValue: input(), mode: 'instance' })
+    await openToml(inst)
+    expect(inst.text()).not.toContain(MEMBER)
+    expect(inst.text()).not.toContain(PROXY)
+  })
 })
 
 describe('ConfigEditor VPN portal (legacy cores)', () => {
@@ -444,6 +558,45 @@ describe('ConfigEditor VPN portal (legacy cores)', () => {
 
     const draft = lastDraft(w) as unknown as Record<string, unknown>
     for (const k of LEGACY_VPN_FIELDS) expect(draft[k], k).toBe((value as unknown as Record<string, unknown>)[k])
+  })
+
+  it('R18: a member on a pre-2.7 core gets a note instead of the 启用 switch; legacy fields stay as read', async () => {
+    const NOTE = '2.7 之前的 core 不能通过中央网络开启 VPN Portal；可以升级 core，或者使用手动实例。'
+    // A stored member override carrying the legacy fields, as AdvancedConfigRow hands it over.
+    const override = {
+      mtu: 1300,
+      enable_vpn_portal: true,
+      vpn_portal_listen_port: 22022,
+      vpn_portal_client_network_addr: '10.14.14.0',
+      vpn_portal_client_network_len: 24,
+    }
+    const value = normalizeNetworkConfig(structuredClone(override) as unknown as NetworkConfig)
+    const w = mountEditor({ modelValue: value, mode: 'member', coreVersion: '2.6.4-8428a89d' })
+    const vpn = section(w, 'vpnPortal')
+    expect(vpn.text()).toContain(NOTE)
+    expect(vpn.text()).not.toContain('这台设备的 core 早于 2.7')
+    expect(hasLabel(vpn, '启用')).toBe(false)
+    expect(vpn.find('input').exists()).toBe(false)
+    expect(lastValid(w)).toBe(true)
+
+    // An unrelated edit saves with the legacy fields exactly as read: neither edited nor stripped.
+    await control(w, 'MTU').setValue('1280')
+    const saved = await flushOf(w)()
+    expect(saved).toStrictEqual({ ...value, mtu: 1280 })
+    const backend = toBackendNetworkConfig(saved!) as unknown as Record<string, unknown>
+    for (const k of LEGACY_VPN_FIELDS) expect(backend[k], k).toBe((override as Record<string, unknown>)[k])
+
+    // Not editable here, so not checked here either: a bad legacy value cannot block the save.
+    const bad = mountEditor({ modelValue: { ...value, vpn_portal_listen_port: 0 }, mode: 'member', coreVersion: '2.6.4-8428a89d' })
+    expect(lastValid(bad)).toBe(true)
+
+    // A manual instance on the same core keeps the legacy switch and its checks.
+    const inst = mountEditor({ modelValue: { ...value, vpn_portal_listen_port: 0 }, mode: 'instance', coreVersion: '2.6.4-8428a89d' })
+    const instVpn = section(inst, 'vpnPortal')
+    expect(instVpn.text()).not.toContain(NOTE)
+    expect(instVpn.text()).toContain('这台设备的 core 早于 2.7')
+    expect(control(instVpn, '启用').element.checked).toBe(true)
+    expect(lastValid(inst)).toBe(false)
   })
 
   it('a 2.7 core without legacy fields gets the named-client portal', async () => {

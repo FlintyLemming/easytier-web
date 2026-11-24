@@ -95,10 +95,15 @@ export function useInvalidText(): (key: Invalid | null) => string | undefined {
   return (key) => (key ? t(`config.invalid.${key}`) : undefined)
 }
 
-/** A number input's value: null when blank (browsers also blank out unparseable input). */
+/**
+ * A number input's value: null when really blank. Browsers also report '' for text they cannot
+ * parse ('1e', '12-', letters in Firefox); that is NaN, so the field's rule shows an error rather
+ * than a blank (for MTU: the default) being saved.
+ */
 export function inputNumber(e: Event): number | null {
-  const raw = (e.target as HTMLInputElement).value
-  return raw === '' ? null : Number(raw)
+  const el = e.target as HTMLInputElement
+  if (el.validity?.badInput) return NaN
+  return el.value === '' ? null : Number(el.value)
 }
 
 // --- legacy (pre-2.7) VPN portal network, one CIDR over two fields ---
@@ -143,7 +148,8 @@ export function draftValid(d: NetworkConfig, opts: { mode: 'member' | 'instance'
     checks.push(ipv4Rule(pf.bind_ip), portRule(pf.bind_port), ipv4Rule(pf.dst_ip), portRule(pf.dst_port))
   }
   if (opts.legacyVpn) {
-    if (flagOn(d, 'enable_vpn_portal')) {
+    // A member on a pre-2.7 core is shown a note, not the legacy fields (R18): they are not checked.
+    if (opts.mode === 'instance' && flagOn(d, 'enable_vpn_portal')) {
       checks.push(portRule(d.vpn_portal_listen_port), legacyNetworkRule(d.vpn_portal_client_network_addr, d.vpn_portal_client_network_len))
     }
   } else if (vpnPortalOn(d)) {

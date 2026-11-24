@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { NetworkConfig } from '../../lib/networkConfig'
+import { credentialOf, type NetworkConfig } from '../../lib/networkConfig'
 import UiInput from '../ui/UiInput.vue'
 import CheckboxField from './CheckboxField.vue'
 import EditorSection from './EditorSection.vue'
@@ -12,6 +13,11 @@ import { dhcpOn, networkLengthRule, proxyCidrRule, requiredRule, setDhcp, useInv
 const props = defineProps<{ draft: NetworkConfig }>()
 const { t } = useI18n()
 const invalid = useInvalidText()
+
+// A credential-mode instance (e.g. a device joined with --credential) saves no network secret at all
+// (toBackendNetworkConfig drops it for the credential), so the field is locked rather than taking a
+// secret that would be silently thrown away.
+const credential = computed(() => credentialOf(props.draft) !== '')
 
 function setHostname(value: string) {
   if (value) props.draft.hostname = value
@@ -41,13 +47,17 @@ function setNetworkLength(value: number | null | undefined) {
         :error="invalid(requiredRule(draft.network_name))"
         @update:model-value="(v) => (draft.network_name = v)"
       />
-      <UiInput
-        :model-value="draft.network_secret ?? ''"
-        :label="t('config.field.networkSecret')"
-        autocomplete="off"
-        mono
-        @update:model-value="(v) => (draft.network_secret = v)"
-      />
+      <div class="flex flex-col gap-1.5">
+        <UiInput
+          :model-value="draft.network_secret ?? ''"
+          :label="t('config.field.networkSecret')"
+          autocomplete="off"
+          mono
+          :disabled="credential"
+          @update:model-value="(v) => (draft.network_secret = v)"
+        />
+        <p v-if="credential" class="text-[12px] text-muted">{{ t('config.network.credentialNote') }}</p>
+      </div>
     </div>
     <ListField
       v-model="draft.peer_urls"

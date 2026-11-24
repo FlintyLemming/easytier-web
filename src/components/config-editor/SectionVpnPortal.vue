@@ -24,6 +24,7 @@ import { FIELD_CLASS, LABEL_CLASS, REMOVE_CLASS } from './styles'
 
 const props = defineProps<{
   draft: NetworkConfig
+  mode: 'member' | 'instance'
   coreVersion: string
   /** The config as the editor read it; turning a portal back off returns to how it was there. */
   opened: NetworkConfig
@@ -35,6 +36,10 @@ const groupsId = useId()
 
 // Cores before 2.7 only understand the legacy fields (and drop `vpn_portal_config`).
 const legacy = computed(() => usesLegacyVpn(props.coreVersion, props.draft))
+// R18: web 2.7.1 compiles every member override through gen_config, which refuses the legacy fields
+// once the portal is on, so a member on such a core gets a note instead of a switch that could
+// never save. Legacy fields an override already has stay exactly as read.
+const memberLegacy = computed(() => props.mode === 'member' && legacy.value)
 const openedLegacy = computed(() => splitLegacyVpn(props.opened).legacy)
 
 // --- legacy: one shared WireGuard config for a client network ---
@@ -106,7 +111,9 @@ function setGroups(client: VpnPortalClientConfig, text: string) {
 
 <template>
   <EditorSection name="vpnPortal" :title="t('config.section.vpnPortal')">
-    <template v-if="legacy">
+    <p v-if="memberLegacy" class="text-[13px] text-muted">{{ t('config.vpn.memberLegacyNote') }}</p>
+
+    <template v-else-if="legacy">
       <p class="text-[13px] text-muted">{{ t('config.vpn.legacyHint') }}</p>
       <CheckboxField :model-value="flagOn(draft, 'enable_vpn_portal')" :label="t('config.field.vpnEnabled')" @update:model-value="setLegacyOn" />
       <div v-if="flagOn(draft, 'enable_vpn_portal')" class="grid gap-4 sm:grid-cols-[160px_1fr]">
