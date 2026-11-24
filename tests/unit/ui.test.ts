@@ -8,6 +8,7 @@ import { useConfirm } from '../../src/composables/useConfirm'
 import { toasts, useToast } from '../../src/composables/useToast'
 import StatusDot from '../../src/components/ui/StatusDot.vue'
 import KeyValueList from '../../src/components/ui/KeyValueList.vue'
+import UiDialog from '../../src/components/ui/UiDialog.vue'
 import { i18n } from '../../src/i18n'
 
 const wrappers: VueWrapper[] = []
@@ -193,6 +194,29 @@ describe('toasts', () => {
     await w.find('button[aria-label="Dismiss"]').trigger('click')
     expect(toasts).toHaveLength(0)
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe('UiDialog', () => {
+  async function openDialog(size?: 'md' | 'lg') {
+    track(mount(UiDialog, { props: { open: true, title: 'T', ...(size ? { size } : {}) }, slots: { default: '<p id="dlg-body">body</p>' }, attachTo: document.body }))
+    await flushPromises()
+    const content = document.body.querySelector<HTMLElement>('[role="dialog"]')!
+    const body = document.getElementById('dlg-body')!.parentElement!
+    return { content: content.className, body: body.className }
+  }
+
+  it('stays narrow with an unscrolled body by default', async () => {
+    const { content, body } = await openDialog()
+    expect(content).toContain('max-w-md')
+    expect(body).not.toContain('overflow-y-auto')
+  })
+
+  it('size lg is wide and scrolls its body between title and footer', async () => {
+    const { content, body } = await openDialog('lg')
+    expect(content).toContain('max-w-3xl')
+    expect(content).not.toContain('max-w-md')
+    expect(body).toContain('overflow-y-auto')
   })
 })
 
