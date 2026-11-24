@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import AttentionList from '../components/overview/AttentionList.vue'
+import ConnectionQuality from '../components/overview/ConnectionQuality.vue'
 import StatCards from '../components/overview/StatCards.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import SkeletonRows from '../components/ui/SkeletonRows.vue'
@@ -45,6 +47,12 @@ const stats = computed(() => overviewStats(inventory.devices, inventory.networks
       <template #action><UiButton @click="inventory.refresh()">{{ t('devices.retry') }}</UiButton></template>
     </EmptyState>
 
-    <StatCards v-else :stats="stats" :central="central" :fleet-loaded="runtime.fleetLoaded" :direct="runtime.stats" />
+    <template v-else>
+      <StatCards :stats="stats" :central="central" :fleet-loaded="runtime.fleetLoaded" :direct="runtime.stats" />
+      <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <AttentionList :central="central" :class="central ? '' : 'lg:col-span-2'" />
+        <ConnectionQuality v-if="central" />
+      </div>
+    </template>
   </div>
 </template>

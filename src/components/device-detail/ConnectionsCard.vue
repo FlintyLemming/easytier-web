@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useLinkFormat } from '../../composables/useLinkFormat'
 import { useNarrow } from '../../composables/useNarrow'
 import type { PeerLink } from '../../domain/connections'
 import { formatBytes } from '../../domain/format'
@@ -13,27 +14,13 @@ const props = defineProps<{ links: PeerLink[] | null; error: string | null; load
 const emit = defineEmits<{ retry: [] }>()
 const { t } = useI18n()
 const narrow = useNarrow(640)
+const { modeLabel, latencyText } = useLinkFormat()
 
 const meta = computed(() => {
   if (!props.online || !props.links) return undefined
   const direct = props.links.filter((l) => l.mode.type === 'p2p').length
   return t('detail.connections.meta', { direct, relay: props.links.length - direct })
 })
-
-function modeLabel(l: PeerLink): string {
-  if (l.mode.type === 'p2p') return t('detail.connections.p2p', { tunnel: l.mode.tunnel.toUpperCase() })
-  // Spec §6.4: relays through infrastructure read 「中继 · 经 网关/服务器」, not the node's hostname.
-  if (l.mode.viaKind === 'infra') {
-    return t('detail.connections.relay', { via: t(`detail.connections.infra.${l.mode.viaInfra ?? 'server'}`) })
-  }
-  return t('detail.connections.relay', { via: l.mode.via })
-}
-
-function latency(ms: number | null): string {
-  if (ms === null) return '—'
-  if (ms < 10) return `${Math.round(ms * 10) / 10} ms`
-  return `${Math.round(ms)} ms`
-}
 
 function traffic(l: PeerLink): string {
   if (l.mode.type !== 'p2p' || (l.rxBytes === null && l.txBytes === null)) return '—'
@@ -65,7 +52,7 @@ const badge = (l: PeerLink) =>
           <div class="flex min-w-0 items-center gap-2">
             <span class="truncate text-[14px] text-ink">{{ l.name }}</span>
             <UiBadge v-if="badge(l)" tone="outline">{{ badge(l) }}</UiBadge>
-            <span class="ml-auto shrink-0 font-mono text-[12px] text-body">{{ latency(l.latencyMs) }}</span>
+            <span class="ml-auto shrink-0 font-mono text-[12px] text-body">{{ latencyText(l.latencyMs) }}</span>
           </div>
           <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
             <span class="font-mono text-[12px] text-body">{{ l.ip ?? '—' }}</span>
@@ -73,7 +60,7 @@ const badge = (l: PeerLink) =>
               data-testid="link-mode"
               class="inline-block rounded-pill px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap text-body"
               :class="l.mode.type === 'p2p' ? 'bg-hairline-soft' : 'border border-hairline-strong bg-surface-card'"
-            >{{ modeLabel(l) }}</span>
+            >{{ modeLabel(l.mode) }}</span>
             <span class="font-mono text-[12px] whitespace-pre text-muted">{{ traffic(l) }}</span>
           </div>
         </li>
@@ -103,9 +90,9 @@ const badge = (l: PeerLink) =>
                   data-testid="link-mode"
                   class="inline-block rounded-pill px-2 py-0.5 text-[11px] font-semibold tracking-[0.3px] whitespace-nowrap text-body"
                   :class="l.mode.type === 'p2p' ? 'bg-hairline-soft' : 'border border-hairline-strong bg-surface-card'"
-                >{{ modeLabel(l) }}</span>
+                >{{ modeLabel(l.mode) }}</span>
               </td>
-              <td class="px-3 py-2.5 text-right align-middle font-mono text-[12px] whitespace-nowrap text-body">{{ latency(l.latencyMs) }}</td>
+              <td class="px-3 py-2.5 text-right align-middle font-mono text-[12px] whitespace-nowrap text-body">{{ latencyText(l.latencyMs) }}</td>
               <td class="py-2.5 pr-5 pl-3 text-right align-middle font-mono text-[12px] whitespace-pre text-muted">{{ traffic(l) }}</td>
             </tr>
           </tbody>
