@@ -1,0 +1,4 @@
+{
+  "error": "Error: failed to parse config TOML from inline config\n   ,-[ inline config:1:17 ]\n   |\n 1 | network_name = [\n   |                 | \n   |                 `- unclosed array, expected `]`\n---'\n\n\nCaused by:\n    TOML parse error at line 1, column 17\n      |\n    1 | network_name = [\n      |                 ^\n    unclosed array, expected `]`\n    ",
+  "config": null
+}

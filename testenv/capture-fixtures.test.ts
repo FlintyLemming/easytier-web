@@ -36,6 +36,32 @@ test('blocked-devices.json has >=1 blocked', () => {
   assert.ok(load('blocked-devices.json').blocked.length >= 1)
 })
 
+test('instance fixtures: list has the fixed instance and the central network, config keeps hidden fields', () => {
+  const { networkId } = load('index.json')
+  const uuid = (u: { part1: number; part2: number; part3: number; part4: number }) => {
+    const h = [u.part1, u.part2, u.part3, u.part4].map((p) => (p >>> 0).toString(16).padStart(8, '0')).join('')
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
+  }
+  const running = load('instances-core2.json').running_inst_ids.map(uuid)
+  assert.ok(running.includes('5eed0000-0000-4000-8000-000000000001'))
+  assert.ok(running.includes(networkId))
+  const cfg = load('instance-config-core2.json')
+  for (const k of ['routes', 'exit_nodes', 'acl', 'port_forwards']) assert.ok(cfg[k], k)
+  // The testenv cores (v2.6.4) only run the legacy VPN portal fields.
+  assert.ok(cfg.enable_vpn_portal === true || cfg.vpn_portal_config, 'vpn portal')
+  assert.equal(load('instance-info-core2.json').info.map['5eed0000-0000-4000-8000-000000000001'].running, true)
+  assert.deepEqual(load('instance-info-disabled.json'), { info: {} })
+})
+
+test('parse-config-error has an error and a null config; member-config-empty is {}', () => {
+  const e = load('parse-config-error.json')
+  assert.ok(e.error)
+  assert.equal(e.config, null)
+  assert.deepEqual(load('member-config-empty.json'), {})
+  assert.ok(load('parse-config-ok.json').config)
+  assert.ok(load('generate-config-ok.json').toml_config)
+})
+
 test('no fixture contains /Users/', () => {
   const files = readdirSync(dir).filter((f) => f.endsWith('.json'))
   assert.ok(files.length >= 15)
@@ -122,6 +148,25 @@ test('no fixture contains an ACL group_secret other than the placeholder', () =>
   assert.deepEqual(bad, [])
 })
 
+test('no fixture contains WireGuard key material', () => {
+  const bad: string[] = []
+  for (const { f } of allFixtures()) {
+    const text = readFileSync(join(dir, f), 'utf8')
+    for (const m of text.matchAll(/(?:Private|Public)Key\s*=\s*([^\\\s"]*)/g)) if (m[1] !== 'redacted-key') bad.push(`${f}: ${m[0].slice(0, 14)}…`)
+    for (const m of text.matchAll(/"([A-Za-z0-9+/]{43}=)"/g)) bad.push(`${f}: base64 key-shaped ${m[1]!.slice(0, 6)}…`)
+  }
+  assert.deepEqual(bad, [])
+})
+
+test('redact() scrubs WireGuard keys', async () => {
+  const { redact } = await import('./lib/redact.ts')
+  const key = 'A'.repeat(43) + '='
+  const out = redact({ t: `[Interface]\nPrivateKey = ${key}\nAddress = 10.0.0.1/32\n[Peer]\nPublicKey = ${key}\n`, wireguard_private_key: key })
+  assert.ok(!JSON.stringify(out).includes(key))
+  assert.ok(out.t.includes('Address = 10.0.0.1/32'))
+  assert.equal(out.wireguard_private_key, 'redacted-key')
+})
+
 test('redact() scrubs public IPs and group secrets, keeps private ones', async () => {
   const { redact } = await import('./lib/redact.ts')
   const input = {
@@ -174,7 +219,10 @@ test('every network_id / inst_id referenced in the fixtures equals index.network
       }
     }
   }
-  for (const { f, data } of allFixtures()) walk(data, f)
+  // The per-device instance fixtures describe other (manual) instances, not the central network.
+  const instanceFixtures = new Set(['instances-core2.json', 'instance-metas-core2.json', 'instance-config-core2.json',
+    'instance-info-core2.json', 'generate-config-ok.json', 'parse-config-ok.json'])
+  for (const { f, data } of allFixtures()) if (!instanceFixtures.has(f)) walk(data, f)
   const files = new Set(refs.map((r) => r.where.slice(0, r.where.indexOf('.json') + 5)))
   for (const f of ['network.json', 'networks.json', 'machines.json', 'list-route-core1.json', 'show-node-info-core3.json']) {
     assert.ok(files.has(f), `no network reference found in ${f}`)

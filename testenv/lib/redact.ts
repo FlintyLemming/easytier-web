@@ -44,6 +44,10 @@ function isSafeIpv4(ip: string): boolean {
 const DOTTED_IPV4 = /(?<![\d.])(\d{1,3}(?:\.\d{1,3}){3})(?!\d|\.\d)/g
 const TOML_GROUP_SECRET = /(group_secret\s*=\s*)(?:"[^"\n]*"|'[^'\n]*')/g
 
+export const REDACTED_KEY = 'redacted-key'
+// WireGuard keys inside text (`PrivateKey = ...` / `PublicKey = ...`), e.g. a client_config / vpn_portal_cfg.
+const WG_KEY_LINE = /^(\s*(?:Private|Public)Key\s*=\s*).*$/gim
+
 export function redact<T>(data: T): T {
   const seen = new Map<string, string>()
   const docFor = (ip: string) => {
@@ -56,6 +60,7 @@ export function redact<T>(data: T): T {
   }
   const str = (s: string) =>
     s
+      .replace(WG_KEY_LINE, `$1${REDACTED_KEY}`)
       .replace(TOML_GROUP_SECRET, `$1"${REDACTED_GROUP_SECRET}"`)
       .replace(DOTTED_IPV4, (ip) => (ip.split('.').every((o) => Number(o) <= 255) && !isSafeIpv4(ip) ? docFor(ip) : ip))
 
@@ -66,6 +71,7 @@ export function redact<T>(data: T): T {
     const out: Record<string, unknown> = {}
     for (const [k, x] of Object.entries(v)) {
       if (k === 'group_secret' && typeof x === 'string') out[k] = REDACTED_GROUP_SECRET
+      else if (/_private_key$/.test(k) && typeof x === 'string') out[k] = REDACTED_KEY
       else if (k === 'public_ip' && Array.isArray(x)) out[k] = x.map((_, i) => DOC_IPV4[i % DOC_IPV4.length])
       else if (k === 'public_ipv4' && x && typeof x === 'object' && 'addr' in x) out[k] = { ...x, addr: DOC_PUBLIC_IPV4_U32 }
       else if (k === 'public_ipv6' && x && typeof x === 'object') out[k] = { ...DOC_PUBLIC_IPV6 }

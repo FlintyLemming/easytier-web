@@ -4,7 +4,18 @@ import { apiUrl, onUnauthorized, ApiError } from '../../src/api/http'
 import {
   login, nodeRoutes, deleteMachine, nodeInfo, logout, checkLogin, proxyRpc, RPC_TIMEOUT_MS,
   setMachineAlias, unblockDevice, listMembers, updateMember, getMemberConfig,
+  listInstances, instanceMetas, instanceInfo, getInstanceConfig, saveInstanceConfig, runInstance,
+  setInstanceDisabled, deleteInstance, vpnPortalInfo, patchVpnPortalClients, generateToml, parseToml,
 } from '../../src/api/client'
+import instancesFx from '../fixtures/v2.7.1/instances-core2.json'
+import metasFx from '../fixtures/v2.7.1/instance-metas-core2.json'
+import instConfigFx from '../fixtures/v2.7.1/instance-config-core2.json'
+import instInfoFx from '../fixtures/v2.7.1/instance-info-core2.json'
+import instInfoDisabledFx from '../fixtures/v2.7.1/instance-info-disabled.json'
+import parseOkFx from '../fixtures/v2.7.1/parse-config-ok.json'
+import parseErrFx from '../fixtures/v2.7.1/parse-config-error.json'
+import generateOkFx from '../fixtures/v2.7.1/generate-config-ok.json'
+import vpnFx from '../fixtures/v2.7.1/vpn-portal-info-core2.json'
 
 interface Call { url: string; init: RequestInit }
 let calls: Call[]
@@ -203,5 +214,123 @@ describe('api client', () => {
       `/networks/${enc}/members/${enc}/config`,
       `/machines/${enc}/proxy-rpc`,
     ])
+  })
+
+  describe('instances, toml and vpn portal', () => {
+    const FIXED = '5eed0000-0000-4000-8000-000000000001'
+    const path = (i: number) => calls[i].url.replace(/^.*\/api\/v1/, '')
+    const body = (i: number) => JSON.parse(calls[i].init.body as string)
+
+    it('listInstances converts UUID objects to strings', async () => {
+      stub(() => json(instancesFx))
+      const r = await listInstances('m/1')
+      expect(calls[0].init.method).toBe('GET')
+      expect(path(0)).toBe('/machines/m%2F1/networks')
+      expect(r.running).toContain(FIXED)
+      expect(r.running).toHaveLength(2)
+      expect(r.disabled).toEqual([])
+    })
+
+    it('instanceMetas posts ids, maps source and permission; empty ids sends nothing', async () => {
+      stub(() => json(metasFx))
+      expect(await instanceMetas('m', [])).toEqual({})
+      expect(calls).toHaveLength(0)
+      const r = await instanceMetas('m', [FIXED])
+      expect(calls[0].init.method).toBe('POST')
+      expect(path(0)).toBe('/machines/m/networks/metas')
+      expect(body(0)).toEqual({ instance_ids: [FIXED] })
+      expect(r[FIXED]).toEqual({ networkName: 'lab-manual', instanceName: 'lab-manual', source: 'web', permission: 0 })
+      stub(() => json({ metas: {
+        a: { network_name: 'n', instance_name: 'i', source: 'ConfigSourceUser', config_permission: 3 },
+        b: { network_name: 'n', instance_name: 'i', source: 1 },
+        c: { network_name: 'n', instance_name: 'i', source: 2 },
+        d: { network_name: 'n', instance_name: 'i', source: 'ConfigSourceUnspecified' },
+        e: { network_name: 'n', instance_name: 'i' },
+      } }))
+      const m = await instanceMetas('m', ['a', 'b', 'c', 'd', 'e'])
+      expect(Object.values(m).map((x) => x.source)).toEqual(['user', 'user', 'web', 'unspecified', 'unspecified'])
+      expect(m.a.permission).toBe(3)
+    })
+
+    it('instanceInfo returns the entry, or null when disabled / missing', async () => {
+      stub(() => json(instInfoFx))
+      const r = await instanceInfo('m', FIXED)
+      expect(path(0)).toBe('/machines/m/networks/info/' + FIXED)
+      expect(r?.running).toBe(true)
+      expect(r?.my_node_info?.virtual_ipv4?.address?.addr).toBe(173539331)
+      stub(() => json(instInfoDisabledFx))
+      expect(await instanceInfo('m', FIXED)).toBeNull()
+    })
+
+    it('instance config read / save / run / toggle / delete', async () => {
+      stub(() => json(instConfigFx))
+      expect(await getInstanceConfig('m', FIXED)).toEqual(instConfigFx)
+      expect(calls[0].init.method).toBe('GET')
+      expect(path(0)).toBe(`/machines/m/networks/config/${FIXED}`)
+      stub(() => new Response(null, { status: 204 }))
+      await saveInstanceConfig('m', 'a/b', { x: 1 })
+      await runInstance('m', { y: 2 }, true)
+      await setInstanceDisabled('m', 'a/b', true)
+      await deleteInstance('m', 'a/b')
+      expect(calls.map((c) => c.init.method)).toEqual(['PUT', 'POST', 'PUT', 'DELETE'])
+      expect([0, 1, 2, 3].map(path)).toEqual([
+        '/machines/m/networks/config/a%2Fb', '/machines/m/networks', '/machines/m/networks/a%2Fb', '/machines/m/networks/a%2Fb',
+      ])
+      expect(body(0)).toEqual({ config: { x: 1 } })
+      expect(body(1)).toEqual({ config: { y: 2 }, save: true })
+      expect(body(2)).toEqual({ disabled: true })
+      expect(calls[3].init.body).toBeUndefined()
+    })
+
+    it('vpnPortalInfo goes through proxy-rpc with the instance id', async () => {
+      stub(() => json(vpnFx))
+      const r = await vpnPortalInfo('m', FIXED)
+      expect(calls[0].init.method).toBe('POST')
+      expect(path(0)).toBe('/machines/m/proxy-rpc')
+      expect(body(0)).toEqual({
+        service_name: 'api.instance.VpnPortalRpcService',
+        method_name: 'get_vpn_portal_info',
+        payload: { instance: { id: strToUuid(FIXED) } },
+      })
+      expect(r?.vpn_type).toBe('wireguard')
+      expect(r?.client_config).toContain('[Interface]')
+      expect(r?.clients).toEqual([])
+      stub(() => json({}))
+      expect(await vpnPortalInfo('m', FIXED)).toBeNull()
+    })
+
+    it('patchVpnPortalClients patches the vpn-portal-clients path', async () => {
+      stub(() => new Response(null, { status: 204 }))
+      const patches = [{ action: 'CLEAR' as const }]
+      await patchVpnPortalClients('m', 'a/b', patches)
+      expect(calls[0].init.method).toBe('PATCH')
+      expect(path(0)).toBe('/machines/m/networks/a%2Fb/vpn-portal-clients')
+      expect(body(0)).toEqual({ patches })
+    })
+
+    it('generateToml returns toml, or { error } on a 200 with error', async () => {
+      stub(() => json(generateOkFx))
+      const r = await generateToml({ network_name: 'x' })
+      expect(calls[0].init.method).toBe('POST')
+      expect(path(0)).toBe('/generate-config')
+      expect(body(0)).toEqual({ config: { network_name: 'x' } })
+      expect(r).toEqual({ toml: generateOkFx.toml_config })
+      stub(() => json({ error: 'bad', toml_config: null }))
+      expect(await generateToml({})).toEqual({ error: 'bad' })
+      stub(() => json({ message: 'boom' }, 500))
+      await expect(generateToml({})).rejects.toBeInstanceOf(ApiError)
+    })
+
+    it('parseToml returns the config, or { error } for the error fixture', async () => {
+      stub(() => json(parseOkFx))
+      const ok = await parseToml('a = 1')
+      expect(path(0)).toBe('/parse-config')
+      expect(body(0)).toEqual({ toml_config: 'a = 1' })
+      expect(ok).toEqual({ config: parseOkFx.config })
+      stub(() => json(parseErrFx))
+      expect(await parseToml('network_name = [')).toEqual({ error: parseErrFx.error })
+      stub(() => json({ message: 'boom' }, 500))
+      await expect(parseToml('x')).rejects.toBeInstanceOf(ApiError)
+    })
   })
 })

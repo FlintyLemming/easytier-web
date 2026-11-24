@@ -3,11 +3,10 @@
 //   ET_DATA_DIR=./data-central docker compose -f testenv/docker-compose.yml up -d && node testenv/capture-fixtures.ts
 // Rerunnable: an existing `home-central` network is reused.
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { EtApi, MACHINES, strToUuid, uuidToStr, waitFor, waitForApi } from './lib/api.ts'
-import { redact } from './lib/redact.ts'
+import { saveAll as save } from './lib/save-fixtures.ts'
 
 const base = process.env.ET_API ?? 'http://localhost:11211'
 const here = dirname(fileURLToPath(import.meta.url))
@@ -36,24 +35,6 @@ function composeNetwork(): string {
     if (nets.length) return nets[0]!
   }
   throw new Error('cannot determine compose network')
-}
-
-// Writes every fixture in one go, only after all responses were fetched: first into a temp dir
-// next to outDir, then each file is renamed into place, so a failed run never leaves a mix of
-// old and new fixtures. Every fixture goes through redact(): no real public IPs (STUN /
-// public_ipv4) or ACL group secrets get committed.
-function saveAll(files: [string, unknown][]) {
-  mkdirSync(outDir, { recursive: true })
-  const tmp = mkdtempSync(join(dirname(outDir), '.capture-'))
-  try {
-    for (const [name, data] of files) writeFileSync(join(tmp, name), `${JSON.stringify(redact(data), null, 2)}\n`)
-    for (const [name] of files) {
-      renameSync(join(tmp, name), join(outDir, name))
-      log(`wrote ${name}`)
-    }
-  } finally {
-    rmSync(tmp, { recursive: true, force: true })
-  }
 }
 
 async function main() {
@@ -209,7 +190,7 @@ async function main() {
     ['logger-level.json', await rpc(MACHINES.core1, 'api.logger.LoggerRpcService', 'get_logger_config', {})],
     ['index.json', { networkId: nid, machines: { core1: MACHINES.core1, core2: MACHINES.core2, core3: MACHINES.core3 } }],
   ]
-  saveAll(files)
+  save(outDir, files, log)
 }
 
 await main()

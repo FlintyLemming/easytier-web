@@ -1,0 +1,26 @@
+{
+  "metas": {
+    "66b08ebb-fbf8-47f4-b4b6-24aba31ee1d0": {
+      "inst_id": {
+        "part1": 1722846907,
+        "part2": 4227352564,
+        "part3": 3031835819,
+        "part4": 2736710096
+      },
+      "network_name": "home-central",
+      "instance_name": "home-central",
+      "source": "ConfigSourceWeb"
+    },
+    "5eed0000-0000-4000-8000-000000000001": {
+      "inst_id": {
+        "part1": 1592590336,
+        "part2": 16384,
+        "part3": 2147483648,
+        "part4": 1
+      },
+      "network_name": "lab-manual",
+      "instance_name": "lab-manual",
+      "source": "ConfigSourceWeb"
+    }
+  }
+}

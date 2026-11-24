@@ -1,0 +1,99 @@
+{
+  "error": null,
+  "config": {
+    "instance_id": "5eed0000-0000-4000-8000-000000000001",
+    "dhcp": false,
+    "virtual_ipv4": "10.88.0.3",
+    "network_length": 24,
+    "hostname": "lab-manual",
+    "network_name": "lab-manual",
+    "network_secret": "fixture-secret",
+    "networking_method": "Manual",
+    "latency_first": false,
+    "dev_name": "",
+    "use_smoltcp": false,
+    "disable_ipv6": false,
+    "enable_kcp_proxy": false,
+    "disable_kcp_input": false,
+    "disable_p2p": false,
+    "bind_device": true,
+    "no_tun": false,
+    "enable_exit_node": false,
+    "relay_all_peer_rpc": false,
+    "multi_thread": true,
+    "enable_relay_network_whitelist": true,
+    "relay_network_whitelist": [
+      "lab-*"
+    ],
+    "enable_manual_routes": true,
+    "routes": [
+      "10.99.0.0/16"
+    ],
+    "exit_nodes": [
+      "10.144.144.1"
+    ],
+    "proxy_forward_by_system": false,
+    "disable_encryption": false,
+    "enable_socks5": true,
+    "socks5_port": 1081,
+    "disable_udp_hole_punching": false,
+    "mtu": 1380,
+    "mapped_listeners": [
+      "tcp://203.0.113.10:11010"
+    ],
+    "enable_magic_dns": false,
+    "enable_private_mode": false,
+    "enable_quic_proxy": false,
+    "disable_quic_input": false,
+    "port_forwards": [
+      {
+        "bind_ip": "0.0.0.0",
+        "bind_port": 18080,
+        "dst_ip": "10.88.0.9",
+        "dst_port": 80,
+        "proto": "tcp"
+      }
+    ],
+    "disable_sym_hole_punching": false,
+    "p2p_only": false,
+    "disable_tcp_hole_punching": false,
+    "acl": {
+      "acl_v1": {
+        "chains": [
+          {
+            "name": "lab-inbound",
+            "chain_type": "Inbound",
+            "description": "fixture chain",
+            "enabled": true,
+            "rules": [
+              {
+                "name": "deny-ssh",
+                "priority": 100,
+                "enabled": true,
+                "protocol": "TCP",
+                "ports": [
+                  "22"
+                ],
+                "action": "Drop"
+              }
+            ],
+            "default_action": "Allow"
+          }
+        ]
+      }
+    },
+    "lazy_p2p": false,
+    "need_p2p": false,
+    "disable_upnp": false,
+    "disable_relay_data": false,
+    "enable_udp_broadcast_relay": false,
+    "vpn_portal_config": {
+      "wireguard_listen": "0.0.0.0:22022",
+      "enabled": true
+    },
+    "dhcpv6": false,
+    "dns": {
+      "domain": "lab.et"
+    }
+  }
+}

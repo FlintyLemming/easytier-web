@@ -1,0 +1,56 @@
+{
+  "info": {
+    "map": {
+      "5eed0000-0000-4000-8000-000000000001": {
+        "my_node_info": {
+          "virtual_ipv4": {
+            "address": {
+              "addr": 173539331
+            },
+            "network_length": 24
+          },
+          "hostname": "lab-manual",
+          "version": "2.6.4-8428a89d",
+          "ips": {
+            "public_ipv4": {
+              "addr": 3405803786
+            },
+            "interface_ipv4s": [
+              {
+                "addr": 3232260357
+              }
+            ]
+          },
+          "stun_info": {
+            "udp_nat_type": "Symmetric",
+            "tcp_nat_type": "Symmetric",
+            "last_update_time": "1795504336",
+            "public_ip": [
+              "203.0.113.10",
+              "198.51.100.20"
+            ],
+            "min_port": 14816,
+            "max_port": 50668
+          },
+          "listeners": [
+            {
+              "url": "ring://5eed0000-0000-4000-8000-000000000001"
+            }
+          ],
+          "vpn_portal_cfg": "\n[Interface]\nPrivateKey = redacted-key\nAddress = 10.88.1.0/32 # should assign an ip from this cidr manually\n\n[Peer]\nPublicKey = redacted-key\nAllowedIPs = 10.88.0.0/24,10.88.1.0/24\nEndpoint = 0.0.0.0:22022 # should be the public ip(or domain) of the vpn server\nPersistentKeepalive = 25\n",
+          "peer_id": 3562912849
+        },
+        "events": [
+          "{\"time\":\"2026-11-24T15:12:14.476950696+08:00\",\"event\":{\"ProxyCidrsUpdated\":[[\"10.99.0.0/16\"],[]]}}",
+          "{\"time\":\"2026-11-24T15:12:13.474622711+08:00\",\"event\":{\"PortForwardAdded\":{\"bind_addr\":{\"port\":18080,\"ip\":{\"Ipv4\":{\"addr\":0}}},\"dst_addr\":{\"port\":80,\"ip\":{\"Ipv4\":{\"addr\":173539337}}},\"socket_type\":0}}}",
+          "{\"time\":\"2026-11-24T15:12:13.474622128+08:00\",\"event\":{\"VpnPortalStarted\":\"wg://[::]:22022\"}}",
+          "{\"time\":\"2026-11-24T15:12:13.474590584+08:00\",\"event\":{\"VpnPortalStarted\":\"wg://0.0.0.0:22022\"}}",
+          "{\"time\":\"2026-11-24T15:12:13.473802983+08:00\",\"event\":{\"TunDeviceReady\":\"tun1\"}}",
+          "{\"time\":\"2026-11-24T15:12:13.472813533+08:00\",\"event\":{\"ListenerAdded\":\"ring://5eed0000-0000-4000-8000-000000000001\"}}"
+        ],
+        "running": true,
+        "foreign_network_summary": {}
+      }
+    }
+  }
+}

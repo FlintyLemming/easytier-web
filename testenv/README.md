@@ -111,6 +111,16 @@ node --test testenv/capture-fixtures.test.ts
 | `logger-level.json` | `POST /machines/{core1}/proxy-rpc`，`api.logger.LoggerRpcService.get_logger_config` |
 | `index.json` | 非接口：`{ networkId, machines: {core1, core2, core3} }` |
 
+## 实例相关的 fixtures
+
+```sh
+node testenv/capture-instance-fixtures.ts
+```
+
+需要 testenv 在运行，且中央网络已经抓过（`index.json`）。脚本在 core2 上用固定 id `5eed0000-0000-4000-8000-000000000001` 临时新建手动实例 `lab-manual`（IP `10.88.0.3/24`），抓取实例列表、元信息、配置、运行信息、VPN Portal 信息、停用后的运行信息、成员配置（必须为 `{}`）、`generate-config` / `parse-config`，并在 `finally` 里删除实例。生成 `instances-core2.json`、`instance-metas-core2.json`、`instance-config-core2.json`、`instance-info-core2.json`、`instance-info-disabled.json`、`member-config-empty.json`、`parse-config-ok.json`、`parse-config-error.json`、`generate-config-ok.json`、`vpn-portal-info-core2.json`。
+
+注意：testenv 的 core 是 v2.6.4，只认旧版 VPN Portal 字段（`enable_vpn_portal` 等），v2.7 的 `vpn_portal_config` 会被静默丢弃；因此 `vpn-portal-info-core2.json` 是旧版形状（`client_config` 文本）。web v2.7.1 的 `generate-config` 拒绝旧字段，脚本改用 `vpn_portal_config` 调用它。
+
 ## 观察到的响应形状（v2.7.1 web + 2.6.4 core）
 
 写前端和 mock 时容易踩的地方，均以 `tests/fixtures/v2.7.1/` 为准：

@@ -1,18 +1,24 @@
 import { Md5 } from 'ts-md5'
-import { strToUuid } from '../lib/uuid'
+import { strToUuid, uuidToStr } from '../lib/uuid'
+import { normalizeVpnPortalInfo, type VpnPortalInfo } from '../lib/networkConfig'
 import { ipv4FromU32 } from '../domain/format'
 import { ApiError, apiUrl, request } from './http'
 import type {
   BlockedDevice,
   CentralNetworkMember,
   CentralNetworkSummary,
+  ConfigSource,
   ConsoleInfo,
+  InstanceList,
+  InstanceMeta,
+  InstanceRunningInfo,
   MemberPatch,
   NodeAclRuleStat,
   NodePeerInfo,
   NodeRouteInfo,
   RawMachine,
   TemporaryPeer,
+  VpnClientPatch,
 } from './types'
 
 /** Every interpolated path segment goes through this (ids may contain `/`, spaces, …). */
@@ -244,4 +250,94 @@ export async function getLoggerLevel(machineId: string): Promise<number> {
 
 export async function setLoggerLevel(machineId: string, level: number): Promise<void> {
   await proxyRpc(machineId, 'api.logger.LoggerRpcService', 'set_logger_config', { level })
+}
+
+// --- per-device instances ---
+
+type UuidObj = Parameters<typeof uuidToStr>[0]
+
+export async function listInstances(machineId: string): Promise<InstanceList> {
+  const r = await request<{ running_inst_ids?: UuidObj[]; disabled_inst_ids?: UuidObj[] }>(
+    'GET', `/machines/${seg(machineId)}/networks`)
+  return {
+    running: (r?.running_inst_ids ?? []).map(uuidToStr),
+    disabled: (r?.disabled_inst_ids ?? []).map(uuidToStr),
+  }
+}
+
+function configSource(s: unknown): ConfigSource {
+  if (s === 'ConfigSourceWeb' || s === 2) return 'web'
+  if (s === 'ConfigSourceUser' || s === 1) return 'user'
+  return 'unspecified'
+}
+
+export async function instanceMetas(machineId: string, ids: string[]): Promise<Record<string, InstanceMeta>> {
+  if (ids.length === 0) return {}
+  const r = await request<{
+    metas?: Record<string, { network_name?: string; instance_name?: string; source?: unknown; config_permission?: number }>
+  }>('POST', `/machines/${seg(machineId)}/networks/metas`, { body: { instance_ids: ids } })
+  const out: Record<string, InstanceMeta> = {}
+  for (const [id, m] of Object.entries(r?.metas ?? {})) {
+    out[id] = {
+      networkName: m.network_name ?? '',
+      instanceName: m.instance_name ?? '',
+      source: configSource(m.source),
+      permission: m.config_permission ?? 0,
+    }
+  }
+  return out
+}
+
+export async function instanceInfo(machineId: string, instId: string): Promise<InstanceRunningInfo | null> {
+  const r = await request<{ info?: { map?: Record<string, InstanceRunningInfo> } }>(
+    'GET', `/machines/${seg(machineId)}/networks/info/${seg(instId)}`)
+  return r?.info?.map?.[instId] ?? null
+}
+
+export function getInstanceConfig(machineId: string, instId: string): Promise<Record<string, unknown>> {
+  return request('GET', `/machines/${seg(machineId)}/networks/config/${seg(instId)}`)
+}
+
+export async function saveInstanceConfig(machineId: string, instId: string, config: object): Promise<void> {
+  await request('PUT', `/machines/${seg(machineId)}/networks/config/${seg(instId)}`, { body: { config } })
+}
+
+export async function runInstance(machineId: string, config: object, save: boolean): Promise<void> {
+  await request('POST', `/machines/${seg(machineId)}/networks`, { body: { config, save } })
+}
+
+export async function setInstanceDisabled(machineId: string, instId: string, disabled: boolean): Promise<void> {
+  await request('PUT', `/machines/${seg(machineId)}/networks/${seg(instId)}`, { body: { disabled } })
+}
+
+export async function deleteInstance(machineId: string, instId: string): Promise<void> {
+  await request('DELETE', `/machines/${seg(machineId)}/networks/${seg(instId)}`)
+}
+
+export async function vpnPortalInfo(machineId: string, instId: string): Promise<VpnPortalInfo | null> {
+  const r = await proxyRpc<{ vpn_portal_info?: unknown }>(
+    machineId, 'api.instance.VpnPortalRpcService', 'get_vpn_portal_info', instancePayload(instId))
+  return r?.vpn_portal_info ? normalizeVpnPortalInfo(r.vpn_portal_info) : null
+}
+
+export async function patchVpnPortalClients(machineId: string, instId: string, patches: VpnClientPatch[]): Promise<void> {
+  await request('PATCH', `/machines/${seg(machineId)}/networks/${seg(instId)}/vpn-portal-clients`, { body: { patches } })
+}
+
+// --- TOML ---
+
+export async function generateToml(config: object): Promise<{ toml: string } | { error: string }> {
+  const r = await request<{ error?: string | null; toml_config?: string | null }>('POST', '/generate-config', {
+    body: { config },
+  })
+  if (r?.error) return { error: r.error }
+  return { toml: r?.toml_config ?? '' }
+}
+
+export async function parseToml(toml: string): Promise<{ config: Record<string, unknown> } | { error: string }> {
+  const r = await request<{ error?: string | null; config?: Record<string, unknown> | null }>('POST', '/parse-config', {
+    body: { toml_config: toml },
+  })
+  if (r?.error) return { error: r.error }
+  return { config: r?.config ?? {} }
 }

@@ -142,3 +142,38 @@ export type MemberPatch = {
   virtual_ipv4?: string | null
   proxy_cidrs?: string[]
 }
+
+// --- per-device instances ---
+
+export interface InstanceList {
+  running: string[]
+  disabled: string[]
+}
+
+export type ConfigSource = 'web' | 'user' | 'unspecified'
+
+export interface InstanceMeta {
+  networkName: string
+  instanceName: string
+  source: ConfigSource
+  permission: number
+}
+
+export const CONFIG_READ_ONLY = 1
+export const CONFIG_NO_DELETE = 2
+
+export interface InstanceRunningInfo {
+  running: boolean
+  error_msg?: string | null
+  my_node_info?: {
+    virtual_ipv4?: { address?: { addr?: number }; network_length?: number } | null
+    ips?: unknown
+  } | null
+  peer_route_pairs?: { route?: { ipv4_addr?: unknown } | null }[]
+  [k: string]: unknown
+}
+
+export type VpnClientPatch =
+  | { action: 'ADD'; client: { name: string; virtual_ip: string; groups: string[] } }
+  | { action: 'REMOVE'; client: { name: string; virtual_ip: ''; groups: [] } }
+  | { action: 'CLEAR' }

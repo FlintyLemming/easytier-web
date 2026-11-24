@@ -1,0 +1,6 @@
+{
+  "vpn_portal_info": {
+    "client_config": "\n[Interface]\nPrivateKey = redacted-key\nAddress = 10.88.1.0/32 # should assign an ip from this cidr manually\n\n[Peer]\nPublicKey = redacted-key\nAllowedIPs = 10.88.0.0/24,10.88.1.0/24\nEndpoint = 0.0.0.0:22022 # should be the public ip(or domain) of the vpn server\nPersistentKeepalive = 25\n",
+    "vpn_type": "wireguard"
+  }
+}
