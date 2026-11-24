@@ -31,6 +31,10 @@ export default {
       loadFailed: 'Could not load the devices',
     },
     preview: {
+      autoSelected: ' (auto-selected)',
+      ipKeep: 'Keep',
+      ipAuto: 'Auto-select',
+      ipChoiceLabel: 'Fixed IP of {name}',
       unfinished: 'The last migration of this device did not finish; see the verification report',
       migrate: 'Migrate',
       skip: 'Not now',
@@ -50,7 +54,7 @@ export default {
       byNetwork: 'set by the central network',
       kinds: {
         connectivity: 'Connectivity', network_name: 'Network name', network_secret: 'Network secret', dhcp: 'Automatic IP',
-        network_length: 'Prefix length', secure_mode: 'Secure mode', acl: 'ACL', vpn_portal: 'VPN Portal',
+        network_length: 'Prefix length', secure_mode: 'Secure mode', acl: 'ACL', vpn_portal: 'VPN Portal', fixed_ip: 'Fixed IP',
       },
       aclRules: '{n} rules',
       aclTo: 'not migrated; rewrite it as central rules',
@@ -63,6 +67,7 @@ export default {
         ipOutsideCidr: 'Fixed IP {ip} is not inside {cidr}',
         duplicateIp: 'Fixed IP {ip} is also used by {other}',
         ipTaken: 'Fixed IP {ip} is held by member {other}',
+        noFreeIp: 'No free address left in {cidr}',
       },
       disabledNote: 'This instance is disabled; not migrated, it stays as a manual instance',
       alreadyMember: 'Already a member; skipped',

@@ -86,7 +86,14 @@ async function start() {
       rows.value[id] = { kind: 'step', step: 'disable' }
       const outcome = await migrateDevice(
         migrationApi,
-        { networkId, networkName: props.target.networkName, preview: p, target: props.target, confirmed: new Set(props.confirmed[id] ?? []) },
+        {
+          networkId,
+          networkName: props.target.networkName,
+          preview: p,
+          target: props.target,
+          confirmed: new Set(props.confirmed[id] ?? []),
+          newIp: p.newIp,
+        },
         {
           onStep: (step) => (rows.value[id] = { kind: 'step', step }),
           record: (rec) => saveRecord(user, rec).saved,

@@ -13,7 +13,7 @@ import WizardSteps from '../components/migrate/WizardSteps.vue'
 import { useLegacyInventory } from '../composables/useLegacyInventory'
 import { useConfirm } from '../composables/useConfirm'
 import { useToast } from '../composables/useToast'
-import { planGroup, selectedPreviews, targetFromDetail, targetFromDraft, type ChangeKey, type TargetNetwork } from '../domain/migration/classify'
+import { initialAutoIp, planGroup, selectedPreviews, targetFromDetail, targetFromDraft, type ChangeKey, type TargetNetwork } from '../domain/migration/classify'
 import { draftFromGroup, groupLegacy } from '../domain/migration/inventory'
 import { loadJournal } from '../domain/migration/journal'
 import type { DraftConflicts, NetworkDraft } from '../domain/migration/types'
@@ -54,13 +54,15 @@ const target = computed<TargetNetwork | null>(() => {
 const choices = ref<Record<string, boolean>>({})
 /** Confirmed changes per device id (step 3). */
 const confirmed = ref<Record<string, ChangeKey[]>>({})
+/** Devices that take an auto-selected address instead of their shared or taken fixed IP (step 3). */
+const autoIp = ref<string[]>([])
 
 /** Members of the existing target network (none for a network the wizard will create). */
 const targetMembers = computed(() => (existing.value ? (inventory.membersByNetwork[existing.value.network_id] ?? []) : []))
 const previews = computed(() => {
   if (!group.value || !target.value) return []
   const selected = new Set(Object.entries(choices.value).filter(([, v]) => v).map(([k]) => k))
-  return planGroup(group.value, legacy.devices.value, target.value, targetMembers.value, selected)
+  return planGroup(group.value, legacy.devices.value, target.value, targetMembers.value, selected, new Set(autoIp.value))
 })
 
 /** The devices step 4 migrates. */
@@ -83,7 +85,8 @@ onBeforeRouteLeave(async () => {
 
 /** Entering step 3 the first time for this group: every device starts at its default choice. */
 function toPreview() {
-  if (Object.keys(choices.value).length === 0) {
+  if (Object.keys(choices.value).length === 0 && group.value && target.value) {
+    autoIp.value = [...initialAutoIp(group.value, legacy.devices.value, target.value, targetMembers.value)]
     choices.value = Object.fromEntries(previews.value.map((p) => [p.device.id, p.defaultSelected]))
   }
   toStep(3)
@@ -118,6 +121,7 @@ async function selectGroup(name: string) {
   existing.value = null
   choices.value = {}
   confirmed.value = {}
+  autoIp.value = []
   if (g.targetNetworkId) {
     try {
       existing.value = await getNetwork(g.targetNetworkId)
@@ -145,6 +149,7 @@ function toInventory() {
   groupName.value = null
   choices.value = {}
   confirmed.value = {}
+  autoIp.value = []
   if (route.query.report) void router.replace({ query: {} })
   toStep(1)
   void legacy.load()
@@ -190,6 +195,7 @@ function toInventory() {
       v-else-if="step === 3 && group && target"
       v-model:choices="choices"
       v-model:confirmed="confirmed"
+      v-model:auto-ip="autoIp"
       :previews="previews"
       :unfinished="unfinished"
       @back="toStep(2)"

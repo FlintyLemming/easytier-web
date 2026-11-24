@@ -31,6 +31,10 @@ export default {
       loadFailed: '读取设备列表失败',
     },
     preview: {
+      autoSelected: '（自动选择）',
+      ipKeep: '保留原地址',
+      ipAuto: '自动选择',
+      ipChoiceLabel: '{name} 的固定 IP',
       unfinished: '上次迁移没有完成，请到校验报告处理',
       migrate: '迁移',
       skip: '暂不迁移',
@@ -50,7 +54,7 @@ export default {
       byNetwork: '由中央网络决定',
       kinds: {
         connectivity: '连接方式', network_name: '网络名', network_secret: '网络密钥', dhcp: '自动分配 IP',
-        network_length: '子网前缀', secure_mode: '安全模式', acl: 'ACL', vpn_portal: 'VPN Portal',
+        network_length: '子网前缀', secure_mode: '安全模式', acl: 'ACL', vpn_portal: 'VPN Portal', fixed_ip: '固定 IP',
       },
       aclRules: '{n} 条规则',
       aclTo: '不迁移，需要手动写成中央规则',
@@ -63,6 +67,7 @@ export default {
         ipOutsideCidr: '固定 IP {ip} 不在网段 {cidr} 内',
         duplicateIp: '固定 IP {ip} 和 {other} 重复',
         ipTaken: '固定 IP {ip} 已被成员 {other} 使用',
+        noFreeIp: '网段 {cidr} 里没有空闲地址',
       },
       disabledNote: '这个实例已停用，暂不迁移时原样保留为手动实例',
       alreadyMember: '已是成员，跳过',

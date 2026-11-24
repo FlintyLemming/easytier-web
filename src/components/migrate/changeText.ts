@@ -2,7 +2,7 @@ import type { Blocker, Change, ChangeKey } from '../../domain/migration/classify
 
 type T = (key: string, values?: Record<string, unknown>) => string
 
-const KNOWN: ChangeKey[] = ['connectivity', 'network_name', 'network_secret', 'dhcp', 'network_length', 'secure_mode', 'acl', 'vpn_portal']
+const KNOWN: ChangeKey[] = ['connectivity', 'network_name', 'network_secret', 'dhcp', 'network_length', 'secure_mode', 'acl', 'vpn_portal', 'fixed_ip']
 
 export function changeLabel(t: T, key: ChangeKey): string {
   return KNOWN.includes(key) ? t(`migrate.preview.kinds.${key}`) : key
@@ -37,6 +37,7 @@ export function changeText(t: T, c: Change): string {
     case 'connectivity':
     case 'network_name':
     case 'network_secret':
+    case 'fixed_ip':
       break
     default:
       to = t('migrate.preview.byNetwork')
@@ -45,7 +46,12 @@ export function changeText(t: T, c: Change): string {
 }
 
 export function blockerText(t: T, b: Blocker): string {
-  return b.kind === 'ipOutsideCidr'
-    ? t('migrate.preview.blockers.ipOutsideCidr', { ip: b.ip, cidr: b.cidr })
-    : t(`migrate.preview.blockers.${b.kind}`, { ip: b.ip, other: b.other })
+  switch (b.kind) {
+    case 'ipOutsideCidr':
+      return t('migrate.preview.blockers.ipOutsideCidr', { ip: b.ip, cidr: b.cidr })
+    case 'noFreeIp':
+      return t('migrate.preview.blockers.noFreeIp', { cidr: b.cidr })
+    default:
+      return t(`migrate.preview.blockers.${b.kind}`, { ip: b.ip, other: b.other })
+  }
 }

@@ -25,7 +25,7 @@ function preview(config: LegacyConfig = storedCore2, running = true): DevicePrev
     instance: { deviceId: DEV, instanceId: INST, networkName: 'office', running, config },
     device: { id: DEV, name: 'core2', hostname: 'core2', online: true },
     plan: classifyInstance(config, 'core2', target),
-    blockers: [], alreadyMember: false, defaultSelected: true,
+    blockers: [], alreadyMember: false, defaultSelected: true, newIp: null, ipSwitchable: false,
   }
 }
 
@@ -70,7 +70,9 @@ class FakeApi implements MigrationApi {
     return { members: [{ device_id: DEV, ...this.take(this.memberStates) } as CentralNetworkMember] }
   }
   async nodeInfo() { this.hit('nodeInfo', 'nodeInfo'); return { config: this.toml } }
+  lastGenerated: LegacyConfig | null = null
   async generateToml(c: object) {
+    this.lastGenerated = c as LegacyConfig
     this.hit('generateToml', `generate ${Object.keys(c).filter((k) => k.includes('vpn')).join(',')}`)
     return { toml: flow.generatedFromStored as string }
   }
@@ -91,8 +93,9 @@ function hooks(records: MigrationRecord[] = [], steps: StepName[] = []): RunHook
     timing: { pollMs: 2_000, runningTimeoutMs: 20_000, goneTimeoutMs: 20_000 },
   }
 }
-const input = (over: { confirmed?: ChangeKey[]; config?: LegacyConfig; running?: boolean } = {}) => ({
+const input = (over: { confirmed?: ChangeKey[]; config?: LegacyConfig; running?: boolean; newIp?: string } = {}) => ({
   networkId: NET, networkName: 'office', preview: preview(over.config, over.running ?? true), target, confirmed: new Set(over.confirmed ?? []),
+  newIp: over.newIp ?? null,
 })
 const mutating = (calls: string[]) => calls.filter((c) => !/^(list|members|getConfig)$/.test(c))
 
@@ -249,6 +252,21 @@ describe('migrateDevice', () => {
     expect(api.calls).not.toContain(`delete ${INST}`)
   })
 
+  it('an auto-selected address is the fixed IP it sets, and the record keeps it', async () => {
+    const api = new FakeApi()
+    const records: MigrationRecord[] = []
+    const out = await migrateDevice(api, input({ newIp: '10.150.0.20', confirmed: ['fixed_ip'] }), hooks(records))
+    expect(out.kind).toBe('migrated')
+    expect(api.calls).toContain(`patch ${JSON.stringify({ virtual_ipv4: '10.150.0.20', hostname_override: 'core2-office' })}`)
+    expect(records.at(-1)!.member.virtualIpv4).toBe('10.150.0.20')
+  })
+
+  it('an auto-selected address whose change was not confirmed: rolled back at recheck', async () => {
+    const api = new FakeApi()
+    const out = await migrateDevice(api, input({ newIp: '10.150.0.20' }), hooks())
+    expect(out).toMatchObject({ kind: 'rolledBack', step: 'recheck', changed: ['fixed_ip'] })
+  })
+
   it('a legacy instance that was disabled before is not enabled by a rollback', async () => {
     const api = new FakeApi()
     api.fail.updateMember = new ApiError(400, {}, 'bad')
@@ -346,6 +364,12 @@ describe('verifyDevice', () => {
     deviceId: DEV, deviceName: 'core2', networkId: NET, networkName: 'office', instanceId: INST, config,
     confirmed: [], member: { virtualIpv4: '10.150.0.2', hostnameOverride: 'core2-office', proxyCidrs: ['192.168.88.0/24'] },
     status: 'migrated', migratedAt: 1,
+  })
+
+  it('expects the address the member got, so an auto-selected one is checked too', async () => {
+    const api = new FakeApi()
+    await verifyDevice(api, { ...record(), member: { ...record().member, virtualIpv4: '10.150.0.20' } })
+    expect(api.lastGenerated!.virtual_ipv4).toBe('10.150.0.20')
   })
 
   it('consistent for core2 migrated on the real backend', async () => {

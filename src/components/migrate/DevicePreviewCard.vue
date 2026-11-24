@@ -2,6 +2,7 @@
 import { computed, ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { ChangeKey, DevicePreview } from '../../domain/migration/classify'
+import { fixedIp } from '../../domain/migration/inventory'
 import { blockerText, changeText } from './changeText'
 
 const props = defineProps<{
@@ -12,9 +13,13 @@ const props = defineProps<{
   /** The journal says the last migration of this device did not finish. */
   unfinished?: boolean
 }>()
-const emit = defineEmits<{ 'update:choice': [value: boolean]; 'update:confirmed': [value: ChangeKey[]] }>()
+const emit = defineEmits<{ 'update:choice': [value: boolean]; 'update:confirmed': [value: ChangeKey[]]; 'update:auto': [value: boolean] }>()
 const { t } = useI18n()
 const radioName = useId()
+const ipRadioName = useId()
+/** The legacy fixed IP (the member field shows the auto-selected one instead when switched). */
+const legacyIp = computed(() => fixedIp(props.preview.instance.config))
+const auto = computed(() => props.preview.newIp !== null || props.preview.blockers.some((b) => b.kind === 'noFreeIp'))
 const showAcl = ref(false)
 
 /** Blockers the user cannot resolve here (unlike a duplicate IP, which depends on the choices). */
@@ -82,7 +87,29 @@ const show = (v: unknown) => (typeof v === 'string' ? v : JSON.stringify(v))
         <h4 class="caption-uppercase text-muted">{{ t('migrate.preview.memberFields') }}</h4>
         <dl class="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1">
           <dt class="text-muted">{{ t('migrate.preview.fixedIp') }}</dt>
-          <dd class="break-all font-mono text-ink">{{ member.virtualIpv4 ?? '—' }}</dd>
+          <dd class="flex flex-col items-start gap-2">
+            <span v-if="preview.newIp" class="break-all font-mono text-ink"
+              >{{ legacyIp }} → {{ preview.newIp }}<span class="font-sans text-muted">{{ t('migrate.preview.autoSelected') }}</span></span
+            >
+            <span v-else class="break-all font-mono text-ink">{{ member.virtualIpv4 ?? '—' }}</span>
+            <div
+              v-if="preview.ipSwitchable"
+              role="radiogroup"
+              :aria-label="t('migrate.preview.ipChoiceLabel', { name: preview.device.name })"
+              class="inline-flex overflow-hidden rounded-control border border-hairline-strong text-[12px]"
+            >
+              <label class="flex cursor-pointer items-center px-2.5 py-1" :class="!auto ? 'bg-ink text-white' : 'text-ink'">
+                <input type="radio" class="sr-only" :name="ipRadioName" :checked="!auto" @change="emit('update:auto', false)" />{{
+                  t('migrate.preview.ipKeep')
+                }}
+              </label>
+              <label class="flex cursor-pointer items-center border-l border-hairline-strong px-2.5 py-1" :class="auto ? 'bg-ink text-white' : 'text-ink'">
+                <input type="radio" class="sr-only" :name="ipRadioName" :checked="auto" @change="emit('update:auto', true)" />{{
+                  t('migrate.preview.ipAuto')
+                }}
+              </label>
+            </div>
+          </dd>
           <dt class="text-muted">{{ t('migrate.preview.hostnameOverride') }}</dt>
           <dd class="break-all font-mono text-ink">{{ member.hostnameOverride ?? '—' }}</dd>
           <dt class="text-muted">{{ t('migrate.preview.proxyCidrs') }}</dt>

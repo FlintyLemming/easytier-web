@@ -11,7 +11,7 @@ import type { CentralNetworkMember } from '../../src/api/types'
 import { CENTRAL_OWNED_FIELDS } from '../../src/domain/memberOverride'
 import { LEGACY_VPN_FIELDS } from '../../src/domain/vpnPortal'
 import {
-  changeFields, classifyInstance, isUnset, planGroup, readyToRun, selectedPreviews, targetFromDetail, unconfirmedChanges,
+  changeFields, classifyInstance, initialAutoIp, isUnset, planGroup, readyToRun, selectedPreviews, targetFromDetail, unconfirmedChanges,
   type TargetNetwork,
 } from '../../src/domain/migration/classify'
 import { groupLegacy } from '../../src/domain/migration/inventory'
@@ -144,6 +144,65 @@ describe('planGroup', () => {
     expect(ps.map((p) => [p.device.name, p.defaultSelected])).toEqual([
       ['core1', true], ['core2', true], ['core3', true], ['core4', false],
     ])
+  })
+})
+
+describe('auto-selected addresses (shared fixed IPs)', () => {
+  const all = new Set(Object.values(M))
+  const byName = (ps: { device: { name: string } }[], n: string) => ps.find((x) => x.device.name === n)! as ReturnType<typeof planGroup>[number]
+
+  it('classifyInstance with a new address: it is the member IP and a fixed_ip change', () => {
+    const plan = classifyInstance(cfgCore2, 'core2', target, { newIp: '10.150.0.20' })
+    expect(plan.member.virtualIpv4).toBe('10.150.0.20')
+    expect(plan.changes).toContainEqual({ key: 'fixed_ip', from: '10.150.0.2', to: '10.150.0.20' })
+  })
+
+  it('an auto device gets the lowest address no legacy instance, member or earlier pick uses; nobody is blocked', () => {
+    const g = officeGroup({ core2: { ...cfgCore2, virtual_ipv4: '10.150.0.9' }, core3: { ...cfgCore3, virtual_ipv4: '10.150.0.9' } })
+    const ps = planGroup(g, devices, target, [], all, new Set([M.core3!]))
+    const core3 = byName(ps, 'core3')
+    // used: core1 .1, core2 .9, core3 .9, core4 .4 → .2
+    expect(core3.newIp).toBe('10.150.0.2')
+    expect(core3.plan.member.virtualIpv4).toBe('10.150.0.2')
+    expect(core3.plan.changes.map((c) => c.key)).toContain('fixed_ip')
+    expect(core3.blockers).toEqual([])
+    expect(byName(ps, 'core2').blockers).toEqual([])
+    expect([core3.ipSwitchable, byName(ps, 'core1').ipSwitchable]).toEqual([true, false])
+  })
+
+  it('picks skip member addresses (fixed, allocated, runtime) and each other, in name order', () => {
+    const g = officeGroup({ core2: { ...cfgCore2, virtual_ipv4: '10.150.0.1' }, core3: { ...cfgCore3, virtual_ipv4: '10.150.0.1' } })
+    const members = [
+      { device_id: 'x', member_id: 'm1', virtual_ipv4: null, allocated_ipv4: '10.150.0.2', runtime_virtual_ipv4: null, alias: null, hostname: 'x' },
+      { device_id: 'y', member_id: 'm2', virtual_ipv4: null, allocated_ipv4: null, runtime_virtual_ipv4: '10.150.0.3/24', alias: null, hostname: 'y' },
+    ] as unknown as CentralNetworkMember[]
+    const ps = planGroup(g, devices, target, members, all, new Set([M.core2!, M.core3!]))
+    // used: .1 (core1/2/3), .2 and .3 (members), .4 (core4) → core2 .5, core3 .6
+    expect([byName(ps, 'core2').newIp, byName(ps, 'core3').newIp]).toEqual(['10.150.0.5', '10.150.0.6'])
+  })
+
+  it('no free address in the subnet blocks', () => {
+    const small = { ...target, virtualCidr: '10.150.0.0/30' }
+    const g = officeGroup({ core2: { ...cfgCore2, virtual_ipv4: '10.150.0.1' }, core3: { ...cfgCore3, virtual_ipv4: '10.150.0.2' } })
+    const ps = planGroup(g, devices, small, [], all, new Set([M.core3!]))
+    expect(byName(ps, 'core3').blockers).toEqual([{ kind: 'noFreeIp', cidr: '10.150.0.0/30' }])
+    expect(byName(ps, 'core3').newIp).toBeNull()
+  })
+
+  it('initialAutoIp: later devices of a shared address and addresses members hold; not outside the subnet, not disabled ones', () => {
+    const shared = officeGroup({ core2: { ...cfgCore2, virtual_ipv4: '10.150.0.9' }, core3: { ...cfgCore3, virtual_ipv4: '10.150.0.9' }, core4: { ...storedCore4, virtual_ipv4: '10.150.0.9' } })
+    expect([...initialAutoIp(shared, devices, target, [])]).toEqual([M.core3])
+    const taken = [{ device_id: 'other', member_id: 'm1', virtual_ipv4: '10.150.0.3', alias: null, hostname: 'printer' }] as unknown as CentralNetworkMember[]
+    expect([...initialAutoIp(officeGroup(), devices, target, taken)]).toEqual([M.core3])
+    const outside = officeGroup({ core2: { ...cfgCore2, virtual_ipv4: '10.151.0.2' } })
+    expect([...initialAutoIp(outside, devices, target, [])]).toEqual([])
+  })
+
+  it('with the initial choices the shared-address devices are selected by default and ready once confirmed', () => {
+    const g = officeGroup({ core2: { ...cfgCore2, virtual_ipv4: '10.150.0.9' }, core3: { ...cfgCore3, virtual_ipv4: '10.150.0.9' } })
+    const auto = initialAutoIp(g, devices, target, [])
+    const ps = planGroup(g, devices, target, [], all, auto)
+    expect(ps.map((p) => [p.device.name, p.defaultSelected])).toEqual([['core1', true], ['core2', true], ['core3', true], ['core4', false]])
   })
 })
 

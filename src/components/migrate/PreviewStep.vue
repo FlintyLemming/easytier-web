@@ -9,6 +9,8 @@ import DevicePreviewCard from './DevicePreviewCard.vue'
 const props = defineProps<{ previews: DevicePreview[]; unfinished?: string[] }>()
 const choices = defineModel<Record<string, boolean>>('choices', { required: true })
 const confirmed = defineModel<Record<string, ChangeKey[]>>('confirmed', { required: true })
+/** Devices on an auto-selected address instead of their legacy fixed IP. */
+const autoIp = defineModel<string[]>('autoIp', { required: true })
 const emit = defineEmits<{ back: []; next: [] }>()
 const { t } = useI18n()
 
@@ -17,6 +19,9 @@ const ready = computed(() => readyToRun(props.previews, choices.value, confirmed
 
 function setChoice(id: string, v: boolean) {
   choices.value = { ...choices.value, [id]: v }
+}
+function setAuto(id: string, on: boolean) {
+  autoIp.value = on ? [...new Set([...autoIp.value, id])] : autoIp.value.filter((x) => x !== id)
 }
 function setConfirmed(id: string, keys: ChangeKey[]) {
   confirmed.value = { ...confirmed.value, [id]: keys }
@@ -42,6 +47,7 @@ function confirmKind(key: ChangeKey) {
       :unfinished="unfinished?.includes(p.device.id) ?? false"
       @update:choice="setChoice(p.device.id, $event)"
       @update:confirmed="setConfirmed(p.device.id, $event)"
+      @update:auto="setAuto(p.device.id, $event)"
     />
     <div class="flex justify-between gap-3">
       <UiButton @click="emit('back')">{{ t('migrate.back') }}</UiButton>

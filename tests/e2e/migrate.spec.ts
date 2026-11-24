@@ -139,7 +139,10 @@ const card = (page: Page, name: string) => page.getByTestId('device-preview').fi
 const choice = (page: Page, name: string, label: '迁移' | '暂不迁移') => card(page, name).getByRole('radio', { name: label, exact: true })
 /** The radios are visually hidden inside segmented-button labels; users click the label. */
 const pick = (page: Page, name: string, label: '迁移' | '暂不迁移') =>
-  card(page, name).locator('label').filter({ hasText: new RegExp(`^${label}$`) }).click()
+  card(page, name).getByRole('radiogroup', { name: `${name} 是否迁移` }).locator('label').filter({ hasText: new RegExp(`^${label}$`) }).click()
+/** The 保留原地址 / 自动选择 switch of a device whose fixed IP conflicts. */
+const pickIp = (page: Page, name: string, label: '保留原地址' | '自动选择') =>
+  card(page, name).getByRole('radiogroup', { name: `${name} 的固定 IP` }).locator('label').filter({ hasText: new RegExp(`^${label}$`) }).click()
 
 test.describe('step 3: preview', () => {
   test('7: running devices default to 迁移, the disabled one to 暂不迁移', async ({ page }) => {
@@ -203,11 +206,21 @@ test.describe('step 3: preview', () => {
     }
     await expect(page.getByTestId('change-summary')).toContainText('将迁移 0 台')
     await expect(page.getByTestId('wizard-step-preview').getByRole('button', { name: '下一步' })).toBeDisabled()
+    // Outside the subnet is not switched by default; switching picks a free address in it.
+    await pickIp(page, 'core1', '自动选择')
+    await expect(card(page, 'core1').getByTestId('member-fields')).toContainText('10.150.0.1 → 10.151.0.1（自动选择）')
+    await expect(choice(page, 'core1', '迁移')).toBeEnabled()
   })
 
-  test('12: two devices with one fixed IP block each other until one is not migrated', async ({ page }) => {
+  test('12: of two devices with one fixed IP the second auto-selects a free address; keeping it brings the conflict back', async ({ page }) => {
     await openWizard(page, { configs: { core3: { virtual_ipv4: '10.150.0.2' } } })
     await toPreview(page)
+    // used: .1 core1, .2 core2 and core3, .4 core4 → .3
+    await expect(card(page, 'core3').getByTestId('member-fields')).toContainText('10.150.0.2 → 10.150.0.3（自动选择）')
+    await expect(card(page, 'core3').getByTestId('changes')).toContainText('固定 IP：10.150.0.2 → 10.150.0.3')
+    await expect(card(page, 'core2')).not.toContainText('重复')
+    await expect(choice(page, 'core3', '迁移')).toBeChecked()
+    await pickIp(page, 'core3', '保留原地址')
     await expect(card(page, 'core2')).toContainText('固定 IP 10.150.0.2 和 core3 重复')
     await expect(card(page, 'core3')).toContainText('固定 IP 10.150.0.2 和 core2 重复')
     await pick(page, 'core3', '暂不迁移')
@@ -504,5 +517,17 @@ test.describe('final review: unfinished and failed devices are tracked', () => {
     await page.getByRole('alertdialog').or(page.getByRole('dialog')).getByRole('button', { name: '回滚' }).click()
     await expect(reportStatus(page, 'core1')).toContainText('需要处理')
     expect((await journalOf(page)).find((r) => r.deviceName === 'core1')!.status).toBe('needsAttention')
+  })
+})
+
+test.describe('auto-selected addresses', () => {
+  test('27: the run gives the device the address shown in step 3', async ({ page }) => {
+    const { requests } = await openWizard(page, { configs: { core3: { virtual_ipv4: '10.150.0.2' } } })
+    await toExecute(page)
+    const from = requests.length
+    await start(page)
+    await expect(execRow(page, 'core3')).toContainText('已迁移')
+    const patch = requests.slice(from).find((r) => r.method === 'PATCH' && r.path === `/networks/${NET_ID}/members/${DEV.core3}`)
+    expect(patch?.body).toMatchObject({ virtual_ipv4: '10.150.0.3' })
   })
 })

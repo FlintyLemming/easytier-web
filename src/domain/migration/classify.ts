@@ -12,6 +12,8 @@ export { isUnset }
 export type ChangeKey =
   | 'connectivity' | 'network_name' | 'network_secret' | 'dhcp' | 'network_length' | 'secure_mode' | 'acl' | 'vpn_portal'
   | 'dhcp_ipv4_cidr' | 'dhcpv6' | 'dhcp_ipv6_cidr' | 'managed_credentials' | 'credential_file'
+  /** The device gets an auto-selected address instead of its legacy fixed IP (shared or taken). */
+  | 'fixed_ip'
 
 /**
  * Display text of a change. Secrets read '••••' on both sides. `acl`: `from` is the rule count.
@@ -28,6 +30,8 @@ export type Blocker =
   | { kind: 'ipOutsideCidr'; ip: string; cidr: string }
   | { kind: 'duplicateIp'; ip: string; other: string }
   | { kind: 'ipTaken'; ip: string; other: string }
+  /** Auto-select was chosen but every host address of the subnet is in use. */
+  | { kind: 'noFreeIp'; cidr: string }
 
 export interface MemberFields {
   virtualIpv4: string | null
@@ -61,6 +65,10 @@ export interface DevicePreview {
   blockers: Blocker[]
   alreadyMember: boolean
   defaultSelected: boolean
+  /** The auto-selected address replacing the legacy fixed IP; null when it keeps its own. */
+  newIp: string | null
+  /** The device may switch between its own fixed IP and an auto-selected one (it has a fixed IP that conflicts, or is switched). */
+  ipSwitchable: boolean
 }
 
 export function targetFromDraft(draft: NetworkDraft): TargetNetwork {
@@ -119,8 +127,14 @@ function aclRuleCount(acl: unknown): number {
 }
 
 /** Spec §5.10.2 step 3: split a legacy config into member fields, the override and the changes. */
-export function classifyInstance(config: LegacyConfig, deviceHostname: string, target: TargetNetwork): DevicePlan {
-  const ip = fixedIp(config)
+export function classifyInstance(
+  config: LegacyConfig,
+  deviceHostname: string,
+  target: TargetNetwork,
+  opts: { newIp?: string | null } = {},
+): DevicePlan {
+  const legacyIp = fixedIp(config)
+  const ip = opts.newIp ?? legacyIp
   const hostname = typeof config.hostname === 'string' ? config.hostname.trim() : ''
   const member: MemberFields = {
     virtualIpv4: ip,
@@ -157,6 +171,7 @@ export function classifyInstance(config: LegacyConfig, deviceHostname: string, t
   for (const key of OTHER_CENTRAL) {
     if (!isUnset(key, config[key])) changes.push({ key, from: JSON.stringify(config[key]), to: '' })
   }
+  if (opts.newIp && opts.newIp !== legacyIp) changes.push({ key: 'fixed_ip', from: legacyIp ?? '', to: opts.newIp })
 
   return { member, override, changes, legacyAcl }
 }
@@ -177,9 +192,31 @@ function hostInCidr(ip: string, cidr: string | null): boolean {
 
 const memberLabel = (m: CentralNetworkMember) => m.alias || m.hostname || m.device_id
 
+/** The lowest usable host address of `cidr` not in `used`; null without a subnet or a free address. */
+function firstFreeHost(cidr: string | null, used: ReadonlySet<string>): string | null {
+  if (!cidr) return null
+  const [net, lenText] = cidr.split('/') as [string, string]
+  const len = Number(lenText)
+  if (len > 30) return null
+  const mask = len === 0 ? 0 : (0xffffffff << (32 - len)) >>> 0
+  const network = (toU32(net) & mask) >>> 0
+  const broadcast = (network | (~mask >>> 0)) >>> 0
+  for (let a = network + 1; a < broadcast; a++) {
+    const ip = [a >>> 24, (a >>> 16) & 255, (a >>> 8) & 255, a & 255].join('.')
+    if (!used.has(ip)) return ip
+  }
+  return null
+}
+
+const IP_BLOCKERS = new Set<Blocker['kind']>(['ipOutsideCidr', 'duplicateIp', 'ipTaken'])
+
 /**
  * Plans every instance of the group against the target. `selected` is the user's choice (device
  * ids marked 迁移), used to find duplicate fixed IPs among the devices that would migrate.
+ * `autoIp`: devices that take an auto-selected address instead of their legacy fixed IP; in device
+ * name order each gets the lowest host address of the subnet that no legacy instance of the group
+ * (running or not, migrating or not), no member and no earlier pick uses — so it cannot clash with
+ * a device still on its legacy config in the same virtual network.
  */
 export function planGroup(
   group: LegacyGroup,
@@ -187,23 +224,45 @@ export function planGroup(
   target: TargetNetwork,
   members: CentralNetworkMember[],
   selected: ReadonlySet<string>,
+  autoIp: ReadonlySet<string> = new Set(),
 ): DevicePreview[] {
   const memberIds = new Set(members.map((m) => m.device_id))
+  const used = new Set<string>()
+  for (const m of members) {
+    for (const a of [m.virtual_ipv4, m.allocated_ipv4, m.runtime_virtual_ipv4]) if (a) used.add(a.split('/')[0]!)
+  }
+  for (const i of group.instances) {
+    const ip = fixedIp(i.config)
+    if (ip) used.add(ip)
+  }
   const base = group.instances.map((instance) => {
     const device = devices.get(instance.deviceId) ?? { id: instance.deviceId, name: instance.deviceId, hostname: '', online: false }
-    return { instance, device, plan: classifyInstance(instance.config, device.hostname, target), alreadyMember: memberIds.has(instance.deviceId) }
+    const alreadyMember = memberIds.has(instance.deviceId)
+    const legacyIp = fixedIp(instance.config)
+    const auto = autoIp.has(device.id) && !alreadyMember && !!legacyIp && !!target.virtualCidr
+    let newIp: string | null = null
+    if (auto) {
+      newIp = firstFreeHost(target.virtualCidr, used)
+      if (newIp) used.add(newIp)
+    }
+    const plan = classifyInstance(instance.config, device.hostname, target, { newIp })
+    return { instance, device, plan, alreadyMember, legacyIp, auto, newIp }
   })
-  return base.map(({ instance, device, plan, alreadyMember }) => {
+  return base.map(({ instance, device, plan, alreadyMember, legacyIp, auto, newIp }) => {
     const blockers: Blocker[] = []
-    const ip = plan.member.virtualIpv4
-    if (!alreadyMember && ip) {
-      if (!hostInCidr(ip, target.virtualCidr)) blockers.push({ kind: 'ipOutsideCidr', ip, cidr: target.virtualCidr! })
-      const taken = members.find((m) => m.device_id !== device.id && m.virtual_ipv4?.split('/')[0] === ip)
-      if (taken) blockers.push({ kind: 'ipTaken', ip, other: memberLabel(taken) })
-      const dup = base.find(
-        (o) => o.device.id !== device.id && !o.alreadyMember && selected.has(o.device.id) && o.plan.member.virtualIpv4 === ip,
-      )
-      if (dup) blockers.push({ kind: 'duplicateIp', ip, other: dup.device.name })
+    if (auto) {
+      if (!newIp) blockers.push({ kind: 'noFreeIp', cidr: target.virtualCidr! })
+    } else {
+      const ip = plan.member.virtualIpv4
+      if (!alreadyMember && ip) {
+        if (!hostInCidr(ip, target.virtualCidr)) blockers.push({ kind: 'ipOutsideCidr', ip, cidr: target.virtualCidr! })
+        const taken = members.find((m) => m.device_id !== device.id && m.virtual_ipv4?.split('/')[0] === ip)
+        if (taken) blockers.push({ kind: 'ipTaken', ip, other: memberLabel(taken) })
+        const dup = base.find(
+          (o) => o.device.id !== device.id && !o.alreadyMember && !o.auto && selected.has(o.device.id) && o.plan.member.virtualIpv4 === ip,
+        )
+        if (dup) blockers.push({ kind: 'duplicateIp', ip, other: dup.device.name })
+      }
     }
     const fixedBlockers = blockers.filter((b) => b.kind !== 'duplicateIp')
     return {
@@ -213,8 +272,40 @@ export function planGroup(
       blockers,
       alreadyMember,
       defaultSelected: instance.running && !alreadyMember && fixedBlockers.length === 0,
+      newIp,
+      ipSwitchable: !alreadyMember && !!legacyIp && !!target.virtualCidr && (auto || blockers.some((b) => IP_BLOCKERS.has(b.kind))),
     }
   })
+}
+
+/**
+ * The devices that start on an auto-selected address when step 3 opens: of every fixed IP shared
+ * by running devices, all but the first by name; and every running device whose fixed IP a member
+ * of the target network already holds. A fixed IP outside the subnet is left to the user (the
+ * subnet is more likely wrong). Disabled instances are never switched.
+ */
+export function initialAutoIp(
+  group: LegacyGroup,
+  devices: Map<string, DeviceRef>,
+  target: TargetNetwork,
+  members: CentralNetworkMember[],
+): Set<string> {
+  const out = new Set<string>()
+  if (!target.virtualCidr) return out
+  const running = new Set(group.instances.filter((i) => i.running).map((i) => i.deviceId))
+  const seen = new Set<string>()
+  for (const p of planGroup(group, devices, target, members, running)) {
+    if (!p.instance.running || p.alreadyMember) continue
+    const kinds = new Set(p.blockers.map((b) => b.kind))
+    if (kinds.has('ipOutsideCidr')) continue
+    const ip = p.plan.member.virtualIpv4
+    if (kinds.has('ipTaken')) out.add(p.device.id)
+    else if (kinds.has('duplicateIp') && ip) {
+      if (seen.has(ip)) out.add(p.device.id)
+      else seen.add(ip)
+    }
+  }
+  return out
 }
 
 /** The config fields a change covers (verification ignores them once the change is confirmed). */

@@ -108,7 +108,15 @@ async function waitGone(api: MigrationApi, deviceId: string, networkId: string, 
  */
 export async function migrateDevice(
   api: MigrationApi,
-  input: { networkId: string; networkName: string; preview: DevicePreview; target: TargetNetwork; confirmed: ReadonlySet<ChangeKey> },
+  input: {
+    networkId: string
+    networkName: string
+    preview: DevicePreview
+    target: TargetNetwork
+    confirmed: ReadonlySet<ChangeKey>
+    /** The auto-selected address chosen in step 3 (not re-chosen here). */
+    newIp?: string | null
+  },
   hooks: RunHooks,
 ): Promise<DeviceOutcome> {
   const t = tools(hooks)
@@ -175,7 +183,7 @@ export async function migrateDevice(
     hooks.onStep(step)
     save({ step })
     stored = await api.getInstanceConfig(dev, inst)
-    plan = classifyInstance(stored, preview.device.hostname, target)
+    plan = classifyInstance(stored, preview.device.hostname, target, { newIp: input.newIp ?? null })
     save({ config: stored, member: plan.member })
     const extra = unconfirmedChanges(plan, confirmed)
     if (extra.length) throw new ChangedSincePreview(extra)
@@ -310,6 +318,8 @@ export async function verifyDevice(
     if (!running) return { status: 'unreachable', message: 'empty config' }
     const { rest } = splitLegacyVpn(rec.config)
     const expectedConfig: Record<string, unknown> = { ...rest }
+    // The address the member was given (an auto-selected one differs from the legacy config).
+    if (rec.member.virtualIpv4) expectedConfig.virtual_ipv4 = rec.member.virtualIpv4
     if (rec.member.hostnameOverride) expectedConfig.hostname = rec.member.hostnameOverride
     else delete expectedConfig.hostname
     const gen = await api.generateToml(expectedConfig)
