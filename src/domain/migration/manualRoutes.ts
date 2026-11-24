@@ -9,19 +9,34 @@ import type { LegacyConfig } from './types'
  * `runtime_reconcile.rs restore_manual_routes_from_toml`).
  */
 
-/** The top-level `routes` of a TOML (before any table): null when absent. */
-export function manualRoutesFromToml(toml: string): string[] | null {
-  const lines = toml.split('\n')
+export type RoutesReading = { known: true; routes: string[] | null } | { known: false }
+
+/**
+ * The top-level `routes` of an instance's running TOML (before any table): null when absent
+ * (automatic routing). Unknown — never "automatic" — when the answer is empty, has no top-level
+ * `instance_id`, or belongs to another instance (as upstream checks).
+ */
+export function readManualRoutes(toml: string, instanceId: string): RoutesReading {
+  const lines = toml.replace(/\r\n?/g, '\n').split('\n')
+  let id: string | null = null
+  let routes: string[] | null = null
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!
-    if (/^\s*\[/.test(line)) return null
+    if (/^\s*\[/.test(line)) break
+    const idm = /^\s*instance_id\s*=\s*["']([^"']*)["']/.exec(line)
+    if (idm) {
+      id = idm[1]!
+      continue
+    }
     const m = /^\s*routes\s*=\s*(.*)$/.exec(line)
     if (!m) continue
     let text = m[1]!
     while (!text.includes(']') && i + 1 < lines.length) text += '\n' + lines[++i]
-    return [...text.matchAll(/"([^"]*)"/g)].map((x) => x[1]!)
+    text = text.slice(0, text.indexOf(']') + 1)
+    routes = [...text.matchAll(/"([^"]*)"|'([^']*)'/g)].map((x) => (x[1] ?? x[2])!)
   }
-  return null
+  if (id === null || id !== instanceId) return { known: false }
+  return { known: true, routes }
 }
 
 /** The routes of a config in manual mode; null when routing is automatic. */

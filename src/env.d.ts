@@ -7,5 +7,5 @@ declare module '*.vue' {
 }
 
 interface Window {
-  __ET_CONFIG__?: { apiBase?: string }
+  __ET_CONFIG__?: { apiBase?: string; /** Migration: pause after a legacy instance stops (ms; tests set 0). */ migrateSettleMs?: number }
 }

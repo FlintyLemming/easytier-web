@@ -7,7 +7,7 @@ import type { CentralNetworkMember, InstanceList } from '../../src/api/types'
 import { classifyInstance, type ChangeKey, type DevicePreview, type TargetNetwork } from '../../src/domain/migration/classify'
 import type { MigrationRecord } from '../../src/domain/migration/journal'
 import {
-  JOURNAL_NOT_SAVED, migrateDevice, rollbackDevice, verifyDevice, type MigrationApi, type RunHooks, type StepName,
+  JOURNAL_NOT_SAVED, ROUTES_UNKNOWN, migrateDevice, rollbackDevice, verifyDevice, type MigrationApi, type RunHooks, type StepName,
 } from '../../src/domain/migration/run'
 import type { LegacyConfig } from '../../src/domain/migration/types'
 
@@ -39,7 +39,8 @@ class FakeApi implements MigrationApi {
   memberStates: Partial<CentralNetworkMember>[] = [{ running: false }, { running: true }]
   /** listInstances answers in order; the last one repeats. */
   lists: InstanceList[] = [{ running: [NET], disabled: [INST] }, { running: [], disabled: [INST] }]
-  toml = flow.centralToml as string
+  /** The running TOML show_node_info answers; its instance_id is the legacy instance's. */
+  toml = (flow.centralToml as string).replace(/^instance_id = .*$/m, `instance_id = "${INST}"`)
   private take<T>(q: T[]): T {
     return q.length > 1 ? q.shift()! : q[0]!
   }
@@ -83,14 +84,14 @@ class FakeApi implements MigrationApi {
   }
 }
 
-function hooks(records: MigrationRecord[] = [], steps: StepName[] = []): RunHooks {
+function hooks(records: MigrationRecord[] = [], steps: StepName[] = [], sleeps: number[] = []): RunHooks {
   let t = 0
   return {
     onStep: (s) => steps.push(s),
     record: (r) => { records.push(r) },
-    sleep: async () => {},
+    sleep: async (ms) => { sleeps.push(ms) },
     now: () => (t += 2_000),
-    timing: { pollMs: 2_000, runningTimeoutMs: 20_000, goneTimeoutMs: 20_000 },
+    timing: { pollMs: 2_000, runningTimeoutMs: 20_000, goneTimeoutMs: 20_000, settleMs: 3_000 },
   }
 }
 const input = (over: { confirmed?: ChangeKey[]; config?: LegacyConfig; running?: boolean; newIp?: string } = {}) => ({
@@ -271,6 +272,32 @@ describe('migrateDevice', () => {
     expect(out).toMatchObject({ kind: 'rolledBack', step: 'recheck', changed: ['fixed_ip'] })
   })
 
+  it('after the device stops the legacy instance it waits settleMs more before joining (ports close later)', async () => {
+    const api = new FakeApi()
+    const sleeps: number[] = []
+    const steps: StepName[] = []
+    await migrateDevice(api, input(), hooks([], steps, sleeps))
+    expect(sleeps).toContain(3_000)
+  })
+
+  it('a running instance whose routing mode cannot be read (TOML of another instance, inventory unknown): nothing is touched', async () => {
+    const api = new FakeApi()
+    api.toml = api.toml.replace(/^instance_id = .*$/m, 'instance_id = "someone-else"')
+    const out = await migrateDevice(api, input(), hooks())
+    expect(out).toEqual({ kind: 'rolledBack', step: 'disable', message: ROUTES_UNKNOWN })
+    expect(mutating(api.calls)).toEqual([])
+  })
+
+  it('the run cannot read the TOML but the inventory could: it uses the inventory reading and writes it back on rollback', async () => {
+    const api = new FakeApi()
+    api.fail.nodeInfo = new ApiError(0, undefined, 'timeout')
+    api.fail.updateMember = new ApiError(400, {}, 'bad')
+    const pv = input()
+    pv.preview.instance.manualRoutes = []
+    await migrateDevice(api, pv, hooks())
+    expect(mutating(api.calls).slice(-3)).toEqual(['remove', `save ${INST}`, `disable ${INST} false`])
+  })
+
   it('waits until the device has stopped the legacy instance before joining (its listeners hold the ports)', async () => {
     const api = new FakeApi()
     api.lists = [{ running: [INST], disabled: [] }, { running: [INST], disabled: [] }, { running: [], disabled: [INST] }]
@@ -283,7 +310,7 @@ describe('migrateDevice', () => {
 
   it('routes = [] in the running TOML: the mode is restored into the record and the override', async () => {
     const api = new FakeApi()
-    api.toml = (flow.centralToml as string).replace(/^instance_id = .*$/m, (l) => `${l}\nroutes = []`)
+    api.toml = api.toml.replace(/^instance_id = .*$/m, (l) => `${l}\nroutes = []`)
     const records: MigrationRecord[] = []
     await migrateDevice(api, input(), hooks(records))
     expect(records.at(-1)!.config).toMatchObject({ enable_manual_routes: true, routes: [] })
@@ -293,7 +320,7 @@ describe('migrateDevice', () => {
 
   it('a rollback writes the restored config back before enabling (disabling stored the lossy one)', async () => {
     const api = new FakeApi()
-    api.toml = (flow.centralToml as string).replace(/^instance_id = .*$/m, (l) => `${l}\nroutes = []`)
+    api.toml = api.toml.replace(/^instance_id = .*$/m, (l) => `${l}\nroutes = []`)
     api.fail.updateMember = new ApiError(400, {}, 'bad')
     await migrateDevice(api, input(), hooks())
     expect(mutating(api.calls).slice(-3)).toEqual(['remove', `save ${INST}`, `disable ${INST} false`])

@@ -194,7 +194,11 @@ function hostInCidr(ip: string, cidr: string | null): boolean {
 
 const memberLabel = (m: CentralNetworkMember) => m.alias || m.hostname || m.device_id
 
-/** The lowest usable host address of `cidr` not in `used`; null without a subnet or a free address. */
+/**
+ * The highest usable host address of `cidr` not in `used`; null without a subnet or a free address.
+ * From the top down: legacy addresses are usually numbered upward from the bottom, so an address
+ * nobody could read (an offline device) is least likely up there.
+ */
 function firstFreeHost(cidr: string | null, used: ReadonlySet<string>): string | null {
   if (!cidr) return null
   const [net, lenText] = cidr.split('/') as [string, string]
@@ -203,7 +207,7 @@ function firstFreeHost(cidr: string | null, used: ReadonlySet<string>): string |
   const mask = len === 0 ? 0 : (0xffffffff << (32 - len)) >>> 0
   const network = (toU32(net) & mask) >>> 0
   const broadcast = (network | (~mask >>> 0)) >>> 0
-  for (let a = network + 1; a < broadcast; a++) {
+  for (let a = broadcast - 1; a > network; a--) {
     const ip = [a >>> 24, (a >>> 16) & 255, (a >>> 8) & 255, a & 255].join('.')
     if (!used.has(ip)) return ip
   }
@@ -216,9 +220,10 @@ const IP_BLOCKERS = new Set<Blocker['kind']>(['ipOutsideCidr', 'duplicateIp', 'i
  * Plans every instance of the group against the target. `selected` is the user's choice (device
  * ids marked 迁移), used to find duplicate fixed IPs among the devices that would migrate.
  * `autoIp`: devices that take an auto-selected address instead of their legacy fixed IP; in device
- * name order each gets the lowest host address of the subnet that no legacy instance of the group
- * (running or not, migrating or not), no member and no earlier pick uses — so it cannot clash with
- * a device still on its legacy config in the same virtual network.
+ * name order each gets the highest host address of the subnet that no legacy instance of the group
+ * (running or not, migrating or not), no member, no address in `seen` (the live network's route
+ * table) and no earlier pick uses — so it cannot clash with a device still on its legacy config in
+ * the same virtual network that could be read or is online.
  */
 export function planGroup(
   group: LegacyGroup,
@@ -227,6 +232,7 @@ export function planGroup(
   members: CentralNetworkMember[],
   selected: ReadonlySet<string>,
   autoIp: ReadonlySet<string> = new Set(),
+  seen: Iterable<string> = [],
 ): DevicePreview[] {
   const memberIds = new Set(members.map((m) => m.device_id))
   // A device joins the network once: of several instances of one device in this group, the running
@@ -237,7 +243,7 @@ export function planGroup(
     const curRunning = group.instances.find((x) => x.instanceId === cur)?.running ?? false
     if (cur === undefined || (i.running && !curRunning)) primary.set(i.deviceId, i.instanceId)
   }
-  const used = new Set<string>()
+  const used = new Set<string>(seen)
   for (const m of members) {
     for (const a of [m.virtual_ipv4, m.allocated_ipv4, m.runtime_virtual_ipv4]) if (a) used.add(a.split('/')[0]!)
   }
@@ -290,6 +296,44 @@ export function planGroup(
       ipSwitchable: !secondary && !alreadyMember && !!legacyIp && !!target.virtualCidr && (auto || blockers.some((b) => IP_BLOCKERS.has(b.kind))),
     }
   })
+}
+
+/**
+ * A confirmed `fixed_ip` change holds for the address it was confirmed for: picks are recomputed as
+ * choices change, so when a device's address moves (or it keeps its own) the confirmation is
+ * dropped and must be given again. `confirmedIps` remembers the address per device. Returns the
+ * same objects when nothing changed.
+ */
+export function reconcileIpConfirmations(
+  previews: DevicePreview[],
+  confirmed: Record<string, ChangeKey[]>,
+  confirmedIps: Record<string, string>,
+): { confirmed: Record<string, ChangeKey[]>; confirmedIps: Record<string, string> } {
+  let nextConfirmed = confirmed
+  let nextIps = confirmedIps
+  const drop = (id: string) => {
+    if (nextConfirmed === confirmed) nextConfirmed = { ...confirmed }
+    nextConfirmed[id] = (confirmed[id] ?? []).filter((k) => k !== 'fixed_ip')
+  }
+  const setIp = (id: string, ip: string | undefined) => {
+    if (nextIps === confirmedIps) nextIps = { ...confirmedIps }
+    if (ip === undefined) delete nextIps[id]
+    else nextIps[id] = ip
+  }
+  for (const p of previews) {
+    if (p.blockers.some((b) => b.kind === 'otherInstance')) continue
+    const id = p.device.id
+    const recorded = confirmedIps[id]
+    if (!(confirmed[id] ?? []).includes('fixed_ip')) {
+      if (recorded !== undefined) setIp(id, undefined)
+      continue
+    }
+    if (p.newIp === null || (recorded !== undefined && recorded !== p.newIp)) {
+      drop(id)
+      if (recorded !== undefined) setIp(id, undefined)
+    } else if (recorded === undefined) setIp(id, p.newIp)
+  }
+  return { confirmed: nextConfirmed, confirmedIps: nextIps }
 }
 
 /** The 迁移 / 暂不迁移 defaults per device: chosen when the instance that can migrate is selected by default. */

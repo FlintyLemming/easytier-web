@@ -101,6 +101,8 @@ export async function mockApi(
     try {
       if (!localStorage.getItem('et.locale')) localStorage.setItem('et.locale', l)
     } catch { /* ignore */ }
+    // The migration runner's pause after a legacy instance stops is for real cores only.
+    ;(window as unknown as { __ET_CONFIG__?: object }).__ET_CONFIG__ = { migrateSettleMs: 0 }
   }, locale)
 
   await page.route('**/api/v1/**', async (route) => {

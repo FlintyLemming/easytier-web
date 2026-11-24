@@ -49,6 +49,8 @@ export interface MigrateMockState {
   nodeToml: Record<string, string>
   /** Device names whose instance list answers 404 Client not found (gone offline mid-test). */
   unreachable: string[]
+  /** Virtual IPv4 addresses list_route reports (the live network). */
+  routes: string[]
 }
 
 function machinesWith(offline: string[]) {
@@ -85,8 +87,8 @@ const bodyOf = (req: Request): any => {
     return undefined
   }
 }
-/** The TOML without its `[source]` table (the page strips it before parse-config). */
-const withoutSource = (toml: string) => toml.replace(/^\[source\][^[]*/m, '').trim()
+/** The TOML without its `[source]` table (the page strips it) and its instance id (answers carry the one asked for). */
+const withoutSource = (toml: string) => toml.replace(/^\[source\][^[]*/m, '').replace(/^instance_id = .*$/m, '').trim()
 
 function matches(rule: RequestRule, req: Request): boolean {
   const path = pathOf(req)
@@ -118,6 +120,7 @@ export function migrateMock(opts: MigrateMockOpts = {}): { overrides: Overrides;
     rpcDown: [],
     nodeToml: {},
     unreachable: [],
+    routes: [],
   }
   const configFor = (name: string, inst: string) => {
     const net = Object.entries(MIG.instances[name] ?? {}).find(([, id]) => id === inst)?.[0]
@@ -224,8 +227,20 @@ export function migrateMock(opts: MigrateMockOpts = {}): { overrides: Overrides;
     'POST /machines/*/proxy-rpc': (req) => {
       const name = nameOf(pathOf(req).split('/')[2]!) ?? ''
       if (state.rpcDown.includes(name)) return status(502, { message: 'Bad Gateway' })
-      if (bodyOf(req)?.method_name !== 'show_node_info') return {}
-      return { node_info: { config: state.nodeToml[name] ?? FLOW.centralToml } }
+      const body = bodyOf(req)
+      if (body?.method_name === 'list_route') {
+        return {
+          routes: state.routes.map((ip, n) => ({
+            peer_id: n + 1, hostname: `peer${n}`, cost: 1, path_latency: 1, proxy_cidrs: [], version: '2.6.4', next_hop_peer_id: n + 1,
+            ipv4_addr: { address: { addr: ip.split('.').reduce((a, o) => ((a << 8) | Number(o)) >>> 0, 0) }, network_length: 24 },
+          })),
+        }
+      }
+      if (body?.method_name !== 'show_node_info') return {}
+      // The running TOML of the instance asked for (the routing-mode reader checks the instance id).
+      const id = body.payload?.instance?.id ? idOf(body.payload.instance.id) : ''
+      const toml = (state.nodeToml[name] ?? FLOW.centralToml).replace(/^instance_id = .*$/m, `instance_id = "${id}"`)
+      return { node_info: { config: toml } }
     },
     'POST /generate-config': () => ({ toml_config: FLOW.generatedFromStored, error: null }),
     'POST /parse-config': (req) => {

@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { getInstanceConfig, instanceMetas, listInstances, nodeInfo } from '../api/client'
 import { isLegacyId } from '../domain/migration/inventory'
-import { manualRoutesFromToml, restoreManualRoutes } from '../domain/migration/manualRoutes'
+import { manualRoutesOf, readManualRoutes, restoreManualRoutes } from '../domain/migration/manualRoutes'
 import type { DeviceRef, LegacyInstance } from '../domain/migration/types'
 import { useInventory } from '../stores/inventory'
 
@@ -37,15 +37,22 @@ export function useLegacyInventory() {
     const out: LegacyInstance[] = []
     for (const id of ids) {
       let config = await getInstanceConfig(device.id, id)
+      const running = list.running.includes(id)
       // A 2.6.4 core's config view drops the manual-routes mode of `routes = []`; its running TOML
-      // keeps it (manualRoutes.ts). A failed read is fine: the run reads it again before disabling.
-      if (list.running.includes(id)) {
+      // keeps it (manualRoutes.ts). Unknown when it cannot be read: the run reads it again before
+      // disabling and does not start without it. A disabled instance's stored config is exact.
+      let manualRoutes: string[] | null | undefined = running ? undefined : manualRoutesOf(config)
+      if (running) {
         try {
-          config = restoreManualRoutes(config, manualRoutesFromToml((await nodeInfo(device.id, id)).config))
-        } catch { /* see above */ }
+          const r = readManualRoutes((await nodeInfo(device.id, id)).config, id)
+          if (r.known) {
+            manualRoutes = r.routes
+            config = restoreManualRoutes(config, r.routes)
+          }
+        } catch { /* unknown */ }
       }
       const networkName = metas[id]?.networkName || (typeof config.network_name === 'string' ? config.network_name : '')
-      out.push({ deviceId: device.id, instanceId: id, networkName, running: list.running.includes(id), config })
+      out.push({ deviceId: device.id, instanceId: id, networkName, running, config, manualRoutes })
     }
     return out
   }

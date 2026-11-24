@@ -3,7 +3,7 @@ import type { CentralNetworkMember, InstanceList, MemberPatch } from '../../api/
 import { splitLegacyVpn } from '../vpnPortal'
 import { classifyInstance, unconfirmedChanges, type ChangeKey, type DevicePreview, type TargetNetwork } from './classify'
 import { diffConfigs, stripSourceTable, verifyIgnore, type FieldDiff } from './compare'
-import { manualRoutesFromToml, manualRoutesOf, restoreManualRoutes } from './manualRoutes'
+import { manualRoutesOf, readManualRoutes, restoreManualRoutes } from './manualRoutes'
 import type { MigrationRecord } from './journal'
 
 /** The client functions the runner uses (a subset of `src/api/client.ts`), injected for tests. */
@@ -31,6 +31,8 @@ export type RollbackStep = 'removeMember' | 'enable'
 
 /** The message of a migratedKeptLegacy outcome whose record could not be saved (the UI translates it). */
 export const JOURNAL_NOT_SAVED = 'journal-not-saved'
+/** The message of a device not started because its routing mode could not be read (the UI translates it). */
+export const ROUTES_UNKNOWN = 'routes-unknown'
 
 export type DeviceOutcome =
   | { kind: 'migrated' }
@@ -45,9 +47,11 @@ export interface RunTiming {
   pollMs: number
   runningTimeoutMs: number
   goneTimeoutMs: number
+  /** Pause after the device stops the legacy instance: a 2.6.4 core closes its listeners later. */
+  settleMs: number
 }
 
-export const DEFAULT_TIMING: RunTiming = { pollMs: 2_000, runningTimeoutMs: 120_000, goneTimeoutMs: 90_000 }
+export const DEFAULT_TIMING: RunTiming = { pollMs: 2_000, runningTimeoutMs: 120_000, goneTimeoutMs: 90_000, settleMs: 3_000 }
 
 export interface RunHooks {
   onStep(step: StepName): void
@@ -85,7 +89,7 @@ function tools(hooks: RunHooks) {
       await sleep(timing.pollMs)
     }
   }
-  return { timing, poll, now }
+  return { timing, poll, now, sleep }
 }
 
 /**
@@ -152,14 +156,21 @@ export async function migrateDevice(
   let step: StepName = 'disable'
   hooks.onStep(step)
   save({})
-  // The manual-routes mode is only in the running TOML (see manualRoutes.ts): read it before
-  // disabling; without an answer, keep what the inventory restored.
-  let observedRoutes = manualRoutesOf(preview.instance.config)
+  // The routing mode of a running instance is only in its running TOML (manualRoutes.ts): read it
+  // again before disabling; without an answer keep the inventory's reading; with neither, do not
+  // start — a guess would silently switch the device to automatic routing.
+  let observed = wasRunning ? preview.instance.manualRoutes : manualRoutesOf(preview.instance.config)
   if (wasRunning) {
     try {
-      observedRoutes = manualRoutesFromToml((await api.nodeInfo(dev, inst)).config)
+      const r = readManualRoutes((await api.nodeInfo(dev, inst)).config, inst)
+      if (r.known) observed = r.routes
     } catch { /* keep the inventory's */ }
+    if (observed === undefined) {
+      save({ status: 'rolledBack', step, message: ROUTES_UNKNOWN })
+      return { kind: 'rolledBack', step, message: ROUTES_UNKNOWN }
+    }
   }
+  const routes = observed ?? null
   try {
     await api.setInstanceDisabled(dev, inst, true)
   } catch (e) {
@@ -174,6 +185,7 @@ export async function migrateDevice(
     }
     if (stopped) {
       try {
+        if (routes) await api.saveInstanceConfig(dev, inst, restoreManualRoutes(preview.instance.config, routes))
         await api.setInstanceDisabled(dev, inst, false)
       } catch (r) {
         return attention(step, `${failure}; ${message(r)}`, 'enable')
@@ -184,25 +196,23 @@ export async function migrateDevice(
   }
   // The core stops the instance asynchronously. The central instance listens on the same ports, so
   // starting it before the legacy listeners are closed fails with "Address in use" (seen once in 37
-  // devices on the production copy). Wait until the device no longer runs it. A timeout is not an
-  // error: a failed start is caught by the wait step and rolled back.
+  // devices on the production copy). A 2.6.4 core drops the instance from its list before its
+  // listener tasks are gone, so wait until it is off the list, then settleMs more. A timeout is not
+  // an error: a failed start is caught by the wait step and rolled back.
   if (wasRunning) {
     await t.poll(async () => ((await api.listInstances(dev)).running.includes(inst) ? undefined : true), t.timing.goneTimeoutMs)
+    await t.sleep(t.timing.settleMs)
   }
 
   /** Set before the join request: a failed request may still have added the member. */
   let joinAttempted = false
-  /** Disabling stored the core's lossy view: the restored config must be written back before enabling. */
-  let writeBack = false
   let stored = preview.instance.config
   let plan = preview.plan
   try {
     step = 'recheck'
     hooks.onStep(step)
     save({ step })
-    const read = await api.getInstanceConfig(dev, inst)
-    stored = restoreManualRoutes(read, observedRoutes)
-    writeBack = stored !== read
+    stored = restoreManualRoutes(await api.getInstanceConfig(dev, inst), routes)
     plan = classifyInstance(stored, preview.device.hostname, target, { newIp: input.newIp ?? null })
     save({ config: stored, member: plan.member })
     const extra = unconfirmedChanges(plan, confirmed)
@@ -250,7 +260,8 @@ export async function migrateDevice(
       }
       rollbackStep = 'enable'
       if (wasRunning) {
-        if (writeBack) await api.saveInstanceConfig(dev, inst, stored)
+        // Disabling stored the core's lossy view: put a manual routing mode back before enabling.
+        if (routes) await api.saveInstanceConfig(dev, inst, restoreManualRoutes(stored, routes))
         await api.setInstanceDisabled(dev, inst, false)
       }
     } catch (r) {

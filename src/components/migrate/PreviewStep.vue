@@ -6,7 +6,7 @@ import UiButton from '../ui/UiButton.vue'
 import ChangeSummary from './ChangeSummary.vue'
 import DevicePreviewCard from './DevicePreviewCard.vue'
 
-const props = defineProps<{ previews: DevicePreview[]; unfinished?: string[] }>()
+const props = defineProps<{ previews: DevicePreview[]; unfinished?: string[]; /** Offline or unread devices of the inventory. */ unseen?: number }>()
 const choices = defineModel<Record<string, boolean>>('choices', { required: true })
 const confirmed = defineModel<Record<string, ChangeKey[]>>('confirmed', { required: true })
 /** Devices on an auto-selected address instead of their legacy fixed IP. */
@@ -37,6 +37,9 @@ function confirmKind(key: ChangeKey) {
 
 <template>
   <div class="flex flex-col gap-5" data-testid="wizard-step-preview">
+    <p v-if="(unseen ?? 0) > 0 && previews.some((p) => p.newIp)" role="note" class="text-[13px] text-error">
+      {{ t('migrate.preview.unseenWarning', { n: unseen }) }}
+    </p>
     <ChangeSummary :previews="previews" :selected="selected" :confirmed="confirmed" @confirm-kind="confirmKind" />
     <DevicePreviewCard
       v-for="p in previews"

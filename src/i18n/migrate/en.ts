@@ -31,6 +31,7 @@ export default {
       loadFailed: 'Could not load the devices',
     },
     preview: {
+      unseenWarning: '{n} devices are offline or could not be read, so their addresses are unknown. Auto-selected addresses avoid the legacy instances and members that were read and the addresses online in the network, but may still clash with those devices.',
       autoSelected: ' (auto-selected)',
       ipKeep: 'Keep',
       ipAuto: 'Auto-select',
@@ -116,6 +117,7 @@ export default {
         needsAttention: 'Needs attention ({step}: {message}; the rollback stopped at “{rollback}”)',
       },
       changedSincePreview: 'The config changed after the preview: {changes}',
+      routesUnknown: 'its running routing mode (routes) could not be read; the device was not changed',
       rollbackSteps: { removeMember: 'removing from the network', enable: 'enabling the legacy instance' },
       journalNotSaved: 'the migration record was not saved (browser storage unavailable); the legacy instance is kept, disabled',
       leaveTitle: 'Leave the migration?',

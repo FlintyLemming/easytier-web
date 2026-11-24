@@ -6,7 +6,7 @@ import type { CentralNetworkDetail } from '../../api/types'
 import { useToast } from '../../composables/useToast'
 import type { ChangeKey, DevicePreview, TargetNetwork } from '../../domain/migration/classify'
 import { exportFile, saveRecord } from '../../domain/migration/journal'
-import { JOURNAL_NOT_SAVED, migrateDevice, type DeviceOutcome, type StepName } from '../../domain/migration/run'
+import { DEFAULT_TIMING, JOURNAL_NOT_SAVED, migrateDevice, ROUTES_UNKNOWN, type DeviceOutcome, type StepName } from '../../domain/migration/run'
 import type { NetworkDraft } from '../../domain/migration/types'
 import { settingsPayload } from '../../domain/networks'
 import { downloadText } from '../../lib/download'
@@ -97,6 +97,7 @@ async function start() {
         {
           onStep: (step) => (rows.value[id] = { kind: 'step', step }),
           record: (rec) => saveRecord(user, rec).saved,
+          timing: { ...DEFAULT_TIMING, settleMs: window.__ET_CONFIG__?.migrateSettleMs ?? DEFAULT_TIMING.settleMs },
         },
       )
       rows.value[id] = { kind: 'done', outcome }
@@ -124,7 +125,9 @@ function statusText(s: RowState): string {
     case 'rolledBack': {
       const msg = o.changed?.length
         ? t('migrate.execute.changedSincePreview', { changes: o.changed.map((k) => changeLabel(t, k)).join('、') })
-        : o.message
+        : o.message === ROUTES_UNKNOWN
+          ? t('migrate.execute.routesUnknown')
+          : o.message
       return t('migrate.execute.status.rolledBack', { step: t(`migrate.execute.status.${o.step}`), message: msg })
     }
     case 'needsAttention':

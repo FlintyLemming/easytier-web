@@ -31,6 +31,7 @@ export default {
       loadFailed: '读取设备列表失败',
     },
     preview: {
+      unseenWarning: '{n} 台设备离线或读取失败，读不到它们的地址。自动选择的地址避开了读到的旧实例、成员和网络里现在在线的地址，但仍可能和这些设备冲突。',
       autoSelected: '（自动选择）',
       ipKeep: '保留原地址',
       ipAuto: '自动选择',
@@ -116,6 +117,7 @@ export default {
         needsAttention: '需要处理（{step}：{message}；回滚停在「{rollback}」）',
       },
       changedSincePreview: '预览之后配置有变化：{changes}',
+      routesUnknown: '读不到它运行中的路由模式（routes），没有改动这台设备',
       rollbackSteps: { removeMember: '移出网络', enable: '重新启用旧实例' },
       journalNotSaved: '迁移记录没保存（浏览器存储不可用），旧实例保留为停用',
       leaveTitle: '离开迁移页面？',

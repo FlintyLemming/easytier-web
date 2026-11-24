@@ -11,7 +11,8 @@ import type { CentralNetworkMember } from '../../src/api/types'
 import { CENTRAL_OWNED_FIELDS } from '../../src/domain/memberOverride'
 import { LEGACY_VPN_FIELDS } from '../../src/domain/vpnPortal'
 import {
-  changeFields, classifyInstance, initialAutoIp, initialChoices, isUnset, planGroup, readyToRun, selectedPreviews, targetFromDetail, unconfirmedChanges,
+  changeFields, classifyInstance, initialAutoIp, initialChoices, isUnset, planGroup, readyToRun, reconcileIpConfirmations, selectedPreviews,
+  targetFromDetail, unconfirmedChanges,
   type TargetNetwork,
 } from '../../src/domain/migration/classify'
 import { groupLegacy } from '../../src/domain/migration/inventory'
@@ -157,13 +158,13 @@ describe('auto-selected addresses (shared fixed IPs)', () => {
     expect(plan.changes).toContainEqual({ key: 'fixed_ip', from: '10.150.0.2', to: '10.150.0.20' })
   })
 
-  it('an auto device gets the lowest address no legacy instance, member or earlier pick uses; nobody is blocked', () => {
+  it('an auto device gets the highest address no legacy instance, member or earlier pick uses; nobody is blocked', () => {
     const g = officeGroup({ core2: { ...cfgCore2, virtual_ipv4: '10.150.0.9' }, core3: { ...cfgCore3, virtual_ipv4: '10.150.0.9' } })
     const ps = planGroup(g, devices, target, [], all, new Set([M.core3!]))
     const core3 = byName(ps, 'core3')
-    // used: core1 .1, core2 .9, core3 .9, core4 .4 → .2
-    expect(core3.newIp).toBe('10.150.0.2')
-    expect(core3.plan.member.virtualIpv4).toBe('10.150.0.2')
+    // From the top down, away from sequentially numbered legacy addresses.
+    expect(core3.newIp).toBe('10.150.0.254')
+    expect(core3.plan.member.virtualIpv4).toBe('10.150.0.254')
     expect(core3.plan.changes.map((c) => c.key)).toContain('fixed_ip')
     expect(core3.blockers).toEqual([])
     expect(byName(ps, 'core2').blockers).toEqual([])
@@ -173,12 +174,18 @@ describe('auto-selected addresses (shared fixed IPs)', () => {
   it('picks skip member addresses (fixed, allocated, runtime) and each other, in name order', () => {
     const g = officeGroup({ core2: { ...cfgCore2, virtual_ipv4: '10.150.0.1' }, core3: { ...cfgCore3, virtual_ipv4: '10.150.0.1' } })
     const members = [
-      { device_id: 'x', member_id: 'm1', virtual_ipv4: null, allocated_ipv4: '10.150.0.2', runtime_virtual_ipv4: null, alias: null, hostname: 'x' },
-      { device_id: 'y', member_id: 'm2', virtual_ipv4: null, allocated_ipv4: null, runtime_virtual_ipv4: '10.150.0.3/24', alias: null, hostname: 'y' },
+      { device_id: 'x', member_id: 'm1', virtual_ipv4: null, allocated_ipv4: '10.150.0.254', runtime_virtual_ipv4: null, alias: null, hostname: 'x' },
+      { device_id: 'y', member_id: 'm2', virtual_ipv4: null, allocated_ipv4: null, runtime_virtual_ipv4: '10.150.0.253/24', alias: null, hostname: 'y' },
     ] as unknown as CentralNetworkMember[]
     const ps = planGroup(g, devices, target, members, all, new Set([M.core2!, M.core3!]))
-    // used: .1 (core1/2/3), .2 and .3 (members), .4 (core4) → core2 .5, core3 .6
-    expect([byName(ps, 'core2').newIp, byName(ps, 'core3').newIp]).toEqual(['10.150.0.5', '10.150.0.6'])
+    // .254 and .253 are members' → core2 .252, core3 .251
+    expect([byName(ps, 'core2').newIp, byName(ps, 'core3').newIp]).toEqual(['10.150.0.252', '10.150.0.251'])
+  })
+
+  it('picks also skip addresses seen in the live network (offline or unread devices, unmanaged nodes)', () => {
+    const g = officeGroup({ core3: { ...cfgCore3, virtual_ipv4: '10.150.0.2' } })
+    const ps = planGroup(g, devices, target, [], all, new Set([M.core3!]), new Set(['10.150.0.254', '10.150.0.253']))
+    expect(byName(ps, 'core3').newIp).toBe('10.150.0.252')
   })
 
   it('no free address in the subnet blocks', () => {
@@ -203,6 +210,26 @@ describe('auto-selected addresses (shared fixed IPs)', () => {
     const auto = initialAutoIp(g, devices, target, [])
     const ps = planGroup(g, devices, target, [], all, auto)
     expect(ps.map((p) => [p.device.name, p.defaultSelected])).toEqual([['core1', true], ['core2', true], ['core3', true], ['core4', false]])
+  })
+})
+
+describe('reconcileIpConfirmations: a confirmed new address that changes must be confirmed again', () => {
+  const all = new Set(Object.values(M))
+  it('keeps the confirmation while the address stays, drops it when the address moves or the device keeps its own', () => {
+    const g = officeGroup({ core1: { ...cfgCore1, virtual_ipv4: '10.150.1.1' }, core3: { ...cfgCore3, virtual_ipv4: '10.150.0.2' } })
+    const before = planGroup(g, devices, target, [], all, new Set([M.core3!]))
+    const confirmed = { [M.core3!]: ['fixed_ip', 'acl'] as ChangeKey[] }
+    const first = reconcileIpConfirmations(before, confirmed, {})
+    expect(first.confirmed).toEqual(confirmed)
+    expect(first.confirmedIps).toEqual({ [M.core3!]: '10.150.0.254' })
+    // core1 (earlier by name) switches to auto and takes .254: core3 moves to .253
+    const after = planGroup(g, devices, target, [], all, new Set([M.core1!, M.core3!]))
+    const second = reconcileIpConfirmations(after, first.confirmed, first.confirmedIps)
+    expect(second.confirmed[M.core3!]).toEqual(['acl'])
+    expect(second.confirmedIps).toEqual({})
+    // nothing changed: the same objects come back
+    const again = reconcileIpConfirmations(before, first.confirmed, first.confirmedIps)
+    expect(again.confirmed).toBe(first.confirmed)
   })
 })
 

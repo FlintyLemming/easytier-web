@@ -209,16 +209,16 @@ test.describe('step 3: preview', () => {
     await expect(page.getByTestId('wizard-step-preview').getByRole('button', { name: '下一步' })).toBeDisabled()
     // Outside the subnet is not switched by default; switching picks a free address in it.
     await pickIp(page, 'core1', '自动选择')
-    await expect(card(page, 'core1').getByTestId('member-fields')).toContainText('10.150.0.1 → 10.151.0.1（自动选择）')
+    await expect(card(page, 'core1').getByTestId('member-fields')).toContainText('10.150.0.1 → 10.151.0.254（自动选择）')
     await expect(choice(page, 'core1', '迁移')).toBeEnabled()
   })
 
   test('12: of two devices with one fixed IP the second auto-selects a free address; keeping it brings the conflict back', async ({ page }) => {
     await openWizard(page, { configs: { core3: { virtual_ipv4: '10.150.0.2' } } })
     await toPreview(page)
-    // used: .1 core1, .2 core2 and core3, .4 core4 → .3
-    await expect(card(page, 'core3').getByTestId('member-fields')).toContainText('10.150.0.2 → 10.150.0.3（自动选择）')
-    await expect(card(page, 'core3').getByTestId('changes')).toContainText('固定 IP：10.150.0.2 → 10.150.0.3')
+    // the highest free address of the subnet
+    await expect(card(page, 'core3').getByTestId('member-fields')).toContainText('10.150.0.2 → 10.150.0.254（自动选择）')
+    await expect(card(page, 'core3').getByTestId('changes')).toContainText('固定 IP：10.150.0.2 → 10.150.0.254')
     await expect(card(page, 'core2')).not.toContainText('重复')
     await expect(choice(page, 'core3', '迁移')).toBeChecked()
     await pickIp(page, 'core3', '保留原地址')
@@ -384,9 +384,10 @@ async function runAll(page: Page) {
 test.describe('step 5: report', () => {
   test('19: verifies each device; a mismatch can be rolled back and recreates the deleted legacy instance', async ({ page }) => {
     const { requests, state } = await openWizard(page)
+    await runAll(page)
+    // for verification only (the run reads each running TOML for the routing mode)
     state.nodeToml.core1 = 'mtu = 1200'
     state.rpcDown = ['core3']
-    await runAll(page)
     await execStep(page).getByRole('button', { name: '查看校验报告' }).click()
     const report = page.getByTestId('wizard-step-report')
     await expect(reportStatus(page, 'core2')).toHaveText('一致')
@@ -428,8 +429,9 @@ test.describe('step 5: report', () => {
 
   test('21: 清除迁移记录… needs every device consistent or rolled back', async ({ page }) => {
     const { state } = await openWizard(page)
-    state.rpcDown = ['core1', 'core2', 'core3']
     await runAll(page)
+    // proxy-rpc goes down after the run (the run itself needs it to read the routing mode)
+    state.rpcDown = ['core1', 'core2', 'core3']
     await execStep(page).getByRole('button', { name: '查看校验报告' }).click()
     const report = page.getByTestId('wizard-step-report')
     for (const n of NAMES) await expect(reportStatus(page, n)).toHaveText('等待上线后校验')
@@ -531,7 +533,27 @@ test.describe('auto-selected addresses', () => {
     await start(page)
     await expect(execRow(page, 'core3')).toContainText('已迁移')
     const patch = requests.slice(from).find((r) => r.method === 'PATCH' && r.path === `/networks/${NET_ID}/members/${DEV.core3}`)
-    expect(patch?.body).toMatchObject({ virtual_ipv4: '10.150.0.3' })
+    expect(patch?.body).toMatchObject({ virtual_ipv4: '10.150.0.254' })
+  })
+
+  test('29: a confirmed new address that moves must be confirmed again', async ({ page }) => {
+    await openWizard(page, { configs: { core1: { virtual_ipv4: '10.150.1.1' }, core3: { virtual_ipv4: '10.150.0.2' } } })
+    await toPreview(page)
+    const ipChange = (addr: string) => card(page, 'core3').getByTestId('changes').locator('li').filter({ hasText: `固定 IP：10.150.0.2 → ${addr}` })
+    await ipChange('10.150.0.254').getByRole('checkbox', { name: '我已了解' }).check()
+    // core1 (earlier by name) switches to auto and takes .254: core3 moves to .253, unconfirmed
+    await pickIp(page, 'core1', '自动选择')
+    await expect(ipChange('10.150.0.253')).toBeVisible()
+    await expect(ipChange('10.150.0.253').getByRole('checkbox', { name: '我已了解' })).not.toBeChecked()
+  })
+
+  test('30: addresses in the live network are avoided; offline devices are warned about', async ({ page }) => {
+    const { state } = await openWizard(page, { offline: ['core4'], configs: { core3: { virtual_ipv4: '10.150.0.2' } } })
+    state.routes = ['10.150.0.254']
+    await toNetworkStep(page)
+    await page.getByTestId('wizard-step-network').getByRole('button', { name: '下一步' }).click()
+    await expect(card(page, 'core3').getByTestId('member-fields')).toContainText('10.150.0.2 → 10.150.0.253（自动选择）')
+    await expect(page.getByTestId('wizard-step-preview')).toContainText('1 台设备离线或读取失败，读不到它们的地址')
   })
 })
 

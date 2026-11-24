@@ -20,6 +20,11 @@ export interface LegacyInstance {
   /** In `running_inst_ids`; otherwise it counts as disabled (no API exposes the stored flag). */
   running: boolean
   config: LegacyConfig
+  /**
+   * Its routing mode (manualRoutes.ts): a list = manual, null = automatic, undefined = unknown (a
+   * running instance whose TOML could not be read).
+   */
+  manualRoutes?: string[] | null
 }
 
 export interface LegacyGroup {

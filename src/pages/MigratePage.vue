@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watchEffect } from 'vue'
+import { computed, onMounted, ref, watch, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import { getGatewayInfo, getNetwork } from '../api/client'
+import { getGatewayInfo, getNetwork, nodeRoutes } from '../api/client'
 import type { CentralNetworkDetail, GatewayInfo } from '../api/types'
 import ExecuteStep from '../components/migrate/ExecuteStep.vue'
 import InventoryStep from '../components/migrate/InventoryStep.vue'
@@ -13,8 +13,9 @@ import WizardSteps from '../components/migrate/WizardSteps.vue'
 import { useLegacyInventory } from '../composables/useLegacyInventory'
 import { useConfirm } from '../composables/useConfirm'
 import { useToast } from '../composables/useToast'
-import { initialAutoIp, initialChoices, planGroup, selectedPreviews, targetFromDetail, targetFromDraft, type ChangeKey, type TargetNetwork } from '../domain/migration/classify'
+import { initialAutoIp, initialChoices, planGroup, reconcileIpConfirmations, selectedPreviews, targetFromDetail, targetFromDraft, type ChangeKey, type TargetNetwork } from '../domain/migration/classify'
 import { draftFromGroup, groupLegacy } from '../domain/migration/inventory'
+import { ipv4FromU32 } from '../domain/format'
 import { loadJournal } from '../domain/migration/journal'
 import type { DraftConflicts, NetworkDraft } from '../domain/migration/types'
 import { useInventory } from '../stores/inventory'
@@ -56,14 +57,35 @@ const choices = ref<Record<string, boolean>>({})
 const confirmed = ref<Record<string, ChangeKey[]>>({})
 /** Devices that take an auto-selected address instead of their shared or taken fixed IP (step 3). */
 const autoIp = ref<string[]>([])
+/** The address each confirmed `fixed_ip` change was confirmed for (reconcileIpConfirmations). */
+const confirmedIps = ref<Record<string, string>>({})
+/** Addresses in the live network's route table (auto-selected addresses avoid them). */
+const seenAddresses = ref<string[]>([])
 
 /** Members of the existing target network (none for a network the wizard will create). */
 const targetMembers = computed(() => (existing.value ? (inventory.membersByNetwork[existing.value.network_id] ?? []) : []))
 const previews = computed(() => {
   if (!group.value || !target.value) return []
   const selected = new Set(Object.entries(choices.value).filter(([, v]) => v).map(([k]) => k))
-  return planGroup(group.value, legacy.devices.value, target.value, targetMembers.value, selected, new Set(autoIp.value))
+  return planGroup(group.value, legacy.devices.value, target.value, targetMembers.value, selected, new Set(autoIp.value), seenAddresses.value)
 })
+// A confirmed new address that moves (choices changed the picks) must be confirmed again.
+watch([previews, confirmed], () => {
+  const r = reconcileIpConfirmations(previews.value, confirmed.value, confirmedIps.value)
+  if (r.confirmed !== confirmed.value) confirmed.value = r.confirmed
+  if (r.confirmedIps !== confirmedIps.value) confirmedIps.value = r.confirmedIps
+})
+
+/** The addresses one running legacy instance of the group sees in the virtual network right now. */
+async function readSeenAddresses(g: { instances: { deviceId: string; instanceId: string; running: boolean }[] }) {
+  seenAddresses.value = []
+  const probe = g.instances.find((i) => i.running)
+  if (!probe) return
+  try {
+    const routes = await nodeRoutes(probe.deviceId, probe.instanceId)
+    seenAddresses.value = routes.map((r) => r.ipv4_addr?.address?.addr).filter((a): a is number => a != null).map(ipv4FromU32)
+  } catch { /* the step 3 warning still covers what could not be read */ }
+}
 
 /** The devices step 4 migrates. */
 const selected = computed(() => selectedPreviews(previews.value, choices.value))
@@ -122,6 +144,8 @@ async function selectGroup(name: string) {
   choices.value = {}
   confirmed.value = {}
   autoIp.value = []
+  confirmedIps.value = {}
+  void readSeenAddresses(g)
   if (g.targetNetworkId) {
     try {
       existing.value = await getNetwork(g.targetNetworkId)
@@ -150,6 +174,7 @@ function toInventory() {
   choices.value = {}
   confirmed.value = {}
   autoIp.value = []
+  confirmedIps.value = {}
   if (route.query.report) void router.replace({ query: {} })
   toStep(1)
   void legacy.load()
@@ -196,6 +221,7 @@ function toInventory() {
       v-model:choices="choices"
       v-model:confirmed="confirmed"
       v-model:auto-ip="autoIp"
+      :unseen="legacy.offline.value.length + legacy.failed.value.length"
       :previews="previews"
       :unfinished="unfinished"
       @back="toStep(2)"
