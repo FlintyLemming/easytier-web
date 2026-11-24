@@ -2,6 +2,7 @@
 export default {
   migrate: {
     banner: {
+      unfinished: '{n} 台设备的迁移没有完成，需要处理',
       legacy: '检测到 {n} 个旧版网络实例，可以迁移到中央网络',
       start: '开始迁移',
       pending: '{n} 台设备迁移后等待校验',
@@ -30,6 +31,7 @@ export default {
       loadFailed: '读取设备列表失败',
     },
     preview: {
+      unfinished: '上次迁移没有完成，请到校验报告处理',
       migrate: '迁移',
       skip: '暂不迁移',
       choiceLabel: '{name} 是否迁移',
@@ -105,14 +107,20 @@ export default {
         migrated: '已迁移',
         migratedKeptLegacy: '已迁移（旧实例没删掉：{message}）',
         rolledBack: '已回滚（{step}：{message}）',
-        needsAttention: '需要处理（{step}：{message}）',
+        needsAttention: '需要处理（{step}：{message}；回滚停在「{rollback}」）',
       },
       changedSincePreview: '预览之后配置有变化：{changes}',
+      rollbackSteps: { removeMember: '移出网络', enable: '重新启用旧实例' },
+      journalNotSaved: '迁移记录没保存（浏览器存储不可用），旧实例保留为停用',
       leaveTitle: '离开迁移页面？',
       leaveBody: '迁移正在进行。离开后，当前这台设备会做完（或回滚完），其余设备不再开始。',
       leave: '离开',
     },
     report: {
+      rollbackStep: '回滚',
+      inProgress: '未完成（停在「{step}」）',
+      needsAttention: '需要处理（{step}：{message}）',
+      rollbackOffline: '{name} 离线，上线后再回滚',
       checking: '校验中…',
       consistent: '一致',
       mismatch: '不一致',

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watchEffect } from 'vue'
+import { computed, onMounted, ref, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { getGatewayInfo, getNetwork } from '../api/client'
@@ -80,13 +80,6 @@ onBeforeRouteLeave(async () => {
   if (ok) executeStep.value?.stop()
   return ok
 })
-function onBeforeUnload(e: BeforeUnloadEvent) {
-  if (!running.value) return
-  e.preventDefault()
-  e.returnValue = ''
-}
-onMounted(() => window.addEventListener('beforeunload', onBeforeUnload))
-onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload))
 
 /** Entering step 3 the first time for this group: every device starts at its default choice. */
 function toPreview() {
@@ -97,8 +90,12 @@ function toPreview() {
 }
 
 const hasJournal = ref(false)
+/** Devices whose last migration did not finish (inProgress / needsAttention in the journal). */
+const unfinished = ref<string[]>([])
 function readJournal() {
-  hasJournal.value = !!session.username && loadJournal(session.username).length > 0
+  const records = session.username ? loadJournal(session.username) : []
+  hasJournal.value = records.length > 0
+  unfinished.value = records.filter((r) => r.status === 'inProgress' || r.status === 'needsAttention').map((r) => r.deviceId)
 }
 
 onMounted(async () => {
@@ -194,6 +191,7 @@ function toInventory() {
       v-model:choices="choices"
       v-model:confirmed="confirmed"
       :previews="previews"
+      :unfinished="unfinished"
       @back="toStep(2)"
       @next="toStep(4)"
     />
@@ -211,6 +209,6 @@ function toInventory() {
       @report="toReport"
     />
 
-    <ReportStep v-else-if="step === 5" @back="toInventory" @cleared="readJournal" />
+    <ReportStep v-else-if="step === 5" v-model:running="running" @back="toInventory" @cleared="readJournal" />
   </div>
 </template>

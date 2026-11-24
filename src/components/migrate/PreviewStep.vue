@@ -6,7 +6,7 @@ import UiButton from '../ui/UiButton.vue'
 import ChangeSummary from './ChangeSummary.vue'
 import DevicePreviewCard from './DevicePreviewCard.vue'
 
-const props = defineProps<{ previews: DevicePreview[] }>()
+const props = defineProps<{ previews: DevicePreview[]; unfinished?: string[] }>()
 const choices = defineModel<Record<string, boolean>>('choices', { required: true })
 const confirmed = defineModel<Record<string, ChangeKey[]>>('confirmed', { required: true })
 const emit = defineEmits<{ back: []; next: [] }>()
@@ -39,6 +39,7 @@ function confirmKind(key: ChangeKey) {
       :preview="p"
       :choice="choices[p.device.id] === true"
       :confirmed="confirmed[p.device.id] ?? []"
+      :unfinished="unfinished?.includes(p.device.id) ?? false"
       @update:choice="setChoice(p.device.id, $event)"
       @update:confirmed="setConfirmed(p.device.id, $event)"
     />

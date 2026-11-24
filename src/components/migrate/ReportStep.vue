@@ -12,8 +12,11 @@ import { useSession } from '../../stores/session'
 import EmptyState from '../ui/EmptyState.vue'
 import UiButton from '../ui/UiButton.vue'
 import { fileStamp, migrationApi } from './migrationApi'
+import { holdUnload } from './unloadGuard'
 
 const emit = defineEmits<{ back: []; cleared: [] }>()
+/** True while a rollback runs (the page asks before leaving). */
+const running = defineModel<boolean>('running', { default: false })
 const { t } = useI18n()
 const toast = useToast()
 const { confirm } = useConfirm()
@@ -49,7 +52,7 @@ async function verify(rec: MigrationRecord) {
     // Unreachable keeps the last known status: a migrated device stays 「等待上线后校验」.
     if (r.status === 'unreachable') return
     const current = records.value.find((x) => keyOf(x) === key)
-    if (!current || current.status === 'rolledBack') return
+    if (!current || !VERIFIABLE.has(current.status)) return
     records.value = upsertRecord(session.username, {
       ...current,
       status: r.status,
@@ -63,8 +66,11 @@ async function verify(rec: MigrationRecord) {
   }
 }
 
+/** Only finished migrations are verified (unfinished, failed and rolled back ones are not members as planned). */
+const VERIFIABLE = new Set(['migrated', 'mismatch', 'consistent'])
+
 function verifyAll(onlyUnsettled: boolean) {
-  const todo = records.value.filter((r) => r.status !== 'rolledBack' && !(onlyUnsettled && r.status === 'consistent'))
+  const todo = records.value.filter((r) => VERIFIABLE.has(r.status) && !(onlyUnsettled && r.status === 'consistent'))
   return Promise.all(todo.map(verify))
 }
 
@@ -79,6 +85,13 @@ function statusText(r: MigrationRecord): string {
       return t('migrate.report.mismatch')
     case 'rolledBack':
       return t('migrate.report.rolledBack')
+    case 'inProgress':
+      return t('migrate.report.inProgress', { step: t(`migrate.execute.status.${r.step ?? 'disable'}`) })
+    case 'needsAttention':
+      return t('migrate.report.needsAttention', {
+        step: r.step ? t(`migrate.execute.status.${r.step}`) : t('migrate.report.rollbackStep'),
+        message: r.message ?? '',
+      })
     default:
       return t('migrate.report.waiting')
   }
@@ -86,7 +99,7 @@ function statusText(r: MigrationRecord): string {
 function statusClass(r: MigrationRecord): string {
   if (checking.value.has(keyOf(r))) return 'text-muted'
   if (r.status === 'consistent') return 'text-success'
-  if (r.status === 'mismatch') return 'text-error'
+  if (r.status === 'mismatch' || r.status === 'inProgress' || r.status === 'needsAttention') return 'text-error'
   return 'text-muted'
 }
 
@@ -109,17 +122,32 @@ async function rollback(rec: MigrationRecord) {
   })
   if (!ok) return
   const key = keyOf(rec)
+  const user = session.username
   rollingBack.value = key
+  running.value = true
+  const release = holdUnload()
   try {
     const r = await rollbackDevice(migrationApi, rec, { onStep: () => {}, record: () => {} })
+    const current = records.value.find((x) => keyOf(x) === key) ?? rec
     if (!r.ok) {
+      if (r.offline) {
+        toast.error(t('migrate.report.rollbackOffline', { name: rec.deviceName }))
+        return
+      }
+      // Past removing the member the device is neither migrated nor back: keep that visible.
+      if (r.removed) {
+        records.value = upsertRecord(user, {
+          ...current, status: 'needsAttention', step: undefined, message: r.message, rollbackStep: 'enable', checkedAt: Date.now(), diffs: undefined,
+        })
+      }
       toast.error(t('migrate.report.rollbackFailed', { name: rec.deviceName, message: r.message }))
       return
     }
-    const current = records.value.find((x) => keyOf(x) === key) ?? rec
-    records.value = upsertRecord(session.username, { ...current, status: 'rolledBack', checkedAt: Date.now(), diffs: undefined })
+    records.value = upsertRecord(user, { ...current, status: 'rolledBack', checkedAt: Date.now(), diffs: undefined })
     toast.success(t('migrate.report.rollbackDone', { name: rec.deviceName }))
   } finally {
+    release()
+    running.value = false
     rollingBack.value = null
   }
 }

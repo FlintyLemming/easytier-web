@@ -53,6 +53,16 @@ describe('diffConfigs', () => {
   })
 })
 
+describe('verifyIgnore', () => {
+  it('a confirmed secure_mode change also ignores the credentials a secure network compiles in', () => {
+    const ignore = verifyIgnore(['secure_mode'])
+    expect(ignore.has('secure_mode')).toBe(true)
+    expect(ignore.has('managed_credentials')).toBe(true)
+    const actual = { ...flow.parsedCentral, secure_mode: { enabled: true }, managed_credentials: { x: 1 } }
+    expect(diffConfigs(flow.parsedGenerated, actual, ignore)).toEqual([])
+  })
+})
+
 describe('stripSourceTable', () => {
   it('drops the trailing [source] table a 2.6.4 core reports', () => {
     const out = stripSourceTable(flow.centralToml)

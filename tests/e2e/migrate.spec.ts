@@ -428,3 +428,81 @@ test.describe('step 5: report', () => {
     expect(await page.evaluate(() => localStorage.getItem('et.migrate.admin'))).toBeNull()
   })
 })
+
+const journalOf = (page: Page) =>
+  page.evaluate(() => JSON.parse(localStorage.getItem('et.migrate.admin') ?? '[]') as { deviceName: string; status: string; step?: string; rollbackStep?: string }[])
+
+test.describe('final review: unfinished and failed devices are tracked', () => {
+  test('22: a device being migrated has an inProgress record with its step, then migrated', async ({ page }) => {
+    const { state } = await openWizard(page)
+    const hold = deferred()
+    state.holds.push({ method: 'PUT', path: `/networks/${NET_ID}/members/${DEV.core1}/config`, until: hold.until })
+    await toExecute(page)
+    await start(page)
+    await expect(execRow(page, 'core1')).toContainText('写入设置')
+    expect((await journalOf(page)).find((r) => r.deviceName === 'core1')).toMatchObject({ status: 'inProgress', step: 'settings' })
+    hold.release()
+    await expect(execRow(page, 'core1')).toContainText('已迁移')
+    expect((await journalOf(page)).find((r) => r.deviceName === 'core1')!.status).toBe('migrated')
+  })
+
+  test('23: a failed rollback is kept as 需要处理 in the journal, the report and the banner; it blocks clearing', async ({ page }) => {
+    const { state } = await openWizard(page)
+    state.failures.push({ method: 'POST', path: `/networks/${NET_ID}/members`, device: DEV.core3, status: 500, body: { message: 'boom' } })
+    state.failures.push({
+      method: 'PUT', path: `/machines/${DEV.core3}/networks/${inst('core3')}`, bodyIncludes: '"disabled":false', status: 500, body: { message: 'enable failed' },
+    })
+    await toExecute(page)
+    await start(page)
+    await expect(execRow(page, 'core3')).toContainText('需要处理（加入网络：boom')
+    await expect(execRow(page, 'core3')).toContainText('回滚停在「重新启用旧实例」')
+    expect((await journalOf(page)).find((r) => r.deviceName === 'core3')).toMatchObject({ status: 'needsAttention', step: 'join', rollbackStep: 'enable' })
+    await execStep(page).getByRole('button', { name: '查看校验报告' }).click()
+    await expect(reportStatus(page, 'core3')).toContainText('需要处理')
+    await expect(reportRow(page, 'core3').getByRole('button', { name: '回滚这台…' })).toBeVisible()
+    await expect(page.getByTestId('wizard-step-report').getByRole('button', { name: '清除迁移记录…' })).toBeDisabled()
+    await page.goto('/#/')
+    await expect(page.getByTestId('migration-banner')).toContainText('1 台设备的迁移没有完成，需要处理')
+  })
+
+  test('24: a device left a member by a failed rollback says so in step 3 instead of suggesting to delete its legacy instance', async ({ page }) => {
+    const { state } = await openWizard(page)
+    state.failures.push({ method: 'PATCH', path: `/networks/${NET_ID}/members/${DEV.core2}`, status: 400, body: { message: 'bad' } })
+    state.failures.push({ method: 'DELETE', path: `/networks/${NET_ID}/members/${DEV.core2}`, status: 500, body: { message: 'down' } })
+    await runAll(page)
+    await expect(execRow(page, 'core2')).toContainText('回滚停在「移出网络」')
+    await page.goto('/#/')
+    await page.goto('/#/migrate')
+    await page.reload()
+    await toNetworkStep(page)
+    await page.getByTestId('wizard-step-network').getByRole('button', { name: '下一步' }).click()
+    await expect(card(page, 'core2')).toContainText('上次迁移没有完成，请到校验报告处理')
+    await expect(card(page, 'core2')).not.toContainText('可以在手动实例页删除')
+  })
+
+  test('25: 回滚这台… refuses while the device is offline and changes nothing', async ({ page }) => {
+    const { requests, state } = await openWizard(page)
+    await runAll(page)
+    await execStep(page).getByRole('button', { name: '查看校验报告' }).click()
+    await expect(reportStatus(page, 'core1')).toHaveText('一致')
+    state.unreachable = ['core1']
+    const from = requests.length
+    await reportRow(page, 'core1').getByRole('button', { name: '回滚这台…' }).click()
+    await page.getByRole('alertdialog').or(page.getByRole('dialog')).getByRole('button', { name: '回滚' }).click()
+    await expect(page.getByText('core1 离线，上线后再回滚')).toBeVisible()
+    expect(requests.slice(from).filter((r) => r.method !== 'GET')).toEqual([])
+    await expect(reportStatus(page, 'core1')).toHaveText('一致')
+  })
+
+  test('26: a single-device rollback that fails after removing the member is kept as 需要处理', async ({ page }) => {
+    const { state } = await openWizard(page)
+    await runAll(page)
+    await execStep(page).getByRole('button', { name: '查看校验报告' }).click()
+    await expect(reportStatus(page, 'core1')).toHaveText('一致')
+    state.failures.push({ method: 'POST', path: `/machines/${DEV.core1}/networks`, status: 500, body: { message: 'nope' } })
+    await reportRow(page, 'core1').getByRole('button', { name: '回滚这台…' }).click()
+    await page.getByRole('alertdialog').or(page.getByRole('dialog')).getByRole('button', { name: '回滚' }).click()
+    await expect(reportStatus(page, 'core1')).toContainText('需要处理')
+    expect((await journalOf(page)).find((r) => r.deviceName === 'core1')!.status).toBe('needsAttention')
+  })
+})

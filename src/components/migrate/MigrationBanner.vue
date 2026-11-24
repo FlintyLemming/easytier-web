@@ -18,17 +18,20 @@ const session = useSession()
 
 const legacyIds = computed(() => runningLegacyIds(inventory.machines, inventory.networks))
 const pending = ref<string[]>([])
+/** Devices whose migration did not finish (cut off, or a rollback that failed). */
+const unfinished = ref<string[]>([])
 watch(
   () => [session.username, inventory.lastUpdatedAt],
   () => {
-    pending.value = session.username
-      ? loadJournal(session.username).filter((r) => r.status === 'migrated').map((r) => `${r.networkId}/${r.deviceId}`).sort()
-      : []
+    const records = session.username ? loadJournal(session.username) : []
+    const keys = (pick: (s: string) => boolean) => records.filter((r) => pick(r.status)).map((r) => `${r.networkId}/${r.deviceId}`).sort()
+    pending.value = keys((s) => s === 'migrated')
+    unfinished.value = keys((s) => s === 'inProgress' || s === 'needsAttention')
   },
   { immediate: true },
 )
 
-const signature = computed(() => `${legacyIds.value.join(',')}|${pending.value.join(',')}`)
+const signature = computed(() => `${legacyIds.value.join(',')}|${pending.value.join(',')}|${unfinished.value.join(',')}`)
 const key = computed(() => `et.migrate.banner.${session.username}`)
 const dismissed = ref<string | null>(null)
 watch(
@@ -44,7 +47,11 @@ watch(
 )
 
 const visible = computed(
-  () => !session.webhookMode && inventory.loaded && (legacyIds.value.length > 0 || pending.value.length > 0) && dismissed.value !== signature.value,
+  () =>
+    !session.webhookMode &&
+    inventory.loaded &&
+    (legacyIds.value.length > 0 || pending.value.length > 0 || unfinished.value.length > 0) &&
+    dismissed.value !== signature.value,
 )
 
 function dismiss() {
@@ -66,6 +73,10 @@ function dismiss() {
       <p v-if="legacyIds.length > 0" class="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span>{{ t('migrate.banner.legacy', { n: legacyIds.length }) }}</span>
         <RouterLink :to="{ name: 'migrate' }" class="font-medium text-ink underline underline-offset-2">{{ t('migrate.banner.start') }}</RouterLink>
+      </p>
+      <p v-if="unfinished.length > 0" class="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span class="text-error">{{ t('migrate.banner.unfinished', { n: unfinished.length }) }}</span>
+        <RouterLink :to="{ name: 'migrate', query: { report: '1' } }" class="font-medium text-ink underline underline-offset-2">{{ t('migrate.banner.view') }}</RouterLink>
       </p>
       <p v-if="pending.length > 0" class="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span>{{ t('migrate.banner.pending', { n: pending.length }) }}</span>

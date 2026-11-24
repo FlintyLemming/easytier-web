@@ -29,6 +29,8 @@ export interface RequestRule {
   method: string
   path: string
   device?: string
+  /** Substring of the raw request body. */
+  bodyIncludes?: string
 }
 
 export interface MigrateMockState {
@@ -45,6 +47,8 @@ export interface MigrateMockState {
   rpcDown: string[]
   /** Per device name: the TOML `show_node_info` answers (default: the flow's central TOML). */
   nodeToml: Record<string, string>
+  /** Device names whose instance list answers 404 Client not found (gone offline mid-test). */
+  unreachable: string[]
 }
 
 function machinesWith(offline: string[]) {
@@ -87,6 +91,7 @@ const withoutSource = (toml: string) => toml.replace(/^\[source\][^[]*/m, '').tr
 function matches(rule: RequestRule, req: Request): boolean {
   const path = pathOf(req)
   if (rule.method !== req.method() || !path.startsWith(rule.path)) return false
+  if (rule.bodyIncludes && !(req.postData() ?? '').includes(rule.bodyIncludes)) return false
   return !rule.device || path.includes(rule.device) || (req.postData() ?? '').includes(rule.device)
 }
 
@@ -112,6 +117,7 @@ export function migrateMock(opts: MigrateMockOpts = {}): { overrides: Overrides;
     instances,
     rpcDown: [],
     nodeToml: {},
+    unreachable: [],
   }
   const configFor = (name: string, inst: string) => {
     const net = Object.entries(MIG.instances[name] ?? {}).find(([, id]) => id === inst)?.[0]
@@ -179,7 +185,7 @@ export function migrateMock(opts: MigrateMockOpts = {}): { overrides: Overrides;
       const id = pathOf(req).split('/')[2]!
       const name = nameOf(id)
       if (!name) return status(404, { message: 'Client not found' })
-      if (offline.includes(name)) return status(404, { message: 'Client not found' })
+      if (offline.includes(name) || state.unreachable.includes(name)) return status(404, { message: 'Client not found' })
       if (failOnce.has(name)) {
         failOnce.delete(name)
         return status(500, { message: 'boom' })

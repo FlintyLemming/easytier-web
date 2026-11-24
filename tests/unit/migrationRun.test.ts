@@ -7,7 +7,7 @@ import type { CentralNetworkMember, InstanceList } from '../../src/api/types'
 import { classifyInstance, type ChangeKey, type DevicePreview, type TargetNetwork } from '../../src/domain/migration/classify'
 import type { MigrationRecord } from '../../src/domain/migration/journal'
 import {
-  migrateDevice, rollbackDevice, verifyDevice, type MigrationApi, type RunHooks, type StepName,
+  JOURNAL_NOT_SAVED, migrateDevice, rollbackDevice, verifyDevice, type MigrationApi, type RunHooks, type StepName,
 } from '../../src/domain/migration/run'
 import type { LegacyConfig } from '../../src/domain/migration/types'
 
@@ -20,9 +20,9 @@ const target: TargetNetwork = {
 }
 const flow = flowFx as unknown as Record<string, any>
 
-function preview(config: LegacyConfig = storedCore2): DevicePreview {
+function preview(config: LegacyConfig = storedCore2, running = true): DevicePreview {
   return {
-    instance: { deviceId: DEV, instanceId: INST, networkName: 'office', running: true, config },
+    instance: { deviceId: DEV, instanceId: INST, networkName: 'office', running, config },
     device: { id: DEV, name: 'core2', hostname: 'core2', online: true },
     plan: classifyInstance(config, 'core2', target),
     blockers: [], alreadyMember: false, defaultSelected: true,
@@ -43,8 +43,15 @@ class FakeApi implements MigrationApi {
   private take<T>(q: T[]): T {
     return q.length > 1 ? q.shift()! : q[0]!
   }
+  /** Fails only the first call of that method. */
+  failFirst: Fail = {}
   private hit(name: keyof MigrationApi, text: string) {
     this.calls.push(text)
+    const once = this.failFirst[name]
+    if (once) {
+      delete this.failFirst[name]
+      throw once
+    }
     const e = this.fail[name]
     if (e) throw e
   }
@@ -53,6 +60,7 @@ class FakeApi implements MigrationApi {
   async listInstances() { this.hit('listInstances', 'list'); return this.take(this.lists) }
   async deleteInstance(m: string, i: string) { this.hit('deleteInstance', `delete ${i}`) }
   async runInstance(m: string, c: object, save: boolean) { this.hit('runInstance', `run ${(c as LegacyConfig).instance_id} ${save}`) }
+  async saveInstanceConfig(m: string, i: string) { this.hit('saveInstanceConfig', `save ${i}`) }
   async addMembers(n: string, ids: string[]) { this.hit('addMembers', `add ${ids.join(',')}`) }
   async updateMember(n: string, d: string, p: object) { this.hit('updateMember', `patch ${JSON.stringify(p)}`); return {} }
   async setMemberConfig(n: string, d: string, c: object) { this.hit('setMemberConfig', `put ${JSON.stringify(c)}`) }
@@ -77,14 +85,14 @@ function hooks(records: MigrationRecord[] = [], steps: StepName[] = []): RunHook
   let t = 0
   return {
     onStep: (s) => steps.push(s),
-    record: (r) => records.push(r),
+    record: (r) => { records.push(r) },
     sleep: async () => {},
     now: () => (t += 2_000),
     timing: { pollMs: 2_000, runningTimeoutMs: 20_000, goneTimeoutMs: 20_000 },
   }
 }
-const input = (over: { confirmed?: ChangeKey[]; config?: LegacyConfig } = {}) => ({
-  networkId: NET, networkName: 'office', preview: preview(over.config), target, confirmed: new Set(over.confirmed ?? []),
+const input = (over: { confirmed?: ChangeKey[]; config?: LegacyConfig; running?: boolean } = {}) => ({
+  networkId: NET, networkName: 'office', preview: preview(over.config, over.running ?? true), target, confirmed: new Set(over.confirmed ?? []),
 })
 const mutating = (calls: string[]) => calls.filter((c) => !/^(list|members|getConfig)$/.test(c))
 
@@ -105,11 +113,11 @@ describe('migrateDevice', () => {
     expect(put.proxy_cidrs).toEqual(['192.168.88.0/24'])
     expect(put.port_forwards).toEqual(storedCore2.port_forwards)
     expect(api.calls.at(-1)).toBe(`delete ${INST}`)
-    expect(records).toHaveLength(1)
-    expect(records[0]).toMatchObject({
+    expect(records.at(-1)).toMatchObject({
       deviceId: DEV, deviceName: 'core2', networkId: NET, networkName: 'office', instanceId: INST,
       config: storedCore2, confirmed: [], status: 'migrated',
       member: { virtualIpv4: '10.150.0.2', hostnameOverride: 'core2-office', proxyCidrs: ['192.168.88.0/24'] },
+      wasRunning: true,
     })
     // The record is written before the legacy instance is deleted.
     expect(steps.indexOf('record')).toBeLessThan(steps.indexOf('cleanup'))
@@ -136,7 +144,7 @@ describe('migrateDevice', () => {
     api.fail.setInstanceDisabled = new ApiError(404, {}, 'Client not found')
     const out = await migrateDevice(api, input(), hooks())
     expect(out).toEqual({ kind: 'rolledBack', step: 'disable', message: 'Client not found' })
-    expect(api.calls).toEqual([`disable ${INST} true`])
+    expect(mutating(api.calls)).toEqual([`disable ${INST} true`])
   })
 
   it('recheck finds an unconfirmed change: only re-enables', async () => {
@@ -150,12 +158,13 @@ describe('migrateDevice', () => {
     expect(mutating(api.calls)).toEqual([`disable ${INST} true`, `disable ${INST} false`])
   })
 
-  it('join fails: re-enables without removing', async () => {
+  it('join fails: removes the member in case the backend added it (404 is fine), then re-enables', async () => {
     const api = new FakeApi()
     api.fail.addMembers = new ApiError(500, {}, 'boom')
+    api.fail.removeMember = new ApiError(404, {}, 'member not found')
     const out = await migrateDevice(api, input(), hooks())
     expect(out).toEqual({ kind: 'rolledBack', step: 'join', message: 'boom' })
-    expect(mutating(api.calls)).toEqual([`disable ${INST} true`, `add ${DEV}`, `disable ${INST} false`])
+    expect(mutating(api.calls)).toEqual([`disable ${INST} true`, `add ${DEV}`, 'remove', `disable ${INST} false`])
   })
 
   for (const [name, step] of [['updateMember', 'settings'], ['setMemberConfig', 'settings']] as const) {
@@ -198,9 +207,82 @@ describe('migrateDevice', () => {
     const records: MigrationRecord[] = []
     const out = await migrateDevice(api, input(), hooks(records))
     expect(out).toEqual({ kind: 'migratedKeptLegacy', message: 'gone away' })
-    expect(records).toHaveLength(1)
+    expect(records.at(-1)!.status).toBe('migrated')
     expect(api.calls).not.toContain('remove')
     expect(api.calls).not.toContain(`disable ${INST} false`)
+  })
+
+  it('writes an inProgress record before touching the device, then the outcome', async () => {
+    const api = new FakeApi()
+    const seen: { status: string; calls: number }[] = []
+    const h = hooks()
+    h.record = (r) => {
+      seen.push({ status: r.status, calls: api.calls.length })
+    }
+    await migrateDevice(api, input(), h)
+    expect(seen[0]).toEqual({ status: 'inProgress', calls: 0 })
+    expect(seen.at(-1)!.status).toBe('migrated')
+  })
+
+  it('a rollback that works records rolledBack; one that fails records needsAttention with where it stopped', async () => {
+    const api = new FakeApi()
+    api.fail.updateMember = new ApiError(400, {}, 'bad')
+    const records: MigrationRecord[] = []
+    await migrateDevice(api, input(), hooks(records))
+    expect(records.at(-1)).toMatchObject({ status: 'rolledBack', step: 'settings', message: 'bad' })
+
+    const api2 = new FakeApi()
+    api2.fail.updateMember = new ApiError(400, {}, 'bad')
+    api2.fail.removeMember = new ApiError(500, {}, 'down')
+    const records2: MigrationRecord[] = []
+    const out = await migrateDevice(api2, input(), hooks(records2))
+    expect(out).toMatchObject({ kind: 'needsAttention', step: 'settings', rollbackStep: 'removeMember' })
+    expect(records2.at(-1)).toMatchObject({ status: 'needsAttention', step: 'settings', rollbackStep: 'removeMember' })
+  })
+
+  it('the migrated record could not be saved: the legacy instance is kept', async () => {
+    const api = new FakeApi()
+    const h = hooks()
+    h.record = (r) => r.status !== 'migrated'
+    const out = await migrateDevice(api, input(), h)
+    expect(out).toEqual({ kind: 'migratedKeptLegacy', message: JOURNAL_NOT_SAVED })
+    expect(api.calls).not.toContain(`delete ${INST}`)
+  })
+
+  it('a legacy instance that was disabled before is not enabled by a rollback', async () => {
+    const api = new FakeApi()
+    api.fail.updateMember = new ApiError(400, {}, 'bad')
+    const records: MigrationRecord[] = []
+    const out = await migrateDevice(api, input({ running: false }), hooks(records))
+    expect(out.kind).toBe('rolledBack')
+    expect(mutating(api.calls)).not.toContain(`disable ${INST} false`)
+    expect(records[0]!.wasRunning).toBe(false)
+  })
+
+  it('disable fails but the device did stop the instance: it is enabled again', async () => {
+    const api = new FakeApi()
+    api.failFirst.setInstanceDisabled = new ApiError(0, undefined, 'timeout')
+    api.lists = [{ running: [], disabled: [INST] }]
+    const out = await migrateDevice(api, input(), hooks())
+    expect(out).toEqual({ kind: 'rolledBack', step: 'disable', message: 'timeout' })
+    expect(mutating(api.calls)).toEqual([`disable ${INST} true`, `disable ${INST} false`])
+  })
+
+  it('disable fails, the device stopped the instance, and enabling fails: needs attention', async () => {
+    const api = new FakeApi()
+    api.fail.setInstanceDisabled = new ApiError(0, undefined, 'timeout')
+    api.lists = [{ running: [], disabled: [INST] }]
+    const out = await migrateDevice(api, input(), hooks())
+    expect(out).toMatchObject({ kind: 'needsAttention', step: 'disable', rollbackStep: 'enable' })
+  })
+
+  it('disable fails and the instance still runs: nothing else happens', async () => {
+    const api = new FakeApi()
+    api.fail.setInstanceDisabled = new ApiError(0, undefined, 'timeout')
+    api.lists = [{ running: [INST], disabled: [] }]
+    const out = await migrateDevice(api, input(), hooks())
+    expect(out).toEqual({ kind: 'rolledBack', step: 'disable', message: 'timeout' })
+    expect(mutating(api.calls)).toEqual([`disable ${INST} true`])
   })
 })
 
@@ -236,7 +318,26 @@ describe('rollbackDevice', () => {
     const api = new FakeApi()
     api.lists = [{ running: [], disabled: [INST] }]
     api.fail.setInstanceDisabled = new ApiError(500, {}, 'nope')
-    expect(await rollbackDevice(api, record(), hooks())).toEqual({ ok: false, message: 'nope' })
+    expect(await rollbackDevice(api, record(), hooks())).toEqual({ ok: false, message: 'nope', removed: true })
+  })
+
+  it('refuses while the device is offline, before changing anything', async () => {
+    const api = new FakeApi()
+    api.fail.listInstances = new ApiError(404, {}, 'Client not found')
+    expect(await rollbackDevice(api, record(), hooks())).toEqual({ ok: false, message: 'Client not found', removed: false, offline: true })
+    expect(mutating(api.calls)).toEqual([])
+  })
+
+  it('an instance that was disabled before: kept disabled, or recreated without running', async () => {
+    const api = new FakeApi()
+    api.lists = [{ running: [], disabled: [INST] }]
+    expect(await rollbackDevice(api, { ...record(), wasRunning: false }, hooks())).toEqual({ ok: true })
+    expect(mutating(api.calls)).toEqual(['remove'])
+
+    const api2 = new FakeApi()
+    api2.lists = [{ running: [], disabled: [] }, { running: [], disabled: [] }, { running: [], disabled: [INST] }]
+    expect(await rollbackDevice(api2, { ...record(), wasRunning: false }, hooks())).toEqual({ ok: true })
+    expect(mutating(api2.calls)).toEqual(['remove', `save ${INST}`])
   })
 })
 

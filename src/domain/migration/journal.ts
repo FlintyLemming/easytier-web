@@ -1,9 +1,14 @@
 import type { ChangeKey, DevicePreview, MemberFields } from './classify'
 import type { FieldDiff } from './compare'
+import type { RollbackStep, StepName } from './run'
 import type { LegacyConfig } from './types'
 
-export type RecordStatus = 'migrated' | 'consistent' | 'mismatch' | 'rolledBack'
-const STATUSES: RecordStatus[] = ['migrated', 'consistent', 'mismatch', 'rolledBack']
+/**
+ * inProgress: written before the device is touched and kept up to date, so a run that is cut off
+ * (tab closed, browser crash) leaves a trace; needsAttention: a step failed and so did its rollback.
+ */
+export type RecordStatus = 'inProgress' | 'migrated' | 'consistent' | 'mismatch' | 'rolledBack' | 'needsAttention'
+const STATUSES: RecordStatus[] = ['inProgress', 'migrated', 'consistent', 'mismatch', 'rolledBack', 'needsAttention']
 
 /**
  * One migrated device, kept in this browser so verification can be done once an offline device is
@@ -24,6 +29,14 @@ export interface MigrationRecord {
   migratedAt: number
   checkedAt?: number
   diffs?: FieldDiff[]
+  /** inProgress: the step reached; rolledBack / needsAttention: the step that failed. */
+  step?: StepName
+  /** rolledBack / needsAttention: what failed. */
+  message?: string
+  /** needsAttention: the rollback step that failed. */
+  rollbackStep?: RollbackStep
+  /** Whether the legacy instance ran before the migration; a rollback restores that. Missing = true. */
+  wasRunning?: boolean
 }
 
 export function journalKey(user: string): string {
@@ -52,18 +65,25 @@ export function loadJournal(user: string): MigrationRecord[] {
   }
 }
 
-function save(user: string, records: MigrationRecord[]): void {
+function save(user: string, records: MigrationRecord[]): boolean {
   try {
     localStorage.setItem(journalKey(user), JSON.stringify(records))
-  } catch { /* storage full or unavailable: the run itself is not affected */ }
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** Insert or replace the record of the same device in the same network; returns the new list. */
 export function upsertRecord(user: string, rec: MigrationRecord): MigrationRecord[] {
+  return saveRecord(user, rec).list
+}
+
+/** upsertRecord that also tells whether storage accepted it (full or unavailable storage: false). */
+export function saveRecord(user: string, rec: MigrationRecord): { list: MigrationRecord[]; saved: boolean } {
   const list = loadJournal(user).filter((r) => !(r.deviceId === rec.deviceId && r.networkId === rec.networkId))
   list.push(rec)
-  save(user, list)
-  return list
+  return { list, saved: save(user, list) }
 }
 
 export function clearJournal(user: string): void {

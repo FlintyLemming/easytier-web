@@ -5,8 +5,8 @@ import { createNetwork } from '../../api/client'
 import type { CentralNetworkDetail } from '../../api/types'
 import { useToast } from '../../composables/useToast'
 import type { ChangeKey, DevicePreview, TargetNetwork } from '../../domain/migration/classify'
-import { exportFile, upsertRecord } from '../../domain/migration/journal'
-import { migrateDevice, type DeviceOutcome, type StepName } from '../../domain/migration/run'
+import { exportFile, saveRecord } from '../../domain/migration/journal'
+import { JOURNAL_NOT_SAVED, migrateDevice, type DeviceOutcome, type StepName } from '../../domain/migration/run'
 import type { NetworkDraft } from '../../domain/migration/types'
 import { settingsPayload } from '../../domain/networks'
 import { downloadText } from '../../lib/download'
@@ -16,6 +16,7 @@ import CheckboxField from '../config-editor/CheckboxField.vue'
 import UiButton from '../ui/UiButton.vue'
 import { changeLabel } from './changeText'
 import { migrationApi } from './migrationApi'
+import { holdUnload } from './unloadGuard'
 
 const props = defineProps<{
   /** The devices that will migrate (step 3's selection). */
@@ -58,6 +59,10 @@ async function start() {
   phase.value = 'running'
   running.value = true
   stopRequested = false
+  // Captured once: a session that expires mid-run must not move later records to another key.
+  const user = session.username
+  // Released only when the loop ends, even if the page was left in between.
+  const release = holdUnload()
   try {
     const file = exportFile(props.target.networkName, devices, new Date())
     downloadText(file.filename, file.text, 'application/json')
@@ -84,7 +89,7 @@ async function start() {
         { networkId, networkName: props.target.networkName, preview: p, target: props.target, confirmed: new Set(props.confirmed[id] ?? []) },
         {
           onStep: (step) => (rows.value[id] = { kind: 'step', step }),
-          record: (rec) => upsertRecord(session.username, rec),
+          record: (rec) => saveRecord(user, rec).saved,
         },
       )
       rows.value[id] = { kind: 'done', outcome }
@@ -92,6 +97,7 @@ async function start() {
     phase.value = 'done'
     void inventory.refresh()
   } finally {
+    release()
     stopping.value = false
     running.value = false
   }
@@ -105,7 +111,9 @@ function statusText(s: RowState): string {
     case 'migrated':
       return t('migrate.execute.status.migrated')
     case 'migratedKeptLegacy':
-      return t('migrate.execute.status.migratedKeptLegacy', { message: o.message })
+      return t('migrate.execute.status.migratedKeptLegacy', {
+        message: o.message === JOURNAL_NOT_SAVED ? t('migrate.execute.journalNotSaved') : o.message,
+      })
     case 'rolledBack': {
       const msg = o.changed?.length
         ? t('migrate.execute.changedSincePreview', { changes: o.changed.map((k) => changeLabel(t, k)).join('、') })
@@ -113,7 +121,11 @@ function statusText(s: RowState): string {
       return t('migrate.execute.status.rolledBack', { step: t(`migrate.execute.status.${o.step}`), message: msg })
     }
     case 'needsAttention':
-      return t('migrate.execute.status.needsAttention', { step: t(`migrate.execute.status.${o.step}`), message: o.message })
+      return t('migrate.execute.status.needsAttention', {
+        step: t(`migrate.execute.status.${o.step}`),
+        message: o.message,
+        rollback: t(`migrate.execute.rollbackSteps.${o.rollbackStep}`),
+      })
   }
 }
 

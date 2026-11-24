@@ -2,6 +2,7 @@
 export default {
   migrate: {
     banner: {
+      unfinished: 'The migration of {n} devices did not finish and needs attention',
       legacy: '{n} legacy network instances found; they can be migrated to a central network',
       start: 'Start migration',
       pending: '{n} migrated devices are waiting to be verified',
@@ -30,6 +31,7 @@ export default {
       loadFailed: 'Could not load the devices',
     },
     preview: {
+      unfinished: 'The last migration of this device did not finish; see the verification report',
       migrate: 'Migrate',
       skip: 'Not now',
       choiceLabel: 'Migrate {name}?',
@@ -105,14 +107,20 @@ export default {
         migrated: 'Migrated',
         migratedKeptLegacy: 'Migrated (legacy instance not deleted: {message})',
         rolledBack: 'Rolled back ({step}: {message})',
-        needsAttention: 'Needs attention ({step}: {message})',
+        needsAttention: 'Needs attention ({step}: {message}; the rollback stopped at “{rollback}”)',
       },
       changedSincePreview: 'The config changed after the preview: {changes}',
+      rollbackSteps: { removeMember: 'removing from the network', enable: 'enabling the legacy instance' },
+      journalNotSaved: 'the migration record was not saved (browser storage unavailable); the legacy instance is kept, disabled',
       leaveTitle: 'Leave the migration?',
       leaveBody: 'A migration is running. If you leave, the current device is finished (or rolled back) and no other device is started.',
       leave: 'Leave',
     },
     report: {
+      rollbackStep: 'rollback',
+      inProgress: 'Unfinished (stopped at “{step}”)',
+      needsAttention: 'Needs attention ({step}: {message})',
+      rollbackOffline: '{name} is offline; roll back once it is online',
       checking: 'Checking…',
       consistent: 'Consistent',
       mismatch: 'Mismatch',

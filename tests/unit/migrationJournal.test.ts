@@ -34,6 +34,12 @@ describe('journal', () => {
     expect(loadJournal('admin')).toEqual([rec()])
   })
 
+  it('keeps unfinished and failed records with their step', () => {
+    upsertRecord('admin', rec({ status: 'inProgress', step: 'join', wasRunning: true }))
+    upsertRecord('admin', rec({ deviceId: 'd3', status: 'needsAttention', step: 'settings', message: 'bad', rollbackStep: 'removeMember' }))
+    expect(loadJournal('admin').map((r) => [r.status, r.step])).toEqual([['inProgress', 'join'], ['needsAttention', 'settings']])
+  })
+
   it('clearJournal empties it', () => {
     upsertRecord('admin', rec())
     clearJournal('admin')

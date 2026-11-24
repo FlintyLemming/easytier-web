@@ -14,12 +14,13 @@
 
 > **不要**在这台主机上执行 `docker compose pull` 或不带服务名的 `docker compose up`：两个服务都用 `:latest`，拉取后 `easytier-core` 也会被换成新版本。下面只操作 `easytier-web` 这一个服务。
 
-下面的命令都在 `idc-ucloud` 上执行。先设好变量：
+下面的命令都在 `idc-ucloud` 上、在 **bash** 里执行（这台主机的登录 shell 是 fish，先输入 `bash`）。先设好变量：
 
 ```sh
 APP=/home/flintylemming/appdata/11211,22020-easytier-web
 STAMP=$(date +%Y%m%d-%H%M%S)
 BK="$APP/backups/$STAMP"
+echo "$BK"          # 记下这个路径：第 9 步回滚要用（第 4 步也会把它写进 $APP/backups/LATEST）
 ```
 
 ## 1. 前置验证（已在本机完成，不碰生产）
@@ -30,13 +31,33 @@ BK="$APP/backups/$STAMP"
 - [`testenv/reports/migrate-rehearsal-2026-11-24.md`](../testenv/reports/migrate-rehearsal-2026-11-24.md)：合成数据上完整走一遍迁移向导、校验、单台回滚、整体回滚。
 - [`testenv/reports/prod-rehearsal-2026-11-24.md`](../testenv/reports/prod-rehearsal-2026-11-24.md)：用**生产数据库的副本**做同样的演练。
 
-## 2. 升级前在 2.6.4 原版前端做的一件事
+## 2. （可选）两个 v2.7.1 读不出的停用实例
 
-生产库里有 **2 个已停用的组 A 实例**，存储的配置里还带着很早以前版本写进去的 `rpc_port` 字段。2.6.4 能读，v2.7.1 不认识这个字段：读取这两个实例时返回 500 `unknown field rpc_port`，迁移向导会把这两台设备列在「读取失败」里，手动实例页也读不出它们（生产副本演练确认，见报告）。
+生产库里有 **2 个已停用的组 A 实例**，存储的配置里还带着很早以前版本写进去的 `rpc_port` 字段。2.6.4 能读，v2.7.1 不认识这个字段：读取这两个实例时返回 500 `unknown field rpc_port`，迁移向导把这两台设备列在「读取失败」里，手动实例页也读不出它们（生产副本演练确认，见报告）。运行中的实例不受影响：v2.7.1 第一次心跳时就会用 core 上报的配置把它们重写掉。
 
-升级前在 2.6.4 原版前端里，把组 A 中**已停用**的实例（共 4 个）逐个打开、不做任何修改直接保存一次。2.6.4 保存时只会去掉 `rpc_port`，其他字段不变，实例仍是停用状态（演练里逐字段比较过）。不再需要的停用实例也可以直接删除。运行中的实例不用处理：v2.7.1 第一次心跳时就会用 core 上报的配置把它们重写掉。
+**推荐不处理**：这两个实例本来就停用、向导默认也不迁移它们，影响只是上面说的「读取失败」。
 
-升级后可以在迁移向导第 1 步确认：没有「读取失败」。
+如果希望升级后这两个实例在新后端里还能打开，就在升级**之前**按演练过的办法把它们原样保存一次（2.6.4 保存时只去掉 `rpc_port`，其他字段逐个相同，实例仍是停用）。这一步会写数据库，所以先单独备份一次：
+
+1. 按第 4 步停机备份，然后 `docker start easytier-web` 启动回 2.6.4。
+2. 在本机用这份备份找出这两个实例（本机执行；`<备份目录>` 是上一步的 `$BK`）：
+
+   ```sh
+   mkdir -p ~/et-check && ssh idc-ucloud "tar -C '<备份目录>/data' -cf - ." | tar -x -C ~/et-check
+   sqlite3 ~/et-check/et.db "select device_id, network_instance_id from user_running_network_configs where disabled = 1 and network_config like '%\"rpc_port\"%'"
+   ```
+
+3. 在主机上（bash）用原来的账号逐个原样保存（`<用户名>`、`<密码>`、`<设备>`、`<实例>` 换成实际值）：
+
+   ```sh
+   J="$BK/cookies"; API=http://127.0.0.1:11211/api/v1
+   PW=$(printf '%s' '<密码>' | md5sum | cut -d' ' -f1)
+   curl -sf -c "$J" -H 'content-type: application/json' -d "{\"username\":\"<用户名>\",\"password\":\"$PW\"}" "$API/auth/login"
+   curl -sf -b "$J" "$API/machines/<设备>/networks/config/<实例>" > "$BK/cfg.json"
+   printf '{"config":%s}' "$(cat "$BK/cfg.json")" | curl -sf -b "$J" -X PUT -H 'content-type: application/json' --data-binary @- "$API/machines/<设备>/networks/config/<实例>"
+   ```
+
+4. **重新运行开头的变量块**（得到新的 `$BK`，不要和这一步的备份混用），再从第 3 步继续（第 4 步会再备份一次）。升级后在向导第 1 步确认没有「读取失败」。
 
 ## 3. 记录现状
 
@@ -64,14 +85,14 @@ cp -a "$APP/compose.yaml" "$BK/compose.yaml"
 ```sh
 docker stop easytier-web
 cp -a "$APP/data" "$BK/data"
-ls -la "$BK/data"                                     # et.db（以及 et.db-wal、et.db-shm，如果有）
-sqlite3 -readonly "$BK/data/et.db" 'PRAGMA integrity_check'   # 必须输出 ok
+ls -la "$BK/data"                    # et.db（以及 et.db-wal、et.db-shm，如果有）
+echo "$BK" > "$APP/backups/LATEST"   # 第 9 步回滚从这里读备份路径
 ```
 
-这台主机上没有 `sqlite3`：把 `$BK/data` 复制到本机再检查（本机执行，`<STAMP>` 换成上面的值）：
+这台主机上没有 `sqlite3`：把备份复制到本机再检查（本机执行，`<备份目录>` 换成上面打印的 `$BK`）：
 
 ```sh
-mkdir -p ~/et-backup-check && ssh idc-ucloud "tar -C '/home/flintylemming/appdata/11211,22020-easytier-web/backups/<STAMP>/data' -cf - ." | tar -x -C ~/et-backup-check
+mkdir -p ~/et-backup-check && ssh idc-ucloud "tar -C '<备份目录>/data' -cf - ." | tar -x -C ~/et-backup-check
 sqlite3 ~/et-backup-check/et.db 'PRAGMA integrity_check'      # 必须输出 ok
 ```
 
@@ -127,13 +148,23 @@ docker ps --filter name=easytier-web      # 状态 Up
 
 顺序：**停 web → 恢复备份 → 用旧镜像（2.6.4 的 digest）启动**。web 2.6.4 不能直接打开 v2.7.1 迁移过的数据库（启动即 panic：`Migration file of version '…' is missing`），所以必须恢复第 4 步的备份。
 
+回滚往往在另一个 SSH 会话里做，所以下面是一段独立的脚本：备份路径从第 4 步写下的 `$APP/backups/LATEST` 读（也可以把 `BK=` 那一行直接改成记下的路径）；备份不在就停下，什么都不动。整段粘贴到主机上执行（任何一条失败都会停止）：
+
 ```sh
+bash -eu <<'EOF'
+APP=/home/flintylemming/appdata/11211,22020-easytier-web
+BK=$(cat "$APP/backups/LATEST")
+test -s "$BK/data/et.db" && test -s "$BK/compose.yaml" || { echo "备份不完整: $BK" >&2; exit 1; }
 docker stop easytier-web
-mv "$APP/data" "$APP/data.failed-$STAMP"          # 保留现场，不删除
+mv "$APP/data" "$APP/data.failed-$(date +%Y%m%d-%H%M%S)"   # 保留现场，不删除
 cp -a "$BK/data" "$APP/data"
+cp -a "$BK/compose.yaml" "$APP/compose.yaml"                 # 换回原来的 compose
+cd "$APP" && docker compose up -d easytier-web
+docker image inspect "$(docker inspect -f '{{.Image}}' easytier-web)" -f '{{json .RepoDigests}}'
+EOF
 ```
 
-然后把 `easytier-web` 服务的 `image:` 改回 `mirror-hub.flinty.moe/easytier/easytier@sha256:91d6732ea5ff71542fdb99333d2ee7b168e973443114db84db061e452427d91e`（第 3 步记下的 digest；本机已有这个镜像，不需要拉取），或者直接用 `cp -a "$BK/compose.yaml" "$APP/compose.yaml"` 换回原来的文件（原来的 `:latest` 在本机仍指向 2.6.4，只要没有 pull 过），然后 `docker compose up -d easytier-web`。
+最后一行应打印 2.6.4 的 digest（`sha256:91d6732e…`）。原来的 compose 写的是 `:latest`，本机的 `latest` 仍是 2.6.4（只要没人在这台主机上 pull 过它）；如果打印的不是这个 digest，把 `easytier-web` 服务的 `image:` 改成 `mirror-hub.flinty.moe/easytier/easytier@sha256:91d6732ea5ff71542fdb99333d2ee7b168e973443114db84db061e452427d91e`（本机已有，不需要拉取），再 `docker compose up -d easytier-web`。
 
 回滚后会发生什么（合成数据和生产副本的演练都验证过，见第 1 步的报告）：
 

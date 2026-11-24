@@ -9,6 +9,8 @@ const props = defineProps<{
   /** The user's choice (迁移 = true). */
   choice: boolean
   confirmed: ChangeKey[]
+  /** The journal says the last migration of this device did not finish. */
+  unfinished?: boolean
 }>()
 const emit = defineEmits<{ 'update:choice': [value: boolean]; 'update:confirmed': [value: ChangeKey[]] }>()
 const { t } = useI18n()
@@ -69,7 +71,8 @@ const show = (v: unknown) => (typeof v === 'string' ? v : JSON.stringify(v))
     </header>
 
     <div class="flex flex-col gap-4 px-5 py-4 text-[14px]">
-      <p v-if="preview.alreadyMember" class="text-[13px] text-muted">{{ t('migrate.preview.leftover') }}</p>
+      <p v-if="preview.alreadyMember && unfinished" class="text-[13px] text-error">{{ t('migrate.preview.unfinished') }}</p>
+      <p v-else-if="preview.alreadyMember" class="text-[13px] text-muted">{{ t('migrate.preview.leftover') }}</p>
       <p v-else-if="!preview.instance.running" class="text-[13px] text-muted">{{ t('migrate.preview.disabledNote') }}</p>
       <ul v-if="preview.blockers.length" class="flex flex-col gap-1">
         <li v-for="(b, i) in preview.blockers" :key="i" class="text-[13px] text-error">{{ blockerText(t, b) }}</li>

@@ -1,6 +1,6 @@
 import {
   addMembers, deleteInstance, generateToml, getInstanceConfig, listInstances, listMembers, nodeInfo, parseToml,
-  removeMember, runInstance, setInstanceDisabled, setMemberConfig, updateMember,
+  removeMember, runInstance, saveInstanceConfig, setInstanceDisabled, setMemberConfig, updateMember,
 } from '../../api/client'
 import type { MigrationApi } from '../../domain/migration/run'
 
@@ -11,6 +11,7 @@ export const migrationApi: MigrationApi = {
   listInstances,
   deleteInstance,
   runInstance,
+  saveInstanceConfig,
   addMembers: (networkId, deviceIds) => addMembers(networkId, deviceIds),
   updateMember,
   setMemberConfig,

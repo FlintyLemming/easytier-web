@@ -226,6 +226,9 @@ export function changeFields(key: ChangeKey): string[] {
       return [...LEGACY_VPN_FIELDS, 'vpn_portal_config']
     case 'dhcp':
       return ['dhcp', 'virtual_ipv4']
+    case 'secure_mode':
+      // A secure network compiles its credentials into every member.
+      return ['secure_mode', 'managed_credentials']
     default:
       return [key]
   }
