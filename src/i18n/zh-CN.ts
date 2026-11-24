@@ -1,3 +1,5 @@
+import { configFlagText } from './configFlags'
+
 export default {
   common: {
     cancel: '取消',
@@ -320,5 +322,8 @@ export default {
   pages: {
     devices: '设备',
     deviceDetail: '设备详情',
+  },
+  config: {
+    flags: configFlagText['zh-CN'],
   },
 }

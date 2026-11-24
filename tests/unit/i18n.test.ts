@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createI18n } from 'vue-i18n'
 import zh from '../../src/i18n/zh-CN'
 import en from '../../src/i18n/en'
+import { formFlags } from '../../src/lib/networkConfig'
 
 function keys(o: Record<string, unknown>, p = ''): string[] {
   return Object.entries(o).flatMap(([k, v]) =>
@@ -45,5 +46,15 @@ describe('i18n catalogs', () => {
     expect(t('overview.ranking.others', { n: 1 }, 1)).toBe('其他 1 地')
     expect(t('overview.stats.directSub', { relayed: 3, total: 136 }, 136)).toBe('136 条连接中 3 条走中继')
     expect(t('devices.cityChipMany', { city: '上海', n: 2 })).toBe('位置：上海 等 2 地')
+  })
+
+  it('every form flag has a label and help text in both catalogs', () => {
+    for (const catalog of [zh, en] as unknown as { config: { flags: Record<string, { label: string; help: string }> } }[]) {
+      for (const { field } of formFlags()) {
+        const entry = catalog.config.flags[field]
+        expect(entry?.label, field).toBeTruthy()
+        expect(entry?.help, field).toBeTruthy()
+      }
+    }
   })
 })

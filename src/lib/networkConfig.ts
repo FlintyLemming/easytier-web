@@ -158,6 +158,33 @@ export function defaultFlagValue(field: keyof NetworkConfig): boolean {
   return flag ? declaredValue(flag) : false
 }
 
+/**
+ * What a flag's annotation declares as its default: the boolean for boolean flags (with `negate`
+ * applied), the annotation's default string for other flags, undefined for unannotated fields.
+ */
+export function declaredDefault(field: string): boolean | string | undefined {
+  const flag = annotatedFlags.find((flag) => flag.field === field)
+  if (!flag) return undefined
+  if (flag.boolean) return declaredValue(flag)
+
+  return flag.meta.default
+}
+
+/**
+ * Whether a backend JSON value is what the flag runs with when unset. Empty values always are;
+ * fields without a declared default never are otherwise.
+ */
+export function isDefaultValue(field: string, value: unknown): boolean {
+  if (value === null || value === undefined || value === '') return true
+  if (Array.isArray(value) && value.length === 0) return true
+
+  const declared = declaredDefault(field)
+  if (typeof declared === 'boolean') return value === declared
+  if (typeof declared === 'string') return String(value) === declared
+
+  return false
+}
+
 /** The flags the management API carries, so a form's value reaches the backend. */
 export function apiCarries(field: string): boolean {
   return NetworkConfigPb.fields.some((declared) => declared.name === field)
@@ -440,6 +467,10 @@ export function toBackendNetworkConfig(config: NetworkConfig): NetworkConfig {
     useProtoFieldName: true,
   }) as unknown as NetworkConfig
   if (dns !== undefined) result.dns = dns
+  // normalizeAcl fills in an empty group for the form; an empty group is the same as none, so don't
+  // add a `group: {}` to ACLs that never had one (keeps unedited configs byte-for-byte equal).
+  const group = result.acl?.acl_v1?.group as Record<string, unknown> | undefined
+  if (group && Object.keys(group).length === 0) delete result.acl!.acl_v1!.group
   return result
 }
 

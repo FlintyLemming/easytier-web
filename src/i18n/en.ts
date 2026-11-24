@@ -1,3 +1,5 @@
+import { configFlagText } from './configFlags'
+
 export default {
   common: {
     cancel: 'Cancel',
@@ -320,5 +322,8 @@ export default {
   pages: {
     devices: 'Devices',
     deviceDetail: 'Device detail',
+  },
+  config: {
+    flags: configFlagText.en,
   },
 }
