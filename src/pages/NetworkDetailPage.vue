@@ -160,7 +160,7 @@ const panelId = (key: NetworkTab) => `${panelBase}-${key}`
         <AclTab ref="aclTab" :network-id="networkId" />
       </div>
       <div v-if="detail.secure_mode && visited.has('credentials')" v-show="tab === 'credentials'" :id="panelId('credentials')" role="tabpanel">
-        <CredentialsTab :network-id="networkId" />
+        <CredentialsTab :network-id="networkId" :active="tab === 'credentials'" />
       </div>
       <div v-if="visited.has('settings')" v-show="tab === 'settings'" :id="panelId('settings')" role="tabpanel">
         <SettingsTab :network-id="networkId" />
