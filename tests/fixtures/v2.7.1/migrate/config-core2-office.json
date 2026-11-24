@@ -1,0 +1,58 @@
+{
+  "instance_id": "8a9efaf1-a2d3-4cd5-93d1-4cb83c57a853",
+  "dhcp": false,
+  "virtual_ipv4": "10.150.0.2",
+  "network_length": 24,
+  "hostname": "core2-office",
+  "network_name": "office",
+  "network_secret": "office-secret",
+  "networking_method": "Manual",
+  "peer_urls": [
+    "tcp://core1:11010"
+  ],
+  "proxy_cidrs": [
+    "192.168.88.0/24"
+  ],
+  "listener_urls": [
+    "tcp://0.0.0.0:11010",
+    "udp://0.0.0.0:11010"
+  ],
+  "latency_first": false,
+  "dev_name": "",
+  "use_smoltcp": false,
+  "disable_ipv6": false,
+  "enable_kcp_proxy": false,
+  "disable_kcp_input": false,
+  "disable_p2p": false,
+  "bind_device": true,
+  "no_tun": false,
+  "enable_exit_node": false,
+  "relay_all_peer_rpc": false,
+  "multi_thread": true,
+  "enable_relay_network_whitelist": false,
+  "proxy_forward_by_system": false,
+  "disable_encryption": false,
+  "disable_udp_hole_punching": false,
+  "mtu": 1380,
+  "enable_magic_dns": false,
+  "enable_private_mode": false,
+  "enable_quic_proxy": false,
+  "disable_quic_input": false,
+  "port_forwards": [
+    {
+      "bind_ip": "0.0.0.0",
+      "bind_port": 18080,
+      "dst_ip": "10.150.0.1",
+      "dst_port": 80,
+      "proto": "tcp"
+    }
+  ],
+  "disable_sym_hole_punching": false,
+  "p2p_only": false,
+  "disable_tcp_hole_punching": false,
+  "lazy_p2p": false,
+  "need_p2p": false,
+  "disable_upnp": false,
+  "disable_relay_data": false,
+  "enable_udp_broadcast_relay": false
+}

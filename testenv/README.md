@@ -146,3 +146,42 @@ node testenv/capture-network-fixtures.ts
 - `/machines` 的顺序：在线的在前，然后按 `last_seen` 从新到旧。
 - `hostname_override`（如 core3 的 `lab-box`）会同时出现在成员的 `hostname` 和 `list_route` 路由的 `hostname` 里；`/machines` 里 `info.hostname` 仍是系统主机名（`core3`）。
 - `machines[].info.inst_id` 是 core 进程这次心跳会话的随机 id（core 重启就变），不是网络实例 id；设备上运行的网络实例在 `running_network_instances` 里。
+
+## 迁移演练环境
+
+迁移向导（`/migrate`）的开发和演练用一个单独的数据目录 `testenv/data-migrate`：在 web v2.6.4 上播种一组仿照生产情况的旧实例，再升级到 v2.7.1。另有第 4 台设备 core4（machine id `44444444-4444-4444-8444-444444444444`），只在 compose profile `migrate` 里，不加 `--profile migrate` 时不会启动。
+
+```sh
+mkdir -p testenv/data-migrate
+ET_DATA_DIR=./data-migrate ET_WEB_TAG=v2.6.4 docker compose -f testenv/docker-compose.yml --profile migrate up -d
+ET_DATA_DIR=./data-migrate node testenv/seed-migration.ts
+ET_DATA_DIR=./data-migrate bash testenv/upgrade.sh v2.6.4 v2.7.1     # 打印升级前的备份路径，记下来（回滚演练要用）
+```
+
+播种的数据（`seed-migration.ts`）：网络 `office`（密钥 `office-secret`，网段 `10.150.0.0/24`）——core1 `.1` Manual 连 core2，开着旧版 VPN Portal；core2 `.2` PublicServer 连 core1，自定义主机名 `core2-office`、子网代理 `192.168.88.0/24`、一条端口转发；core3 `.3` PublicServer 连 core1，MTU 1300、socks5 1080、一条 ACL；core4 `.4` 已停用。另有 core1 上的 `lab-old`（DHCP、Standalone、有 ACL、已停用）。状态文件 `seed-state.json` 和升级前快照 `seed-snapshot.json` 写在 `ET_DATA_DIR` 里，和数据库一起备份。
+
+注意：从别的数据目录切到一个全新的 2.6.4 数据目录时，web v2.6.4 第一次收到心跳就会把 core 上 v2.7.1 下发的中央实例删掉（它们的来源是 web，2.6.4 当作 webhook 来源清理）。
+
+抓迁移相关的 fixtures（会在真实后端上把 core2 迁移一次再回滚，并临时停掉 core4，`finally` 里全部恢复；约 3 分钟）：
+
+```sh
+ET_DATA_DIR=./data-migrate node testenv/capture-migration-fixtures.ts
+```
+
+结果在 `tests/fixtures/v2.7.1/migrate/`：`machines.json`、每台设备的 `instances-*` / `metas-*`、运行中实例的 `config-*`、停用后读到的 `stored-*`、`flow-core2.json`（迁移前后的 TOML 及其 parse-config 结果、成员、耗时、重建同名实例的 409）、`offline-instances-error.json`、`index.json`。
+
+用完切回日常环境（live smoke 依赖它）：
+
+```sh
+docker compose -f testenv/docker-compose.yml --profile migrate stop core4
+ET_DATA_DIR=./data-central docker compose -f testenv/docker-compose.yml up -d web
+```
+
+### 迁移相关的观察（v2.7.1 web + 2.6.4 core）
+
+- 设备离线时 `GET /machines/{id}/networks` 返回 **404** `{"message":"Client not found"}`：离线设备读不到实例列表（停用、启用、删除实例也都要设备在线）。
+- 在 2.6.4 web 上创建、运行过的实例，停用后读到的「存储的配置」和运行中经 RPC 读到的完全相同（`stored-*` 与 `config-*` 逐键相等）：PublicServer 已经存成了 `networking_method: "Manual"` + `peer_urls`，所有开关都是显式值（`mtu: 1380`、`bind_device: true`、`multi_thread: true`……）。
+- 中央网络成员运行中的 TOML 末尾有 `[source] source = "webhook"`，web v2.7.1 的 `parse-config` 拒绝这个值（只认 `user` / `web`），解析前要去掉这个表。
+- core2 迁移前后：两份运行中的 TOML 经 `parse-config` 后只有 `instance_id` 不同；`generate-config(存储的配置)` 会把所有显式的默认开关写出来，按默认值归一后与运行中的相同。
+- 设备是某个中央网络的成员时，在它上面新建同名（网络名相同）的实例返回 **409** `central network config must be changed through its network intent`；停用、启用、删除旧实例（实例 id 不同）不受影响。
+- 耗时：加入网络到成员 `running` 约 12 秒；移出成员到中央实例从设备上消失约 34 秒；重新启用旧实例后立即运行。

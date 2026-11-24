@@ -8,6 +8,11 @@ export function fixture<T = any>(name: string): T {
   return JSON.parse(readFileSync(FIXTURE_DIR + name, 'utf8')) as T
 }
 
+/** A fixture captured from the migration rehearsal env (`tests/fixtures/v2.7.1/migrate/`). */
+export function migrateFixture<T = any>(name: string): T {
+  return fixture<T>('migrate/' + name)
+}
+
 /** Return this from an override to answer with a specific HTTP status. */
 export class MockStatus {
   constructor(

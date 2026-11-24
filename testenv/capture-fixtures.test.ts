@@ -62,11 +62,7 @@ test('parse-config-error has an error and a null config; member-config-empty is 
   assert.ok(load('generate-config-ok.json').toml_config)
 })
 
-test('no fixture contains /Users/', () => {
-  const files = readdirSync(dir).filter((f) => f.endsWith('.json'))
-  assert.ok(files.length >= 15)
-  for (const f of files) assert.ok(!readFileSync(join(dir, f), 'utf8').includes('/Users/'), f)
-})
+
 
 // ---------- privacy: no real public IPs, no ACL group secrets ----------
 // The allowed ranges are spelled out here on purpose (not imported from lib/redact.ts),
@@ -113,10 +109,18 @@ function scan(v: unknown, path = '$', out: Scan = { dotted: [], u32: [], secrets
   }
   return out
 }
-const allFixtures = () =>
-  readdirSync(dir)
-    .filter((f) => f.endsWith('.json'))
-    .map((f) => ({ f, data: load(f) }))
+// The privacy scans also cover the migration fixtures (tests/fixtures/v2.7.1/migrate/); the
+// network-id consistency check below does not (they describe legacy instances, not the central network).
+const allFixtures = (deep = true) => [
+  ...readdirSync(dir).filter((f) => f.endsWith('.json')),
+  ...(deep ? readdirSync(join(dir, 'migrate')).filter((f) => f.endsWith('.json')).map((f) => `migrate/${f}`) : []),
+].map((f) => ({ f, data: load(f) }))
+
+test('no fixture contains /Users/', () => {
+  const files = allFixtures().map(({ f }) => f)
+  assert.ok(files.length >= 15)
+  for (const f of files) assert.ok(!readFileSync(join(dir, f), 'utf8').includes('/Users/'), f)
+})
 
 test('no fixture contains a public IPv4 (dotted strings or u32 addr fields)', () => {
   let dottedSeen = 0
@@ -224,7 +228,7 @@ test('every network_id / inst_id referenced in the fixtures equals index.network
     'instance-info-core2.json', 'generate-config-ok.json', 'parse-config-ok.json',
     // The secure-network fixtures describe a second (temporary) network; checked separately below.
     'network-created.json', 'network-secure.json', 'networks-two.json'])
-  for (const { f, data } of allFixtures()) if (!instanceFixtures.has(f)) walk(data, f)
+  for (const { f, data } of allFixtures(false)) if (!instanceFixtures.has(f)) walk(data, f)
   const files = new Set(refs.map((r) => r.where.slice(0, r.where.indexOf('.json') + 5)))
   for (const f of ['network.json', 'networks.json', 'machines.json', 'list-route-core1.json', 'show-node-info-core3.json']) {
     assert.ok(files.has(f), `no network reference found in ${f}`)
@@ -255,4 +259,30 @@ test('network fixtures: secure network, temporary member, credentials and the em
   assert.ok(creds.some((c) => c.credential_id.startsWith('member-')))
   for (const c of [...creds, load('credential-created.json')]) assert.match(c.credential_secret, /^Zml4dHVyZS1jcmVkLT/)
   assert.deepEqual(load('acl-policy-empty.json'), { policy: { default_action: 'allow', rules: [] } })
+})
+
+test('migration fixtures: four devices, five legacy instances, stored = running view, core2 flow', () => {
+  const index = load('migrate/index.json')
+  assert.deepEqual(Object.keys(index.machines), ['core1', 'core2', 'core3', 'core4'])
+  const count = Object.values<Record<string, string>>(index.instances).reduce((n, m) => n + Object.keys(m).length, 0)
+  assert.equal(count, 5)
+  const uuid = (u: { part1: number; part2: number; part3: number; part4: number }) => {
+    const h = [u.part1, u.part2, u.part3, u.part4].map((p) => (p >>> 0).toString(16).padStart(8, '0')).join('')
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
+  }
+  const list = load('migrate/instances-core1.json')
+  assert.deepEqual(list.running_inst_ids.map(uuid), [index.instances.core1.office])
+  assert.deepEqual(list.disabled_inst_ids.map(uuid), [index.instances.core1['lab-old']])
+  // A 2.6.4 core reports PublicServer as Manual + peer_urls; the stored copy reads the same.
+  const cfg = load('migrate/config-core2-office.json')
+  assert.equal(cfg.networking_method, 'Manual')
+  assert.deepEqual(cfg.peer_urls, ['tcp://core1:11010'])
+  for (const n of ['core1-office', 'core2-office', 'core3-office']) {
+    assert.deepEqual(load(`migrate/stored-${n}.json`), load(`migrate/config-${n}.json`), n)
+  }
+  const flow = load('migrate/flow-core2.json')
+  assert.equal(flow.recreate409.status, 409)
+  assert.equal(flow.parsedCentral.hostname, 'core2-office')
+  assert.equal(flow.memberAfterSettings.running, true)
+  assert.ok(load('migrate/offline-instances-error.json').status >= 400)
 })

@@ -32,3 +32,13 @@ services:
     cap_add: [NET_ADMIN]
     devices: ["/dev/net/tun"]
     depends_on: [web]
+
+  # Only for the migration rehearsal (testenv/README.md): `--profile migrate`.
+  core4:
+    image: easytier/easytier:${ET_CORE_TAG:-v2.6.4}
+    hostname: core4
+    command: ["--config-server", "udp://web:22020/admin", "--machine-id", "44444444-4444-4444-8444-444444444444"]
+    cap_add: [NET_ADMIN]
+    devices: ["/dev/net/tun"]
+    depends_on: [web]
+    profiles: [migrate]

@@ -1,0 +1,15 @@
+{
+  "metas": {
+    "3daff7ce-11f5-4d3f-bb15-066d4782c214": {
+      "inst_id": {
+        "part1": 1034942414,
+        "part2": 301288767,
+        "part3": 3138717293,
+        "part4": 1199751700
+      },
+      "network_name": "office",
+      "instance_name": "office",
+      "source": "ConfigSourceUser"
+    }
+  }
+}

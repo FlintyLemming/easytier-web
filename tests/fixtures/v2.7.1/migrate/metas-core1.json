@@ -1,0 +1,26 @@
+{
+  "metas": {
+    "dee2466c-93f7-4969-b5f8-02dce7dace5a": {
+      "inst_id": {
+        "part1": 3739371116,
+        "part2": 2482456937,
+        "part3": 3052929756,
+        "part4": 3889876570
+      },
+      "network_name": "lab-old",
+      "instance_name": "lab-old",
+      "source": "ConfigSourceUser"
+    },
+    "9affdd65-97ae-4c0c-8a17-8ecef87a5266": {
+      "inst_id": {
+        "part1": 2600459621,
+        "part2": 2544782348,
+        "part3": 2316799694,
+        "part4": 4168766054
+      },
+      "network_name": "office",
+      "instance_name": "office",
+      "source": "ConfigSourceUser"
+    }
+  }
+}

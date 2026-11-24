@@ -1,0 +1,216 @@
+{
+  "timings": {
+    "runningAfterMs": 11942,
+    "goneAfterRemoveMs": 33876,
+    "reenabledRunningAfterMs": 28
+  },
+  "legacyToml": "hostname = \"core2-office\"\ninstance_name = \"office\"\ninstance_id = \"8a9efaf1-a2d3-4cd5-93d1-4cb83c57a853\"\nipv4 = \"10.150.0.2/24\"\ndhcp = false\nlisteners = [\n    \"tcp://0.0.0.0:11010\",\n    \"udp://0.0.0.0:11010\",\n]\n\n[network_identity]\nnetwork_name = \"office\"\nnetwork_secret = \"office-secret\"\n\n[[peer]]\nuri = \"tcp://core1:11010\"\n\n[[proxy_network]]\ncidr = \"192.168.88.0/24\"\n\n[[port_forward]]\nbind_addr = \"0.0.0.0:18080\"\ndst_addr = \"10.150.0.1:80\"\nproto = \"tcp\"\n\n[flags]\n",
+  "overrideSent": {
+    "listener_urls": [
+      "tcp://0.0.0.0:11010",
+      "udp://0.0.0.0:11010"
+    ],
+    "latency_first": false,
+    "dev_name": "",
+    "use_smoltcp": false,
+    "disable_ipv6": false,
+    "enable_kcp_proxy": false,
+    "disable_kcp_input": false,
+    "disable_p2p": false,
+    "bind_device": true,
+    "no_tun": false,
+    "enable_exit_node": false,
+    "relay_all_peer_rpc": false,
+    "multi_thread": true,
+    "enable_relay_network_whitelist": false,
+    "proxy_forward_by_system": false,
+    "disable_encryption": false,
+    "disable_udp_hole_punching": false,
+    "mtu": 1380,
+    "enable_magic_dns": false,
+    "enable_private_mode": false,
+    "enable_quic_proxy": false,
+    "disable_quic_input": false,
+    "port_forwards": [
+      {
+        "bind_ip": "0.0.0.0",
+        "bind_port": 18080,
+        "dst_ip": "10.150.0.1",
+        "dst_port": 80,
+        "proto": "tcp"
+      }
+    ],
+    "disable_sym_hole_punching": false,
+    "p2p_only": false,
+    "disable_tcp_hole_punching": false,
+    "lazy_p2p": false,
+    "need_p2p": false,
+    "disable_upnp": false,
+    "disable_relay_data": false,
+    "enable_udp_broadcast_relay": false,
+    "proxy_cidrs": [
+      "192.168.88.0/24"
+    ]
+  },
+  "memberAfterSettings": {
+    "member_id": "92a22c06-a6c8-467b-aa05-807bfafff12d",
+    "device_id": "22222222-2222-4222-8222-222222222222",
+    "hostname": "core2-office",
+    "hostname_override": "core2-office",
+    "alias": null,
+    "virtual_ipv4": "10.150.0.2",
+    "allocated_ipv4": null,
+    "online": true,
+    "running": true,
+    "runtime_virtual_ipv4": "10.150.0.2/24",
+    "version": "2.6.4-8428a89d",
+    "error_msg": null,
+    "has_override": true,
+    "proxy_cidrs": [
+      "192.168.88.0/24"
+    ],
+    "temporary": false,
+    "credential_id": null,
+    "credential_expiry_unix": null
+  },
+  "centralToml": "hostname = \"core2-office\"\ninstance_name = \"office\"\ninstance_id = \"799cb4a3-fe97-445a-b931-335664d24360\"\nipv4 = \"10.150.0.2/24\"\ndhcp = false\nlisteners = [\n    \"tcp://0.0.0.0:11010\",\n    \"udp://0.0.0.0:11010\",\n]\n\n[network_identity]\nnetwork_name = \"office\"\nnetwork_secret = \"office-secret\"\n\n[[peer]]\nuri = \"tcp://core1:11010\"\n\n[[proxy_network]]\ncidr = \"192.168.88.0/24\"\n\n[[port_forward]]\nbind_addr = \"0.0.0.0:18080\"\ndst_addr = \"10.150.0.1:80\"\nproto = \"tcp\"\n\n[flags]\n\n[source]\nsource = \"webhook\"\n",
+  "generatedFromStored": "hostname = \"core2-office\"\ninstance_name = \"office\"\ninstance_id = \"8a9efaf1-a2d3-4cd5-93d1-4cb83c57a853\"\nipv4 = \"10.150.0.2/24\"\ndhcp = false\ndhcpv6 = false\nlisteners = [\n    \"tcp://0.0.0.0:11010\",\n    \"udp://0.0.0.0:11010\",\n]\n\n[network_identity]\nnetwork_name = \"office\"\nnetwork_secret = \"office-secret\"\n\n[[peer]]\nuri = \"tcp://core1:11010\"\n\n[[proxy_network]]\ncidr = \"192.168.88.0/24\"\n\n[[port_forward]]\nbind_addr = \"0.0.0.0:18080\"\ndst_addr = \"10.150.0.1:80\"\nproto = \"tcp\"\n\n[flags]\ndev_name = \"\"\nenable_encryption = true\nenable_ipv6 = true\nmtu = 1380\nlatency_first = false\nenable_exit_node = false\nno_tun = false\nuse_smoltcp = false\nrelay_network_whitelist = \"*\"\ndisable_p2p = false\nrelay_all_peer_rpc = false\ndisable_udp_hole_punching = false\nmulti_thread = true\nbind_device = true\nenable_kcp_proxy = false\ndisable_kcp_input = false\nproxy_forward_by_system = false\naccept_dns = false\nprivate_mode = false\nenable_quic_proxy = false\ndisable_quic_input = false\ndisable_sym_hole_punching = false\np2p_only = false\ndisable_tcp_hole_punching = false\nlazy_p2p = false\nneed_p2p = false\ndisable_upnp = false\ndisable_relay_data = false\nenable_udp_broadcast_relay = false\n",
+  "parsedLegacy": {
+    "instance_id": "8a9efaf1-a2d3-4cd5-93d1-4cb83c57a853",
+    "dhcp": false,
+    "virtual_ipv4": "10.150.0.2",
+    "network_length": 24,
+    "hostname": "core2-office",
+    "network_name": "office",
+    "network_secret": "office-secret",
+    "networking_method": "Manual",
+    "peer_urls": [
+      "tcp://core1:11010"
+    ],
+    "proxy_cidrs": [
+      "192.168.88.0/24"
+    ],
+    "listener_urls": [
+      "tcp://0.0.0.0:11010",
+      "udp://0.0.0.0:11010"
+    ],
+    "port_forwards": [
+      {
+        "bind_ip": "0.0.0.0",
+        "bind_port": 18080,
+        "dst_ip": "10.150.0.1",
+        "dst_port": 80,
+        "proto": "tcp"
+      }
+    ],
+    "peers": [
+      {
+        "uri": "tcp://core1:11010"
+      }
+    ],
+    "dhcpv6": false
+  },
+  "parsedCentral": {
+    "instance_id": "799cb4a3-fe97-445a-b931-335664d24360",
+    "dhcp": false,
+    "virtual_ipv4": "10.150.0.2",
+    "network_length": 24,
+    "hostname": "core2-office",
+    "network_name": "office",
+    "network_secret": "office-secret",
+    "networking_method": "Manual",
+    "peer_urls": [
+      "tcp://core1:11010"
+    ],
+    "proxy_cidrs": [
+      "192.168.88.0/24"
+    ],
+    "listener_urls": [
+      "tcp://0.0.0.0:11010",
+      "udp://0.0.0.0:11010"
+    ],
+    "port_forwards": [
+      {
+        "bind_ip": "0.0.0.0",
+        "bind_port": 18080,
+        "dst_ip": "10.150.0.1",
+        "dst_port": 80,
+        "proto": "tcp"
+      }
+    ],
+    "peers": [
+      {
+        "uri": "tcp://core1:11010"
+      }
+    ],
+    "dhcpv6": false
+  },
+  "parsedGenerated": {
+    "instance_id": "8a9efaf1-a2d3-4cd5-93d1-4cb83c57a853",
+    "dhcp": false,
+    "virtual_ipv4": "10.150.0.2",
+    "network_length": 24,
+    "hostname": "core2-office",
+    "network_name": "office",
+    "network_secret": "office-secret",
+    "networking_method": "Manual",
+    "peer_urls": [
+      "tcp://core1:11010"
+    ],
+    "proxy_cidrs": [
+      "192.168.88.0/24"
+    ],
+    "listener_urls": [
+      "tcp://0.0.0.0:11010",
+      "udp://0.0.0.0:11010"
+    ],
+    "latency_first": false,
+    "dev_name": "",
+    "use_smoltcp": false,
+    "disable_ipv6": false,
+    "enable_kcp_proxy": false,
+    "disable_kcp_input": false,
+    "disable_p2p": false,
+    "bind_device": true,
+    "no_tun": false,
+    "enable_exit_node": false,
+    "relay_all_peer_rpc": false,
+    "multi_thread": true,
+    "enable_relay_network_whitelist": false,
+    "proxy_forward_by_system": false,
+    "disable_encryption": false,
+    "disable_udp_hole_punching": false,
+    "mtu": 1380,
+    "enable_magic_dns": false,
+    "enable_private_mode": false,
+    "enable_quic_proxy": false,
+    "disable_quic_input": false,
+    "port_forwards": [
+      {
+        "bind_ip": "0.0.0.0",
+        "bind_port": 18080,
+        "dst_ip": "10.150.0.1",
+        "dst_port": 80,
+        "proto": "tcp"
+      }
+    ],
+    "disable_sym_hole_punching": false,
+    "p2p_only": false,
+    "disable_tcp_hole_punching": false,
+    "lazy_p2p": false,
+    "need_p2p": false,
+    "disable_upnp": false,
+    "disable_relay_data": false,
+    "enable_udp_broadcast_relay": false,
+    "peers": [
+      {
+        "uri": "tcp://core1:11010"
+      }
+    ],
+    "dhcpv6": false
+  },
+  "recreate409": {
+    "status": 409,
+    "message": "central network config must be changed through its network intent"
+  }
+}

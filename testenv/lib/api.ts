@@ -136,6 +136,12 @@ export const MACHINES = {
   core3: '33333333-3333-4333-8333-333333333333',
 } as const
 
+/** core1..3 plus core4, which only runs in the migration rehearsal (compose profile `migrate`). */
+export const MIGRATE_MACHINES = {
+  ...MACHINES,
+  core4: '44444444-4444-4444-8444-444444444444',
+} as const
+
 export interface UuidParts {
   part1: number
   part2: number

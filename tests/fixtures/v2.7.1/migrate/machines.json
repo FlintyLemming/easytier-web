@@ -1,0 +1,168 @@
+{
+  "machines": [
+    {
+      "client_url": "udp://192.168.97.5:50093",
+      "info": {
+        "machine_id": {
+          "part1": 572662306,
+          "part2": 572670498,
+          "part3": 2183275042,
+          "part4": 572662306
+        },
+        "inst_id": {
+          "part1": 2829240494,
+          "part2": 3599517413,
+          "part3": 2521594791,
+          "part4": 2579469907
+        },
+        "user_token": "admin",
+        "easytier_version": "2.6.4-8428a89d",
+        "report_time": "2026-11-24T22:02:22.897010205+08:00",
+        "hostname": "core2",
+        "running_network_instances": [
+          {
+            "part1": 2325674737,
+            "part2": 2731756757,
+            "part3": 2479967416,
+            "part4": 1012377683
+          }
+        ],
+        "device_os": {
+          "os_type": "linux",
+          "version": "3.23.4",
+          "distribution": "Alpine Linux"
+        },
+        "support_config_source": true
+      },
+      "location": {
+        "country": "本地网络",
+        "city": null,
+        "region": null
+      },
+      "networks": [],
+      "online": true,
+      "last_seen": "2026-11-24T14:02:04.438141711+00:00"
+    },
+    {
+      "client_url": "udp://192.168.97.6:47197",
+      "info": {
+        "machine_id": {
+          "part1": 1145324612,
+          "part2": 1145324612,
+          "part3": 2219066436,
+          "part4": 1145324612
+        },
+        "inst_id": {
+          "part1": 4256083042,
+          "part2": 3397667285,
+          "part3": 3013014359,
+          "part4": 317661643
+        },
+        "user_token": "admin",
+        "easytier_version": "2.6.4-8428a89d",
+        "report_time": "2026-11-24T22:02:19.813077097+08:00",
+        "hostname": "core4",
+        "device_os": {
+          "os_type": "linux",
+          "version": "3.23.4",
+          "distribution": "Alpine Linux"
+        },
+        "support_config_source": true
+      },
+      "location": {
+        "country": "本地网络",
+        "city": null,
+        "region": null
+      },
+      "networks": [],
+      "online": true,
+      "last_seen": "2026-11-24T14:02:02.297590253+00:00"
+    },
+    {
+      "client_url": "udp://192.168.97.4:34150",
+      "info": {
+        "machine_id": {
+          "part1": 286331153,
+          "part2": 286343441,
+          "part3": 2165379345,
+          "part4": 286331153
+        },
+        "inst_id": {
+          "part1": 3176917607,
+          "part2": 854149489,
+          "part3": 2879478980,
+          "part4": 208357592
+        },
+        "user_token": "admin",
+        "easytier_version": "2.6.4-8428a89d",
+        "report_time": "2026-11-24T22:02:22.897004497+08:00",
+        "hostname": "core1",
+        "running_network_instances": [
+          {
+            "part1": 2600459621,
+            "part2": 2544782348,
+            "part3": 2316799694,
+            "part4": 4168766054
+          }
+        ],
+        "device_os": {
+          "os_type": "linux",
+          "version": "3.23.4",
+          "distribution": "Alpine Linux"
+        },
+        "support_config_source": true
+      },
+      "location": {
+        "country": "本地网络",
+        "city": null,
+        "region": null
+      },
+      "networks": [],
+      "online": true,
+      "last_seen": "2026-11-24T14:02:01.863379343+00:00"
+    },
+    {
+      "client_url": "udp://192.168.97.3:45686",
+      "info": {
+        "machine_id": {
+          "part1": 858993459,
+          "part2": 858997555,
+          "part3": 2201170739,
+          "part4": 858993459
+        },
+        "inst_id": {
+          "part1": 2002720034,
+          "part2": 2010401206,
+          "part3": 3212709341,
+          "part4": 110494074
+        },
+        "user_token": "admin",
+        "easytier_version": "2.6.4-8428a89d",
+        "report_time": "2026-11-24T22:02:22.896981330+08:00",
+        "hostname": "core3",
+        "running_network_instances": [
+          {
+            "part1": 1941391461,
+            "part2": 192890086,
+            "part3": 3215602920,
+            "part4": 1783799120
+          }
+        ],
+        "device_os": {
+          "os_type": "linux",
+          "version": "3.23.4",
+          "distribution": "Alpine Linux"
+        },
+        "support_config_source": true
+      },
+      "location": {
+        "country": "本地网络",
+        "city": null,
+        "region": null
+      },
+      "networks": [],
+      "online": true,
+      "last_seen": "2026-11-24T14:02:01.863342343+00:00"
+    }
+  ]
+}
