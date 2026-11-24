@@ -43,6 +43,7 @@ export const router = createRouter({
         { path: 'devices/:machineId/instances', name: 'device-instances', component: DeviceInstancesPage },
         { path: 'networks', name: 'networks', component: NetworksPage },
         { path: 'networks/:networkId', name: 'network', component: NetworkDetailPage },
+        { path: 'migrate', name: 'migrate', component: () => import('./pages/MigratePage.vue') },
       ],
     },
   ],

@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import AttentionList from '../components/overview/AttentionList.vue'
 import ConnectionQuality from '../components/overview/ConnectionQuality.vue'
 import MapSection from '../components/overview/MapSection.vue'
+import MigrationBanner from '../components/migrate/MigrationBanner.vue'
 import StatCards from '../components/overview/StatCards.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import SkeletonRows from '../components/ui/SkeletonRows.vue'
@@ -47,6 +48,8 @@ const focus = computed(() => computeFocus(locations.value.groups))
       <h1 class="text-[36px] font-normal leading-tight tracking-[-0.72px] text-ink">{{ t('overview.title') }}</h1>
       <p class="mt-1 text-[14px] text-muted">{{ t('overview.autoRefresh') }}</p>
     </header>
+
+    <MigrationBanner v-if="central" />
 
     <SkeletonRows v-if="!inventory.loaded && !inventory.error" :rows="4" />
 

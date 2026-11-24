@@ -1,8 +1,10 @@
 import { configFlagText } from './configFlags'
 import networksText from './networks/zh-CN'
+import migrateText from './migrate/zh-CN'
 
 export default {
   ...networksText,
+  ...migrateText,
   common: {
     cancel: '取消',
     confirm: '确认',
