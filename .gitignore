@@ -7,3 +7,4 @@ testenv/backups/
 test-results/
 playwright-report/
 tests/fixtures/.capture-*/
+.cache/
