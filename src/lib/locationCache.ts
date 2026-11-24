@@ -13,12 +13,15 @@ export function locationCacheKey(username: string): string {
   return `et.locations.${username}`
 }
 
+const optionalText = (v: unknown) => v === undefined || v === null || typeof v === 'string'
+
 function validEntry(v: unknown): v is CachedLocation {
   if (!v || typeof v !== 'object') return false
   const e = v as { geo?: unknown; at?: unknown }
   if (typeof e.at !== 'number' || !Number.isFinite(e.at)) return false
   if (!e.geo || typeof e.geo !== 'object') return false
-  return typeof (e.geo as { country?: unknown }).country === 'string'
+  const g = e.geo as { country?: unknown; region?: unknown; city?: unknown }
+  return typeof g.country === 'string' && optionalText(g.region) && optionalText(g.city)
 }
 
 /** Never throws: anything missing, corrupt or unreadable yields `{}`. */

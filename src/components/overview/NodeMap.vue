@@ -163,7 +163,7 @@ function open(c: MapCluster) {
           data-cluster
           role="button"
           tabindex="0"
-          :aria-label="t('overview.map.clusterLabel', { name: nameOf(c.labels), total: c.total, online: c.online })"
+          :aria-label="t('overview.map.clusterLabel', { name: nameOf(c.labels), total: c.total, online: c.online }, c.total)"
           :aria-describedby="active === c.id ? cardId : undefined"
           :data-offline="c.online === 0 ? '' : undefined"
           class="cursor-pointer outline-none"
@@ -216,7 +216,7 @@ function open(c: MapCluster) {
         type="button"
         class="absolute whitespace-nowrap rounded-pill border border-hairline-strong bg-surface-card px-2.5 py-1 text-[12px] leading-4 text-ink cursor-pointer hover:bg-canvas focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
         :style="chipStyle(c)"
-        :aria-label="t('overview.map.chipLabel', { name: nameOf(c.labels), total: c.total })"
+        :aria-label="t('overview.map.chipLabel', { name: nameOf(c.labels), total: c.total }, c.total)"
         @click="view = 'world'"
       >{{ chipText(c) }}</button>
 

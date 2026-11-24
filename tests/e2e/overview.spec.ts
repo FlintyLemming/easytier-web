@@ -237,6 +237,21 @@ test.describe('node map', () => {
     await expect.poll(() => decodeURIComponent(page.url())).toMatch(/#\/devices\?city=南京$/)
   })
 
+  test('English counts use singular and plural forms', async ({ page }) => {
+    const { overrides, ids } = fleetMock()
+    const cache = JSON.stringify(fleetLocationCache(ids))
+    await page.addInitScript((c) => localStorage.setItem('et.locations.admin', c), cache)
+    await mockApi(page, overrides, { locale: 'en' })
+    await page.goto('/#/')
+    const map = page.getByTestId('node-map')
+    await expect(map.locator('[data-cluster][aria-label="上海, 7 devices, 6 online"]')).toHaveCount(1)
+    await expect(map.locator('[data-cluster][aria-label="东京, 1 device, 1 online"]')).toHaveCount(1)
+    await expect(map.getByRole('button', { name: '洛杉矶, 1 device, switch to the world view', exact: true })).toBeVisible()
+    await expect(page.getByTestId('attention-row').nth(4)).toContainText('3 devices can be updated')
+    await expect(page.getByTestId('attention-row').nth(0)).toContainText('Blocked · 5 attempts · last')
+    await expect(page.getByTestId('stat-direct')).toContainText('3 of 136 connections relayed')
+  })
+
   test('an edge chip switches to the world view', async ({ page }) => {
     const { map } = await openFleet(page)
     const world = page.getByRole('button', { name: '世界', exact: true })

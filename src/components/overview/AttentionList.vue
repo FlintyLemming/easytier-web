@@ -90,17 +90,18 @@ function title(i: AttentionItem): string {
     case 'unjoined': return t('overview.attention.unjoined', { name: i.device.name })
     case 'offline':
       return t('overview.attention.offline', { name: i.device.name, duration: elapsedText(i.since, now.value, lang.value) })
-    case 'outdated': return t('overview.attention.outdated', { n: i.count })
+    case 'outdated': return t('overview.attention.outdated', { n: i.count }, i.count)
   }
 }
 
 function sub(i: AttentionItem): string {
   switch (i.kind) {
     case 'blocked':
-      return t('overview.attention.blockedSub', {
-        n: i.attempts,
-        time: i.lastAttempt ? relativeTime(i.lastAttempt, now.value, lang.value) : '—',
-      })
+      return t(
+        'overview.attention.blockedSub',
+        { n: i.attempts, time: i.lastAttempt ? relativeTime(i.lastAttempt, now.value, lang.value) : '—' },
+        i.attempts,
+      )
     case 'unjoined': {
       const d = i.device
       return joinParts([

@@ -40,7 +40,7 @@ const row = 'grid grid-cols-[72px_minmax(0,1fr)_44px] items-center gap-2.5 py-[7
         </RouterLink>
       </li>
       <li v-if="others" data-testid="ranking-row" class="border-b border-hairline-soft last:border-b-0" :class="row">
-        <span class="col-span-2 truncate text-muted">{{ t('overview.ranking.others', { n: others.n }) }}</span>
+        <span class="col-span-2 truncate text-muted">{{ t('overview.ranking.others', { n: others.n }, others.n) }}</span>
         <span class="text-right font-mono text-muted">{{ others.online }}/{{ others.total }}</span>
       </li>
       <li v-if="summary.local.total > 0" data-testid="ranking-row" class="border-b border-hairline-soft last:border-b-0">

@@ -28,6 +28,16 @@ describe('load/save', () => {
     localStorage.setItem(locationCacheKey('admin'), JSON.stringify({ a: { geo: 1, at: 'x' } }))
     expect(loadLocationCache('admin')).toEqual({})
   })
+  it('drops entries whose region or city is not text', () => {
+    localStorage.setItem(locationCacheKey('admin'), JSON.stringify({
+      cityNum: { geo: { country: '中国', city: 5 }, at: NOW },
+      regionObj: { geo: { country: '中国', region: {}, city: '杭州' }, at: NOW },
+      nulls: { geo: { country: '中国', region: null, city: null }, at: NOW },
+      missing: { geo: { country: '中国' }, at: NOW },
+      ok: { geo: HZ, at: NOW },
+    }))
+    expect(Object.keys(loadLocationCache('admin')).sort()).toEqual(['missing', 'nulls', 'ok'])
+  })
   it('round-trips', () => {
     const c: LocationCache = { a: { geo: HZ, at: NOW } }
     saveLocationCache('admin', c)

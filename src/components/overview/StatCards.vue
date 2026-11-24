@@ -19,7 +19,8 @@ const rateText = computed(() => {
 const rateSub = computed(() => {
   if (!props.fleetLoaded) return t('overview.stats.directLoading')
   if (props.direct.rate === null) return t('overview.stats.directNone')
-  return t('overview.stats.directSub', { total: props.direct.direct + props.direct.relayed, relayed: props.direct.relayed })
+  const total = props.direct.direct + props.direct.relayed
+  return t('overview.stats.directSub', { total, relayed: props.direct.relayed }, total)
 })
 </script>
 
