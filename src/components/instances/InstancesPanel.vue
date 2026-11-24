@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { v4 as uuidv4 } from 'uuid'
-import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, onScopeDispose, reactive, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   deleteInstance,
@@ -54,30 +54,59 @@ const loadError = ref<string | null>(null)
 const retrying = ref(false)
 /** Metas only change through an edit or a delete here, which drop the entry. */
 const metas: Record<string, InstanceMeta> = {}
-/** Bumped per read; a read finishing after a newer one started (or the device went offline) is dropped. */
+/**
+ * Bumped per read, when the device goes offline and on unmount. A read checks it after every
+ * await: once a newer read started (or the device went offline, or the panel is gone) it stops,
+ * sending nothing more and applying nothing.
+ */
 let seq = 0
+let disposed = false
+onScopeDispose(() => {
+  disposed = true
+  seq++
+})
 
 async function refresh(): Promise<void> {
+  // An offline device is not asked anything, and neither is one whose panel is gone.
+  if (disposed || !props.device.online) return
   const machineId = props.device.id
   const mine = ++seq
+  // Only the list decides whether the read failed; the rest degrades per instance.
+  let ids: { id: string; disabled: boolean }[]
   try {
-    const ids = manualInstanceIds(await listInstances(machineId), props.centralIds)
-    const unknown = ids.map((i) => i.id).filter((id) => !metas[id])
-    if (unknown.length) Object.assign(metas, await instanceMetas(machineId, unknown))
-    const next: Record<string, InstanceRunningInfo | null> = {}
-    await Promise.all(
-      ids.filter((i) => !i.disabled).map(async ({ id }) => {
-        next[id] = await instanceInfo(machineId, id)
-      }),
-    )
-    if (mine !== seq) return
-    infos.value = next
-    rows.value = buildInstanceRows(ids, metas, next)
-    loadError.value = null
+    ids = manualInstanceIds(await listInstances(machineId), props.centralIds)
   } catch (e) {
-    if (mine !== seq) return
-    loadError.value = errorMessage(e)
+    if (mine === seq) loadError.value = errorMessage(e)
+    return
   }
+  if (mine !== seq) return
+  const unknown = ids.map((i) => i.id).filter((id) => !metas[id])
+  if (unknown.length) {
+    let fetched: Record<string, InstanceMeta> = {}
+    try {
+      fetched = await instanceMetas(machineId, unknown)
+    } catch {
+      // Left uncached: those rows show their id as the name, and the next read asks again.
+    }
+    if (mine !== seq) return
+    Object.assign(metas, fetched)
+  }
+  const last = infos.value
+  const next: Record<string, InstanceRunningInfo | null> = {}
+  await Promise.all(
+    ids.filter((i) => !i.disabled).map(async ({ id }) => {
+      try {
+        next[id] = await instanceInfo(machineId, id)
+      } catch {
+        // One unreadable instance keeps its last info (none yet shows 启动中); the others still update.
+        next[id] = last[id] ?? null
+      }
+    }),
+  )
+  if (mine !== seq) return
+  infos.value = next
+  rows.value = buildInstanceRows(ids, metas, next)
+  loadError.value = null
 }
 
 async function retry() {
