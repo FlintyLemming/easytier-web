@@ -497,7 +497,7 @@ export const configFlagText: Record<'zh-CN' | 'en', Record<string, { label: stri
       - 「复制配置」：复制 `vpnPortalClientConfig(client.client_config, 服务器地址)`。服务器地址为空时按钮不可用，提示「先填写服务器地址」。复制成功或失败都给 toast。
       - 「删除」：弹出确认框（danger），正文「将删除客户端 {name}，使用这个配置的设备将无法再连接。」。确认后发送 `REMOVE` 补丁。
     - **添加表单：**名称、地址、前缀、分组（逗号分隔，可以不填）。
-      - 名称默认 `client-{n}`（n 取最小的未被使用的正整数）；地址和前缀默认取 `suggestVpnPortalAddress` 的结果。
+      - 名称默认 `client-{n}`（n 取最小的未被使用的正整数）；地址和前缀默认取 `suggestVpnPortalAddress` 的结果。〔已被裁定 R15 取代：默认名称是 `client-` 加 8 个随机十六进制字符，不再按序号复用删除过的名称。〕
       - 「添加」按钮在以下情况都不可用：`validVpnClientName` 为假、`validVpnPortalAddress` 为假、名称重复。
       - 提交 `ADD` 补丁，`virtual_ip` 为 `{地址}/{前缀}`。
     - 补丁成功后，重新读取信息，并 toast「已添加 {name}」或「已删除 {name}」。补丁失败时，在表单下方原样显示后端的 message。
@@ -515,7 +515,7 @@ export const configFlagText: Record<'zh-CN' | 'en', Record<string, { label: stri
   ```
   `instance-info-core2.json` 提供实例 IP 和公网 IP。
   1. 打开「VPN Portal…」：列表里有 `phone` 和「已连接」；服务器地址默认是 `<公网 IP>:22022`。点「复制配置」，剪贴板里的内容包含 `Endpoint = <公网 IP>:22022`。
-  2. 添加表单默认填好了名称 `client-1` 和一个网段内的地址。点「添加」，记录到 `PATCH …/vpn-portal-clients`，请求体为 `{ patches: [{ action: 'ADD', client: { name: 'client-1', virtual_ip: '<地址>/24', groups: [] } }] }`。
+  2. 添加表单默认填好了名称 `client-1` 和一个网段内的地址。点「添加」，记录到 `PATCH …/vpn-portal-clients`，请求体为 `{ patches: [{ action: 'ADD', client: { name: 'client-1', virtual_ip: '<地址>/24', groups: [] } }] }`。〔已被裁定 R15 取代：默认名称是随机的，测试按 `/^client-[0-9a-f]{8}$/` 匹配，请求体里用实际的默认名称。〕
   3. 地址填 `10.144.144.255`、`10.144.144.20`（已被占用）、`192.168.1.5`（网段外）时，「添加」都不可用；名称填 `-bad` 时也不可用。
   4. `PATCH` 返回 500，内容为 `{message: 'VPN portal client x has an unusable virtual IP 10.144.144.9'}`：表单下方显示这条 message。
   5. 删除 `phone`：确认后，请求体为 `{ patches: [{ action: 'REMOVE', client: { name: 'phone', virtual_ip: '', groups: [] } }] }`。
