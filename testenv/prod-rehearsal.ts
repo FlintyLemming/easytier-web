@@ -16,7 +16,8 @@
 //
 // Output never contains secrets, IPs, machine ids or device names: devices are "设备 N".
 import { DatabaseSync } from 'node:sqlite'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { EtApi, EtApiError, strToUuid, uuidToStr, waitFor, waitForApi } from './lib/api.ts'
@@ -48,6 +49,28 @@ const metaFile = join(dir, 'rehearsal-meta.json')
 const snapshotFile = join(dir, 'snapshot.json')
 const validHostname = (h: unknown): h is string => typeof h === 'string' && /^[A-Za-z0-9][A-Za-z0-9-]{0,62}$/.test(h)
 
+/**
+ * testenv admin's password hash, read from a COPY of data-central's database files. Never open a
+ * database a running web container has open: even a read-only SQLite connection writes its read
+ * marks into et.db-shm, and across the Docker bind mount that corrupts the container's view (disk
+ * I/O errors, then a leaked transaction that fails every later write until web restarts).
+ */
+function adminHash(): string | undefined {
+  const tmp = mkdtempSync(join(tmpdir(), 'et-admin-hash-'))
+  try {
+    for (const f of ['et.db', 'et.db-wal']) {
+      const from = join(here, 'data-central', f)
+      if (existsSync(from)) copyFileSync(from, join(tmp, f))
+    }
+    const db = new DatabaseSync(join(tmp, 'et.db'))
+    const row = db.prepare("select password from users where username = 'admin'").get() as { password: string } | undefined
+    db.close()
+    return row?.password
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
+}
+
 function generate() {
   const db = new DatabaseSync(join(dir, 'et.db'))
   const owners = db.prepare('select distinct user_id as uid from user_running_network_configs').all() as { uid: number }[]
@@ -68,8 +91,7 @@ function generate() {
     devices.push({ id: r.device_id, label, hostname })
   }
 
-  const central = new DatabaseSync(join(here, 'data-central', 'et.db'), { readOnly: true })
-  const hash = (central.prepare("select password from users where username = 'admin'").get() as { password: string } | undefined)?.password
+  const hash = adminHash()
   if (!hash) throw new Error('testenv/data-central/et.db has no admin user (start the testenv once)')
   db.prepare('update users set password = ? where id = ?').run(hash, uid)
 

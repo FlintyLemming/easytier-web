@@ -147,6 +147,10 @@ node testenv/capture-network-fixtures.ts
 - `hostname_override`（如 core3 的 `lab-box`）会同时出现在成员的 `hostname` 和 `list_route` 路由的 `hostname` 里；`/machines` 里 `info.hostname` 仍是系统主机名（`core3`）。
 - `machines[].info.inst_id` 是 core 进程这次心跳会话的随机 id（core 重启就变），不是网络实例 id；设备上运行的网络实例在 `running_network_instances` 里。
 
+## 不要在 web 运行时从本机打开它的数据库
+
+`sqlite3`（包括 `-readonly`）或 `node:sqlite` 打开一个 web 容器正在使用的 `et.db`，会把读锁标记写进 `et.db-shm`；经过 Docker 的目录挂载，这会破坏容器里 SQLite 的共享内存：web 先报 `disk I/O error`，接着留下一个没结束的事务，之后所有中央网络的写入都失败（`attempted to call begin_with at non-zero transaction depth`），直到重启 web。要查看数据库：先停 web，或者把 `et.db`、`et.db-wal` 复制出来再打开副本（`testenv/prod-rehearsal.ts` 就是这样读 admin 的密码哈希的）。
+
 ## 迁移演练环境
 
 迁移向导（`/migrate`）的开发和演练用一个单独的数据目录 `testenv/data-migrate`：在 web v2.6.4 上播种一组仿照生产情况的旧实例，再升级到 v2.7.1。另有第 4 台设备 core4（machine id `44444444-4444-4444-8444-444444444444`），只在 compose profile `migrate` 里，不加 `--profile migrate` 时不会启动。
