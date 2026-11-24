@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, provide, reactive, ref, useId, watch, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { ApiError } from '../api/http'
 import { getGatewayInfo, getNetwork } from '../api/client'
 import type { CentralNetworkDetail, GatewayInfo } from '../api/types'
@@ -16,6 +16,7 @@ import SkeletonRows from '../components/ui/SkeletonRows.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import { errorMessage } from '../components/device-detail/writes'
+import { useConfirm } from '../composables/useConfirm'
 import { useInventory } from '../stores/inventory'
 import { useSession } from '../stores/session'
 
@@ -28,6 +29,16 @@ const session = useSession()
 watchEffect(() => {
   if (session.webhookMode) void router.replace('/')
 })
+
+// Leaving the page (or switching to another network) drops an unsaved ACL draft, so ask first.
+const { confirm } = useConfirm()
+const aclTab = ref<{ dirty: boolean } | null>(null)
+async function mayLeaveAcl(): Promise<boolean> {
+  if (!aclTab.value?.dirty) return true
+  return confirm({ title: t('acl.leaveTitle'), confirmLabel: t('acl.leaveConfirm') })
+}
+onBeforeRouteLeave(() => mayLeaveAcl())
+onBeforeRouteUpdate((to, from) => (to.params.networkId === from.params.networkId ? true : mayLeaveAcl()))
 
 const networkId = computed(() => (typeof route.params.networkId === 'string' ? route.params.networkId : ''))
 const detail = ref<CentralNetworkDetail | null>(null)
@@ -146,7 +157,7 @@ const panelId = (key: NetworkTab) => `${panelBase}-${key}`
         <MembersTab :network-id="networkId" />
       </div>
       <div v-if="visited.has('acl')" v-show="tab === 'acl'" :id="panelId('acl')" role="tabpanel">
-        <AclTab :network-id="networkId" />
+        <AclTab ref="aclTab" :network-id="networkId" />
       </div>
       <div v-if="detail.secure_mode && visited.has('credentials')" v-show="tab === 'credentials'" :id="panelId('credentials')" role="tabpanel">
         <CredentialsTab :network-id="networkId" />
