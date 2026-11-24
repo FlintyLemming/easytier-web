@@ -37,6 +37,22 @@ export function relativeTime(iso: string, now: Date, locale: 'zh-CN' | 'en'): st
   return zh ? `${w} 周前` : `${w} ${w === 1 ? 'week' : 'weeks'} ago`
 }
 
+/** Like `relativeTime` (same buckets) but a bare duration, without 「前」/ago. */
+export function elapsedText(fromIso: string, now: Date, locale: 'zh-CN' | 'en'): string {
+  const t = new Date(fromIso).getTime()
+  const diff = Math.max(0, now.getTime() - (Number.isNaN(t) ? now.getTime() : t))
+  const min = Math.floor(diff / 60_000)
+  const zh = locale === 'zh-CN'
+  if (min < 1) return zh ? '不到 1 分钟' : 'under a minute'
+  if (min < 60) return zh ? `${min} 分钟` : `${min} min`
+  const h = Math.floor(min / 60)
+  if (h < 24) return zh ? `${h} 小时` : `${h} h`
+  const d = Math.floor(h / 24)
+  if (d < 7) return zh ? `${d} 天` : `${d} ${d === 1 ? 'day' : 'days'}`
+  const w = Math.floor(d / 7)
+  return zh ? `${w} 周` : `${w} ${w === 1 ? 'week' : 'weeks'}`
+}
+
 export function formatBytes(n: number): string {
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
   let v = Math.max(0, Number(n) || 0)

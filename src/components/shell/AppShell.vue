@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useInventory } from '../../stores/inventory'
 import { useSession } from '../../stores/session'
 import { usePolling } from '../../composables/usePolling'
@@ -11,8 +12,16 @@ const session = useSession()
 const inventory = useInventory()
 
 // Global inventory poller: every authenticated page (and the bell) reads from it.
-const poller = usePolling(() => inventory.refresh(), 5000)
+// The interval follows the route (10 s on the overview, 5 s elsewhere); changing it restarts the poller,
+// which refreshes once straight away.
+const route = useRoute()
+const pollMs = () => route.meta.inventoryPollMs ?? 5000
+const poller = usePolling(() => inventory.refresh(), pollMs)
 onMounted(() => poller.start())
+watch(pollMs, () => {
+  poller.stop()
+  poller.start()
+})
 </script>
 
 <template>

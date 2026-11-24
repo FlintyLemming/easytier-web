@@ -1,6 +1,6 @@
 import { getCurrentScope, onScopeDispose } from 'vue'
 
-export function usePolling(fn: () => Promise<unknown>, intervalMs: number): { start(): void; stop(): void } {
+export function usePolling(fn: () => Promise<unknown>, intervalMs: number | (() => number)): { start(): void; stop(): void } {
   let timer: ReturnType<typeof setTimeout> | null = null
   let running = false
   let active = false
@@ -11,7 +11,7 @@ export function usePolling(fn: () => Promise<unknown>, intervalMs: number): { st
   }
   function schedule() {
     clear()
-    if (active) timer = setTimeout(tick, intervalMs)
+    if (active) timer = setTimeout(tick, typeof intervalMs === 'function' ? intervalMs() : intervalMs)
   }
   async function tick() {
     timer = null

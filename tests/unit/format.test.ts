@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  formatBytes, ipv4FromU32, locationText, osLabel, publicIpFromClientUrl, relativeTime,
+  elapsedText, formatBytes, ipv4FromU32, locationText, osLabel, publicIpFromClientUrl, relativeTime,
 } from '../../src/domain/format'
 
 describe('format', () => {
@@ -44,5 +44,29 @@ describe('format', () => {
     expect(formatBytes(0)).toBe('0 B')
     expect(formatBytes(1024)).toBe('1 KB')
     expect(formatBytes(5 * 1024 ** 3)).toBe('5 GB')
+  })
+})
+
+describe('elapsedText', () => {
+  const now = new Date('2026-11-24T12:00:00Z')
+  const ago = (ms: number) => new Date(now.getTime() - ms).toISOString()
+  const min = 60_000
+  const h = 60 * min
+  const d = 24 * h
+  it('zh-CN', () => {
+    expect(elapsedText(ago(30_000), now, 'zh-CN')).toBe('不到 1 分钟')
+    expect(elapsedText(ago(5 * min), now, 'zh-CN')).toBe('5 分钟')
+    expect(elapsedText(ago(3 * h), now, 'zh-CN')).toBe('3 小时')
+    expect(elapsedText(ago(2 * d), now, 'zh-CN')).toBe('2 天')
+    expect(elapsedText(ago(21 * d + h), now, 'zh-CN')).toBe('3 周')
+  })
+  it('en pluralises', () => {
+    expect(elapsedText(ago(10_000), now, 'en')).toBe('under a minute')
+    expect(elapsedText(ago(5 * min), now, 'en')).toBe('5 min')
+    expect(elapsedText(ago(3 * h), now, 'en')).toBe('3 h')
+    expect(elapsedText(ago(1 * d), now, 'en')).toBe('1 day')
+    expect(elapsedText(ago(2 * d), now, 'en')).toBe('2 days')
+    expect(elapsedText(ago(7 * d), now, 'en')).toBe('1 week')
+    expect(elapsedText(ago(21 * d), now, 'en')).toBe('3 weeks')
   })
 })

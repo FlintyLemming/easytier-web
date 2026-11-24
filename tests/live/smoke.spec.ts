@@ -34,9 +34,11 @@ test('live smoke: login, devices, connections, fixed IP round trip', async ({ pa
   await page.getByLabel('用户名').fill('admin')
   await page.getByLabel('密码').fill('admin')
   await page.getByRole('button', { name: '登录' }).click()
-  await expect(page).toHaveURL(/#\/devices$/)
+  await expect(page).toHaveURL(/#\/$/)
 
   // 2. device list
+  await page.getByRole('navigation').getByRole('link', { name: '设备' }).click()
+  await expect(page).toHaveURL(/#\/devices$/)
   for (const name of ['core1', 'core2', 'core3']) {
     const row = page.getByRole('row').filter({ has: page.getByTestId('device-name').getByText(name, { exact: true }) })
     await expect(row).toHaveCount(1)

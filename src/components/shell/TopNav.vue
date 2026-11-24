@@ -10,6 +10,7 @@ const { t } = useI18n()
 const route = useRoute()
 
 const tabs = computed(() => [
+  { key: 'overview', label: t('nav.overview'), to: '/', active: route.name === 'overview' },
   { key: 'devices', label: t('nav.devices'), to: '/devices', active: route.path.startsWith('/devices') },
 ])
 

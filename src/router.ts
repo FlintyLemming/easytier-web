@@ -33,8 +33,7 @@ export const router = createRouter({
       path: '/',
       component: AppShell,
       children: [
-        // Overview arrives in a later plan; until then `/` lands on the device list.
-        { path: '', name: 'overview', redirect: { name: 'devices' } },
+        { path: '', name: 'overview', component: () => import('./pages/OverviewPage.vue'), meta: { inventoryPollMs: 10_000 } },
         { path: 'devices', name: 'devices', component: DevicesPage },
         { path: 'devices/:machineId', name: 'device', component: DeviceDetailPage },
         { path: 'devices/:machineId/networks/:networkId', name: 'device-network', component: DeviceDetailPage },

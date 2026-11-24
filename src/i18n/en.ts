@@ -14,6 +14,7 @@ export default {
   nav: {
     label: 'Main navigation',
     menu: 'Navigation menu',
+    overview: 'Overview',
     devices: 'Devices',
   },
   shell: {
@@ -61,6 +62,24 @@ export default {
     registerSuccess: 'Registered. Please sign in.',
     noAccount: 'No account yet?',
     haveAccount: 'Already have an account?',
+  },
+  overview: {
+    title: 'Overview',
+    autoRefresh: 'Refreshes every 10 seconds',
+    loadFailed: 'Failed to load the overview',
+    stats: {
+      online: 'Devices online',
+      offline: '{n} offline',
+      allOnline: 'All online',
+      networks: 'Networks',
+      noNetworks: 'No networks yet',
+      direct: 'P2P direct rate',
+      directSub: '{relayed} of {total} connections relayed',
+      directLoading: 'Reading connections…',
+      directNone: 'No connections between members yet',
+      outdated: 'Updatable',
+      latest: 'Latest version {version}',
+    },
   },
   devices: {
     title: 'Devices',

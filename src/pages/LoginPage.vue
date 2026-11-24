@@ -22,7 +22,7 @@ const oidc = ref(false)
 /** Only same-app absolute paths; never `//host` or full URLs. */
 function safeNext(): string {
   const n = route.query.next
-  return typeof n === 'string' && n.startsWith('/') && !n.startsWith('//') ? n : '/devices'
+  return typeof n === 'string' && n.startsWith('/') && !n.startsWith('//') ? n : '/'
 }
 
 onMounted(async () => {

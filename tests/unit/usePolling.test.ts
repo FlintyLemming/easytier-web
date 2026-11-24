@@ -53,3 +53,21 @@ describe('usePolling', () => {
     p.stop()
   })
 })
+
+describe('usePolling with an interval getter', () => {
+  it('re-reads the interval each time it schedules the next run', async () => {
+    const fn = vi.fn().mockResolvedValue(undefined)
+    const getter = vi.fn().mockReturnValueOnce(1000).mockReturnValue(3000)
+    const p = usePolling(fn, getter)
+    p.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fn).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1000) // first wait used 1000
+    expect(fn).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(2999)
+    expect(fn).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(fn).toHaveBeenCalledTimes(3)
+    p.stop()
+  })
+})

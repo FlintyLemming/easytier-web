@@ -14,6 +14,7 @@ export default {
   nav: {
     label: '主导航',
     menu: '导航菜单',
+    overview: '概览',
     devices: '设备',
   },
   shell: {
@@ -61,6 +62,24 @@ export default {
     registerSuccess: '注册成功，请登录',
     noAccount: '还没有账号？',
     haveAccount: '已有账号？',
+  },
+  overview: {
+    title: '概览',
+    autoRefresh: '每 10 秒自动刷新',
+    loadFailed: '加载概览失败',
+    stats: {
+      online: '在线设备',
+      offline: '{n} 台离线',
+      allOnline: '全部在线',
+      networks: '网络',
+      noNetworks: '还没有网络',
+      direct: 'P2P 直连率',
+      directSub: '{total} 条连接中 {relayed} 条走中继',
+      directLoading: '正在读取连接…',
+      directNone: '暂无成员之间的连接',
+      outdated: '可更新',
+      latest: '最新版本 {version}',
+    },
   },
   devices: {
     title: '设备',

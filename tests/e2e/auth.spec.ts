@@ -3,7 +3,7 @@ import { fixture, mockApi, status } from './mockApi'
 
 const core1 = fixture('index.json').machines.core1 as string
 
-test('login submits an MD5 password and lands on /#/devices', async ({ page }) => {
+test('login submits an MD5 password and lands on the overview', async ({ page }) => {
   let authed = false
   const { requests } = await mockApi(page, {
     'GET /console-info': () => (authed ? fixture('console-info.json') : status(401, { message: 'unauthorized' })),
@@ -16,7 +16,7 @@ test('login submits an MD5 password and lands on /#/devices', async ({ page }) =
   await page.getByLabel('用户名').fill('admin')
   await page.getByLabel('密码').fill('admin')
   await page.getByRole('button', { name: '登录' }).click()
-  await expect(page).toHaveURL(/#\/devices$/)
+  await expect(page).toHaveURL(/#\/$/)
   const login = requests.find((r) => r.path === '/auth/login')!
   expect(login.body).toEqual({ username: 'admin', password: '21232f297a57a5a743894a0e4a801fc3' })
 })
