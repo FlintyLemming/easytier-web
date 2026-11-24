@@ -125,8 +125,10 @@ function onBlur() {
   active.value = null
   ring.value = null
 }
+/** Every location text of the cluster's groups, so the device list shows all the devices it counts. */
 function open(c: MapCluster) {
-  void router.push({ name: 'devices', query: { city: c.labels } })
+  const city = [...new Set(c.keys.flatMap((k) => groupByKey.value.get(k)?.texts ?? []))]
+  void router.push({ name: 'devices', query: { city } })
 }
 </script>
 

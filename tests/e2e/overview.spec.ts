@@ -198,6 +198,33 @@ test.describe('node map', () => {
     await expect(page.getByRole('row').filter({ has: page.getByTestId('device-name') })).toHaveCount(7)
   })
 
+  test('a place lists every device it counts, whatever their location text', async ({ page }) => {
+    // 台州 is not in the city table, so all three resolve to the province 浙江.
+    await mockApi(page, {
+      'GET /machines': () => {
+        const data = fixture('machines.json')
+        data.machines[0].location = { country: '中国', region: '浙江', city: null }
+        data.machines[1].location = { country: '中国', region: '浙江', city: null }
+        data.machines[2].location = { country: '中国', region: '浙江', city: '台州' }
+        return data
+      },
+    })
+    await page.goto('/#/')
+    const zj = page.getByTestId('node-map').locator('[data-cluster]')
+    await expect(zj).toHaveCount(1)
+    await expect(zj).toHaveAttribute('aria-label', '浙江，3 台设备，3 台在线')
+    await zj.click()
+    await expect.poll(() => decodeURIComponent(page.url())).toMatch(/#\/devices\?city=浙江&city=台州$/)
+    const listed = page.getByRole('row').filter({ has: page.getByTestId('device-name') })
+    await expect(listed).toHaveCount(3)
+    await page.goBack()
+    const row = page.getByTestId('ranking-row').filter({ hasText: '浙江' })
+    await expect(row).toContainText('3/3')
+    await row.getByRole('link').click()
+    await expect.poll(() => decodeURIComponent(page.url())).toMatch(/#\/devices\?city=浙江&city=台州$/)
+    await expect(listed).toHaveCount(3)
+  })
+
   test('keyboard focus shows the card, Esc hides it, Enter opens the filtered list', async ({ page }) => {
     const { map } = await openFleet(page)
     const nj = cluster(map, '南京')
