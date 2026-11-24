@@ -11,6 +11,10 @@ import ProxyCidrEditor from './ProxyCidrEditor.vue'
 
 defineProps<{
   deviceId: string
+  /** As the detail header shows it. */
+  deviceName: string
+  /** The device's `easytier_version`. */
+  coreVersion: string
   networkId: string
   networkName: string
   virtualCidr: string | null
@@ -59,6 +63,8 @@ function setBusy(row: Row, on: boolean) {
       <AdvancedConfigRow
         :device-id="deviceId"
         :network-id="networkId"
+        :device-name="deviceName"
+        :core-version="coreVersion"
         :member="member"
         :busy="busy !== null"
         @busy="(on) => setBusy('advanced', on)"

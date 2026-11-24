@@ -200,6 +200,8 @@ async function confirmDelete(block: boolean) {
             <MemberSettingsCard
               :key="`settings:${networkKey}`"
               :device-id="device.id"
+              :device-name="device.name"
+              :core-version="device.version"
               :network-id="networkId"
               :network-name="networkName"
               :virtual-cidr="network?.virtual_cidr ?? null"

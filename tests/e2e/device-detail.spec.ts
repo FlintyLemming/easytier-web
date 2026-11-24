@@ -279,6 +279,104 @@ test('6c: in the 默认 state (override holds only subnet proxies) 恢复默认 
   await expect(row.getByRole('button', { name: '恢复默认' })).toHaveCount(0)
 })
 
+const memberCfg = (id: string) => `/networks/${NET}/members/${id}/config`
+const configWrites = (reqs: RecordedRequest[], id: string) =>
+  reqs.filter((r) => (r.method === 'PUT' || r.method === 'DELETE') && r.path === memberCfg(id))
+
+/** Opens the advanced config editor from the settings row; resolves to the dialog. */
+async function openEditor(page: Page, name: string) {
+  await page.getByTestId('setting-advanced').getByRole('button', { name: '编辑', exact: true }).click()
+  const dlg = page.getByRole('dialog', { name: `高级配置 · ${name}` })
+  await expect(dlg).toBeVisible()
+  return dlg
+}
+
+test('6d: 编辑 shows the override; 保存 PUTs it with the subnet proxies and no central-owned fields', async ({ page }) => {
+  const { requests } = await open(page, CORE3, {
+    'GET /networks/*/members/*/config': () => ({ proxy_cidrs: ['192.168.77.0/24'], mtu: 1300, routes: ['10.9.0.0/16'] }),
+  })
+  await expect(page.getByTestId('advanced-state')).toHaveText('已覆盖')
+  const dlg = await openEditor(page, 'core3')
+  const mtu = dlg.getByLabel('MTU', { exact: true })
+  await expect(mtu).toHaveValue('1300')
+  await mtu.fill('1280')
+  await dlg.getByRole('button', { name: '保存', exact: true }).click()
+  await expect.poll(() => configWrites(requests, CORE3).length).toBe(1)
+  const write = configWrites(requests, CORE3)[0]!
+  expect(write.method).toBe('PUT')
+  const config = (write.body as { config: Record<string, unknown> }).config
+  expect(config.mtu).toBe(1280)
+  expect(config.routes).toEqual(['10.9.0.0/16'])
+  expect(config.proxy_cidrs).toEqual(['192.168.77.0/24'])
+  for (const field of ['network_name', 'instance_id', 'peers', 'peer_urls', 'networking_method', 'dhcp']) {
+    expect(config).not.toHaveProperty(field)
+  }
+  await expect(page.getByText('已保存高级配置')).toBeVisible()
+  await expect(dlg).toHaveCount(0)
+})
+
+test('6e: 编辑 then 保存 unchanged in the 默认 state PUTs exactly the subnet proxies', async ({ page }) => {
+  const { requests } = await open(page, CORE3)
+  await expect(page.getByTestId('advanced-state')).toHaveText('默认')
+  const dlg = await openEditor(page, 'core3')
+  await dlg.getByRole('button', { name: '保存', exact: true }).click()
+  await expect
+    .poll(() => configWrites(requests, CORE3).map((r) => [r.method, r.body]))
+    .toEqual([['PUT', { config: { proxy_cidrs: ['192.168.77.0/24'] } }]])
+})
+
+test('6f: an override holding only declared defaults reads 默认', async ({ page }) => {
+  await open(page, CORE3, { 'GET /networks/*/members/*/config': () => ({ mtu: 1380, multi_thread: true }) })
+  await expect(page.getByTestId('advanced-state')).toHaveText('默认')
+})
+
+test('6g: TOML that does not parse shows the error and disables 保存', async ({ page }) => {
+  const { requests } = await open(page, CORE3, {
+    'POST /generate-config': () => ({ error: null, toml_config: 'instance_name = "home-central"\n\n[flags]\nmtu = 1380\n' }),
+    'POST /parse-config': () => ({ error: 'bad toml', config: null }),
+  })
+  const dlg = await openEditor(page, 'core3')
+  await dlg.getByRole('tab', { name: 'TOML' }).click()
+  const toml = dlg.getByRole('textbox', { name: 'TOML' })
+  await expect(toml).toHaveValue(/mtu = 1380/)
+  await toml.fill('[flags\nmtu = ')
+  const save = dlg.getByRole('button', { name: '保存', exact: true })
+  await save.click()
+  await expect(dlg.getByText('无法解析：bad toml')).toBeVisible()
+  await expect(save).toBeDisabled()
+  expect(configWrites(requests, CORE3)).toEqual([])
+})
+
+test('6h: a failed save toasts the backend message and keeps the dialog and its draft', async ({ page }) => {
+  await open(page, CORE3, {
+    'PUT /networks/*/members/*/config': () => status(500, { message: 'override store unavailable' }),
+  })
+  const dlg = await openEditor(page, 'core3')
+  await dlg.getByLabel('MTU', { exact: true }).fill('1280')
+  await dlg.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByText('保存失败：override store unavailable')).toBeVisible()
+  await expect(dlg).toBeVisible()
+  await expect(dlg.getByLabel('MTU', { exact: true })).toHaveValue('1280')
+  await expect(dlg.getByRole('button', { name: '保存', exact: true })).toBeEnabled()
+})
+
+test('6i: saving back to all defaults DELETEs an override, and sends nothing when there was none', async ({ page }) => {
+  // core1: has_override true and no subnet proxies; core2: has_override false.
+  const { requests } = await open(page, CORE1, { 'GET /networks/*/members/*/config': () => ({ mtu: 1300 }) })
+  await expect(page.getByTestId('advanced-state')).toHaveText('已覆盖')
+  let dlg = await openEditor(page, 'core1')
+  await dlg.getByLabel('MTU', { exact: true }).fill('')
+  await dlg.getByRole('button', { name: '保存', exact: true }).click()
+  await expect.poll(() => configWrites(requests, CORE1).map((r) => r.method)).toEqual(['DELETE'])
+
+  await page.goto(`/#/devices/${CORE2}`)
+  await expect(page.getByTestId('advanced-state')).toHaveText('默认')
+  dlg = await openEditor(page, 'core2')
+  await dlg.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(dlg).toHaveCount(0)
+  expect(configWrites(requests, CORE2)).toEqual([])
+})
+
 test('7: diagnostics: collapsed, logger level, ACL stats, copyable TOML', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   const { requests } = await open(page, CORE3, {
