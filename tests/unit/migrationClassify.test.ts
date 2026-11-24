@@ -11,7 +11,7 @@ import type { CentralNetworkMember } from '../../src/api/types'
 import { CENTRAL_OWNED_FIELDS } from '../../src/domain/memberOverride'
 import { LEGACY_VPN_FIELDS } from '../../src/domain/vpnPortal'
 import {
-  changeFields, classifyInstance, initialAutoIp, isUnset, planGroup, readyToRun, selectedPreviews, targetFromDetail, unconfirmedChanges,
+  changeFields, classifyInstance, initialAutoIp, initialChoices, isUnset, planGroup, readyToRun, selectedPreviews, targetFromDetail, unconfirmedChanges,
   type TargetNetwork,
 } from '../../src/domain/migration/classify'
 import { groupLegacy } from '../../src/domain/migration/inventory'
@@ -203,6 +203,32 @@ describe('auto-selected addresses (shared fixed IPs)', () => {
     const auto = initialAutoIp(g, devices, target, [])
     const ps = planGroup(g, devices, target, [], all, auto)
     expect(ps.map((p) => [p.device.name, p.defaultSelected])).toEqual([['core1', true], ['core2', true], ['core3', true], ['core4', false]])
+  })
+})
+
+describe('a device with two instances in one group (seen once in production)', () => {
+  const all = new Set(Object.values(M))
+  const twice = () =>
+    groupLegacy([
+      inst('core1', true, cfgCore1),
+      { ...inst('core2', false, { ...storedCore2, virtual_ipv4: '10.150.0.12' }), instanceId: 'core2-second' },
+      inst('core2', true, cfgCore2),
+      inst('core3', true, cfgCore3),
+    ], devices, [])[0]!
+
+  it('the running instance is the one that migrates; the other is blocked and gets no address', () => {
+    const ps = planGroup(twice(), devices, target, [], all, new Set([M.core2!]))
+    const second = ps.find((p) => p.instance.instanceId === 'core2-second')!
+    const first = ps.find((p) => p.device.name === 'core2' && p.instance.instanceId !== 'core2-second')!
+    expect(second.blockers).toEqual([{ kind: 'otherInstance', instance: first.instance.instanceId }])
+    expect([second.defaultSelected, second.newIp, second.ipSwitchable]).toEqual([false, null, false])
+    expect(first.blockers.some((b) => b.kind === 'otherInstance')).toBe(false)
+  })
+
+  it('initialChoices: the device is chosen when its migrating instance is, whatever the order', () => {
+    const ps = planGroup(twice(), devices, target, [], all)
+    expect(initialChoices(ps)[M.core2!]).toBe(true)
+    expect(selectedPreviews(ps, initialChoices(ps)).filter((p) => p.device.name === 'core2')).toHaveLength(1)
   })
 })
 

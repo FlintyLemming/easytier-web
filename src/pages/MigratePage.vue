@@ -13,7 +13,7 @@ import WizardSteps from '../components/migrate/WizardSteps.vue'
 import { useLegacyInventory } from '../composables/useLegacyInventory'
 import { useConfirm } from '../composables/useConfirm'
 import { useToast } from '../composables/useToast'
-import { initialAutoIp, planGroup, selectedPreviews, targetFromDetail, targetFromDraft, type ChangeKey, type TargetNetwork } from '../domain/migration/classify'
+import { initialAutoIp, initialChoices, planGroup, selectedPreviews, targetFromDetail, targetFromDraft, type ChangeKey, type TargetNetwork } from '../domain/migration/classify'
 import { draftFromGroup, groupLegacy } from '../domain/migration/inventory'
 import { loadJournal } from '../domain/migration/journal'
 import type { DraftConflicts, NetworkDraft } from '../domain/migration/types'
@@ -87,7 +87,7 @@ onBeforeRouteLeave(async () => {
 function toPreview() {
   if (Object.keys(choices.value).length === 0 && group.value && target.value) {
     autoIp.value = [...initialAutoIp(group.value, legacy.devices.value, target.value, targetMembers.value)]
-    choices.value = Object.fromEntries(previews.value.map((p) => [p.device.id, p.defaultSelected]))
+    choices.value = initialChoices(previews.value)
   }
   toStep(3)
 }

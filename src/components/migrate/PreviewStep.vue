@@ -40,7 +40,7 @@ function confirmKind(key: ChangeKey) {
     <ChangeSummary :previews="previews" :selected="selected" :confirmed="confirmed" @confirm-kind="confirmKind" />
     <DevicePreviewCard
       v-for="p in previews"
-      :key="p.device.id"
+      :key="p.instance.instanceId"
       :preview="p"
       :choice="choices[p.device.id] === true"
       :confirmed="confirmed[p.device.id] ?? []"

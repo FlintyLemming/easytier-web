@@ -68,6 +68,7 @@ export default {
         duplicateIp: 'Fixed IP {ip} is also used by {other}',
         ipTaken: 'Fixed IP {ip} is held by member {other}',
         noFreeIp: 'No free address left in {cidr}',
+        otherInstance: 'This device migrates its instance {instance} of this group; a device migrates only one, this one stays a manual instance',
       },
       disabledNote: 'This instance is disabled; not migrated, it stays as a manual instance',
       alreadyMember: 'Already a member; skipped',

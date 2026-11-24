@@ -32,6 +32,8 @@ export type Blocker =
   | { kind: 'ipTaken'; ip: string; other: string }
   /** Auto-select was chosen but every host address of the subnet is in use. */
   | { kind: 'noFreeIp'; cidr: string }
+  /** The device has another instance in this group that migrates (a device joins the network once). */
+  | { kind: 'otherInstance'; instance: string }
 
 export interface MemberFields {
   virtualIpv4: string | null
@@ -227,6 +229,14 @@ export function planGroup(
   autoIp: ReadonlySet<string> = new Set(),
 ): DevicePreview[] {
   const memberIds = new Set(members.map((m) => m.device_id))
+  // A device joins the network once: of several instances of one device in this group, the running
+  // one (else the first) is the one that can migrate; the others stay manual instances.
+  const primary = new Map<string, string>()
+  for (const i of group.instances) {
+    const cur = primary.get(i.deviceId)
+    const curRunning = group.instances.find((x) => x.instanceId === cur)?.running ?? false
+    if (cur === undefined || (i.running && !curRunning)) primary.set(i.deviceId, i.instanceId)
+  }
   const used = new Set<string>()
   for (const m of members) {
     for (const a of [m.virtual_ipv4, m.allocated_ipv4, m.runtime_virtual_ipv4]) if (a) used.add(a.split('/')[0]!)
@@ -239,18 +249,22 @@ export function planGroup(
     const device = devices.get(instance.deviceId) ?? { id: instance.deviceId, name: instance.deviceId, hostname: '', online: false }
     const alreadyMember = memberIds.has(instance.deviceId)
     const legacyIp = fixedIp(instance.config)
-    const auto = autoIp.has(device.id) && !alreadyMember && !!legacyIp && !!target.virtualCidr
+    const primaryId = primary.get(instance.deviceId)!
+    const secondary = primaryId !== instance.instanceId
+    const auto = autoIp.has(device.id) && !secondary && !alreadyMember && !!legacyIp && !!target.virtualCidr
     let newIp: string | null = null
     if (auto) {
       newIp = firstFreeHost(target.virtualCidr, used)
       if (newIp) used.add(newIp)
     }
     const plan = classifyInstance(instance.config, device.hostname, target, { newIp })
-    return { instance, device, plan, alreadyMember, legacyIp, auto, newIp }
+    return { instance, device, plan, alreadyMember, legacyIp, auto, newIp, secondary, primaryId }
   })
-  return base.map(({ instance, device, plan, alreadyMember, legacyIp, auto, newIp }) => {
+  return base.map(({ instance, device, plan, alreadyMember, legacyIp, auto, newIp, secondary, primaryId }) => {
     const blockers: Blocker[] = []
-    if (auto) {
+    if (secondary) {
+      if (!alreadyMember) blockers.push({ kind: 'otherInstance', instance: primaryId })
+    } else if (auto) {
       if (!newIp) blockers.push({ kind: 'noFreeIp', cidr: target.virtualCidr! })
     } else {
       const ip = plan.member.virtualIpv4
@@ -259,7 +273,7 @@ export function planGroup(
         const taken = members.find((m) => m.device_id !== device.id && m.virtual_ipv4?.split('/')[0] === ip)
         if (taken) blockers.push({ kind: 'ipTaken', ip, other: memberLabel(taken) })
         const dup = base.find(
-          (o) => o.device.id !== device.id && !o.alreadyMember && !o.auto && selected.has(o.device.id) && o.plan.member.virtualIpv4 === ip,
+          (o) => o.device.id !== device.id && !o.alreadyMember && !o.auto && !o.secondary && selected.has(o.device.id) && o.plan.member.virtualIpv4 === ip,
         )
         if (dup) blockers.push({ kind: 'duplicateIp', ip, other: dup.device.name })
       }
@@ -273,9 +287,16 @@ export function planGroup(
       alreadyMember,
       defaultSelected: instance.running && !alreadyMember && fixedBlockers.length === 0,
       newIp,
-      ipSwitchable: !alreadyMember && !!legacyIp && !!target.virtualCidr && (auto || blockers.some((b) => IP_BLOCKERS.has(b.kind))),
+      ipSwitchable: !secondary && !alreadyMember && !!legacyIp && !!target.virtualCidr && (auto || blockers.some((b) => IP_BLOCKERS.has(b.kind))),
     }
   })
+}
+
+/** The 迁移 / 暂不迁移 defaults per device: chosen when the instance that can migrate is selected by default. */
+export function initialChoices(previews: DevicePreview[]): Record<string, boolean> {
+  const out: Record<string, boolean> = {}
+  for (const p of previews) out[p.device.id] = (out[p.device.id] ?? false) || p.defaultSelected
+  return out
 }
 
 /**

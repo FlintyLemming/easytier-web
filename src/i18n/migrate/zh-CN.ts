@@ -68,6 +68,7 @@ export default {
         duplicateIp: '固定 IP {ip} 和 {other} 重复',
         ipTaken: '固定 IP {ip} 已被成员 {other} 使用',
         noFreeIp: '网段 {cidr} 里没有空闲地址',
+        otherInstance: '这台设备在这一组还有实例 {instance} 要迁移；一台设备只能迁移一个，这个保留为手动实例',
       },
       disabledNote: '这个实例已停用，暂不迁移时原样保留为手动实例',
       alreadyMember: '已是成员，跳过',

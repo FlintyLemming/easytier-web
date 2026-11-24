@@ -51,6 +51,8 @@ export function blockerText(t: T, b: Blocker): string {
       return t('migrate.preview.blockers.ipOutsideCidr', { ip: b.ip, cidr: b.cidr })
     case 'noFreeIp':
       return t('migrate.preview.blockers.noFreeIp', { cidr: b.cidr })
+    case 'otherInstance':
+      return t('migrate.preview.blockers.otherInstance', { instance: b.instance })
     default:
       return t(`migrate.preview.blockers.${b.kind}`, { ip: b.ip, other: b.other })
   }
