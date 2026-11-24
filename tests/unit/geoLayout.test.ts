@@ -39,9 +39,9 @@ describe('edgeChips', () => {
     expect(edgeChips([pt('c', 1200, -1000)], size)[0]!.pos).toBeGreaterThanOrEqual(20)
   })
   it('merges neighbours on one edge', () => {
-    const chips = edgeChips([pt('a', 1200, 170, 2), pt('b', 1200, 200, 1)], size)
+    const chips = edgeChips([pt('a', 1200, 160, 2), pt('b', 1200, 190, 1)], size)
     expect(chips).toHaveLength(1)
-    expect(chips[0]).toMatchObject({ total: 3, keys: ['a', 'b'], labels: ['a', 'b'] })
+    expect(chips[0]).toMatchObject({ pos: 180, total: 3, keys: ['a', 'b'], labels: ['a', 'b'] })
   })
 })
 
@@ -51,12 +51,12 @@ describe('buildArcs', () => {
   const groupOf = { a1: 'A', a2: 'A', b1: 'B', c1: 'C', z: 'Z' }
   const pairs = [
     { a: 'a1', b: 'b1', direct: true }, { a: 'a2', b: 'b1', direct: false },
-    { a: 'a1', b: 'c1', direct: true }, { a: 'a2', b: 'c1', direct: true }, { a: 'b1', b: 'c1', direct: false },
+    { a: 'a1', b: 'c1', direct: true }, { a: 'a2', b: 'c1', direct: true }, { a: 'a2', b: 'c1', direct: false }, { a: 'b1', b: 'c1', direct: false },
     { a: 'a1', b: 'a2', direct: true },
     { a: 'a1', b: 'z', direct: true }, { a: 'a1', b: 'nope', direct: true },
   ]
   it('counts per cluster pair', () => {
-    const arcs = buildArcs(clusters, pairs.slice(0, 4), groupOf)
+    const arcs = buildArcs(clusters, pairs.slice(0, 5), groupOf)
     expect(arcs.find((a) => a.from === 'A' && a.to === 'B')!.dashed).toBe(true)
     expect(arcs.find((a) => a.from === 'A' && a.to === 'C')!.dashed).toBe(false)
   })
