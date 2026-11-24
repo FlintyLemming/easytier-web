@@ -146,3 +146,13 @@ test('9: narrow screens show cards without horizontal scrolling', async ({ page 
   await expect(page.getByTestId('network-card')).toHaveCount(2)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 })
+
+test('final-1: leaving the list for another page is not redirected to the single network', async ({ page }) => {
+  await mockApi(page)
+  await page.goto('/#/networks?list=1')
+  await expect(page.getByTestId('network-row')).toHaveCount(1)
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '设备' }).click()
+  await expect(page).toHaveURL(/\/#\/devices$/)
+  await page.waitForTimeout(500)
+  await expect(page).toHaveURL(/\/#\/devices$/)
+})

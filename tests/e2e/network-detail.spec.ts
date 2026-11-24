@@ -156,3 +156,12 @@ test('10: narrow screens show member cards without horizontal scrolling', async 
   await expect(page.getByTestId('member-card')).toHaveCount(3)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 })
+
+test('final-2: going straight from one network to another shows the second one’s members', async ({ page }) => {
+  await mockApi(page, secureApi)
+  await page.goto(`/#/networks/${HOME}`)
+  await expect(page.getByTestId('member-row')).toHaveCount(3)
+  await page.goto(`/#/networks/${SECURE}`)
+  await expect(page.getByRole('heading', { level: 1, name: 'fixture-secure' })).toBeVisible()
+  await expect(page.getByTestId('member-row')).toHaveCount(1)
+})

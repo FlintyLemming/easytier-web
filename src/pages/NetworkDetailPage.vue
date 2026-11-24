@@ -102,6 +102,8 @@ const tab = computed<NetworkTab>({
   },
 })
 watch(tab, (key) => visited.add(key), { immediate: true })
+// Another network in the same page instance: the visited set was just cleared, so mount the shown tab again.
+watch(networkId, () => visited.add(tab.value))
 
 const panelBase = useId()
 const panelId = (key: NetworkTab) => `${panelBase}-${key}`
@@ -157,7 +159,7 @@ const panelId = (key: NetworkTab) => `${panelBase}-${key}`
         <MembersTab :network-id="networkId" />
       </div>
       <div v-if="visited.has('acl')" v-show="tab === 'acl'" :id="panelId('acl')" role="tabpanel">
-        <AclTab ref="aclTab" :network-id="networkId" />
+        <AclTab ref="aclTab" :network-id="networkId" :active="tab === 'acl'" />
       </div>
       <div v-if="detail.secure_mode && visited.has('credentials')" v-show="tab === 'credentials'" :id="panelId('credentials')" role="tabpanel">
         <CredentialsTab :network-id="networkId" :active="tab === 'credentials'" />

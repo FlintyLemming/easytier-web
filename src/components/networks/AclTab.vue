@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, toRaw } from 'vue'
+import { computed, onMounted, ref, toRaw, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getAclPolicy, putAclPolicy } from '../../api/client'
 import type { AclPolicy, AclRule } from '../../api/types'
@@ -19,7 +19,8 @@ import { useAclLabels, type SelectorOption } from './aclLabels'
  * The network's ACL policy. Every change edits a local draft; 保存 writes the whole policy back,
  * built from what was read so untouched rules go back exactly as they came (spec §6.5).
  */
-const props = defineProps<{ networkId: string }>()
+/** `active`: the tab is showing. */
+const props = defineProps<{ networkId: string; active: boolean }>()
 const { t } = useI18n()
 const toast = useToast()
 const { confirm } = useConfirm()
@@ -46,6 +47,14 @@ async function load() {
   }
 }
 onMounted(load)
+// The policy can change while another tab is showing (removing a member prunes the rules that name
+// it), so read it again on coming back, unless there are edits to keep.
+watch(
+  () => props.active,
+  (on, was) => {
+    if (on && !was && saved.value && !dirty.value && !saving.value) void load()
+  },
+)
 
 function setDefault(action: 'allow' | 'deny') {
   if (draft.value) draft.value.default_action = action

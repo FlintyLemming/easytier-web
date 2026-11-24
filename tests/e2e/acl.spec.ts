@@ -172,3 +172,17 @@ test('10: a failed read shows an error with retry', async ({ page }) => {
   await expect(page.getByText('读取 ACL 失败')).toBeVisible()
   await expect(page.getByRole('button', { name: '重试' })).toBeVisible()
 })
+
+test('final-3: back on the ACL tab without unsaved changes, the policy is read again', async ({ page }) => {
+  const state = { pruned: false }
+  const { requests } = await openAcl(page, {
+    [`GET /networks/${HOME}/acl-policy`]: () => ({ policy: state.pruned ? { default_action: 'allow', rules: [] } : fixture('acl-policy.json').policy }),
+  })
+  await expect(rule(page, 'deny-lab-ssh')).toBeVisible()
+  const tabs = page.getByRole('tablist', { name: '网络详情' })
+  await tabs.getByRole('tab', { name: '成员' }).click()
+  state.pruned = true // e.g. lab-box was removed and the backend pruned its rule
+  await tabs.getByRole('tab', { name: 'ACL' }).click()
+  await expect(page.getByText('还没有规则')).toBeVisible()
+  expect(requests.filter((r) => r.method === 'GET' && r.path === `/networks/${HOME}/acl-policy`).length).toBeGreaterThanOrEqual(2)
+})
