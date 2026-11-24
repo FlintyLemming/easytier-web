@@ -13,7 +13,7 @@ const props = defineProps<{
   /** An action on this instance is under way: its menu is disabled. */
   busy?: boolean
 }>()
-const emit = defineEmits<{ edit: []; toggle: []; export: []; delete: [] }>()
+const emit = defineEmits<{ edit: []; vpn: []; toggle: []; export: []; delete: [] }>()
 const { t } = useI18n()
 
 const disabled = computed(() => props.row.state === 'disabled')
@@ -28,6 +28,8 @@ const menuLabel = computed(() => t('instances.menu.label', { name: props.row.nam
 
 const items = computed<UiMenuItem[]>(() => [
   ...(props.row.editable ? [{ label: t('instances.menu.edit'), onSelect: () => emit('edit') }] : []),
+  // Only a running instance has a VPN Portal to ask about.
+  ...(props.row.state === 'running' ? [{ label: t('instances.menu.vpnPortal'), onSelect: () => emit('vpn') }] : []),
   { label: disabled.value ? t('instances.menu.enable') : t('instances.menu.disable'), onSelect: () => emit('toggle') },
   { label: t('instances.menu.export'), onSelect: () => emit('export') },
   ...(props.row.deletable

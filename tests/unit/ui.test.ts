@@ -198,7 +198,7 @@ describe('toasts', () => {
 })
 
 describe('UiDialog', () => {
-  async function openDialog(size?: 'md' | 'lg') {
+  async function openDialog(size?: 'md' | 'lg' | 'wide') {
     track(mount(UiDialog, { props: { open: true, title: 'T', ...(size ? { size } : {}) }, slots: { default: '<p id="dlg-body">body</p>' }, attachTo: document.body }))
     await flushPromises()
     const content = document.body.querySelector<HTMLElement>('[role="dialog"]')!
@@ -216,6 +216,14 @@ describe('UiDialog', () => {
     const { content, body } = await openDialog('lg')
     expect(content).toContain('max-w-3xl')
     expect(content).not.toContain('max-w-md')
+    expect(body).toContain('overflow-y-auto')
+  })
+
+  it('size wide is as wide as lg but only as tall as its content, up to the viewport', async () => {
+    const { content, body } = await openDialog('wide')
+    expect(content).toContain('max-w-3xl')
+    expect(content).toContain('max-h-[min(calc(100dvh-32px),960px)]')
+    expect(content).not.toMatch(/(^|\s)h-\[/)
     expect(body).toContain('overflow-y-auto')
   })
 })

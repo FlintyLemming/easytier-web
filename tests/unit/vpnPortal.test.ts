@@ -108,6 +108,12 @@ describe('endpoint', () => {
     expect(out).toContain('\nEndpoint = 203.0.113.10:22022\n')
     expect(out).not.toContain('should be the public ip')
   })
+
+  it('takes `$` in the endpoint literally', () => {
+    const cfg = '[Peer]\nEndpoint = 0.0.0.0:22022\n'
+    expect(vpnPortalClientConfig(cfg, 'vpn$&.example.com:22022')).toBe('[Peer]\nEndpoint = vpn$&.example.com:22022\n')
+    expect(vpnPortalClientConfig(cfg, 'a$1$$b:22022')).toBe('[Peer]\nEndpoint = a$1$$b:22022\n')
+  })
 })
 
 describe('legacy vpn fields', () => {

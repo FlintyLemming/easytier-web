@@ -107,7 +107,8 @@ export function normalizeVpnPortalEndpoint(value: string, port: string): string 
 /** Replaces the whole `Endpoint =` line, trailing comment of the legacy template included. */
 export function vpnPortalClientConfig(config: string, endpoint: string): string {
   if (!config || !endpoint) return ''
-  return config.replace(/^Endpoint\s*=.*$/m, `Endpoint = ${endpoint}`)
+  // A replacer function, so `$&` or `$1` in a typed endpoint stay as typed.
+  return config.replace(/^Endpoint\s*=.*$/m, () => `Endpoint = ${endpoint}`)
 }
 
 // --- addresses ---

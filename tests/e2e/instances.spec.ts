@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { expect, test, type Page, type Request } from '@playwright/test'
+import { expect, test, type Locator, type Page, type Request } from '@playwright/test'
 import { strToUuid, uuidToStr } from '../../src/lib/uuid'
 import { fixture, mockApi, status, type Overrides, type RecordedRequest } from './mockApi'
 
@@ -444,4 +444,281 @@ test('15: an unknown device shows the not-found state', async ({ page }) => {
   await mockApi(page, instanceApi())
   await page.goto('/#/devices/99999999-9999-4999-8999-999999999999/instances')
   await expect(page.getByText('找不到这台设备')).toBeVisible()
+})
+
+// --- VPN Portal (Task 6) ---
+
+const VPN_PATH = `/machines/${CORE2}/networks/${INST}/vpn-portal-clients`
+const VPN_TITLE = 'VPN Portal · lab-manual'
+const UNAVAILABLE = '这个实例的 VPN Portal 没有运行。可以在编辑配置时开启。'
+type VpnClient = { name: string; virtual_ip: string; groups: string[]; state: string; client_config: string; error?: string }
+
+const clientConfig = (address: string) =>
+  `[Interface]\nPrivateKey = client-key\nAddress = ${address}/32\n\n[Peer]\nPublicKey = server-key\nAllowedIPs = 10.88.0.0/24\nEndpoint = 0.0.0.0:22022\n`
+const phone = (): VpnClient => ({
+  name: 'phone',
+  virtual_ip: '10.88.0.20/24',
+  groups: [],
+  state: 'VPN_PORTAL_CLIENT_STATE_ONLINE',
+  client_config: clientConfig('10.88.0.20'),
+})
+
+/** core2 runs a 2.7 core, whose VPN Portal has named clients (R4). */
+const core27: Overrides = {
+  'GET /machines': () => {
+    const base = fixture('machines.json')
+    for (const m of base.machines) if (m.info.hostname === 'core2') m.info.easytier_version = '2.7.1'
+    return base
+  },
+}
+
+interface Portal {
+  clients: VpnClient[]
+  /** Replaces the whole get_vpn_portal_info answer. */
+  info?: () => unknown
+  /** Answers the PATCH instead of applying it. */
+  patch?: () => unknown
+}
+
+/**
+ * lab-manual's VPN Portal as a 2.7 core reports it (hand-written, on 10.88.0.0/24 per R1), with
+ * `phone` connected. ADD and REMOVE patches change `portal.clients`, as the core would.
+ */
+function vpnApi(portal: Portal): Overrides {
+  return {
+    'POST /machines/*/proxy-rpc': (req: Request) => {
+      if ((req.postDataJSON() as { method_name: string }).method_name !== 'get_vpn_portal_info') return {}
+      return portal.info?.() ?? { vpn_portal_info: { vpn_type: 'wireguard', listener: 'wg://0.0.0.0:22022', clients: portal.clients } }
+    },
+    [`PATCH ${VPN_PATH}`]: (req: Request) => {
+      const answer = portal.patch?.()
+      if (answer) return answer
+      for (const p of (req.postDataJSON() as { patches: { action: string; client: VpnClient }[] }).patches) {
+        if (p.action === 'ADD') {
+          const address = p.client.virtual_ip.split('/')[0]!
+          portal.clients.push({ ...p.client, state: 'VPN_PORTAL_CLIENT_STATE_OFFLINE', client_config: clientConfig(address) })
+        }
+        if (p.action === 'REMOVE') portal.clients = portal.clients.filter((c) => c.name !== p.client.name)
+      }
+      return {}
+    },
+  }
+}
+
+async function openVpn(page: Page) {
+  await rowAction(page, 'VPN Portal…')
+  const dlg = page.getByRole('dialog', { name: VPN_TITLE })
+  await expect(dlg).toBeVisible()
+  return dlg
+}
+
+const clientRow = (dlg: Locator, name: string) => dlg.getByTestId('vpn-client').filter({ hasText: name })
+const vpnPatches = (reqs: RecordedRequest[]) => reqs.filter((r) => r.method === 'PATCH' && r.path === VPN_PATH).map((r) => r.body)
+const vpnReads = (reqs: RecordedRequest[]) =>
+  reqs.filter((r) => r.path === `/machines/${CORE2}/proxy-rpc` && (r.body as { method_name?: string }).method_name === 'get_vpn_portal_info')
+
+test('16: VPN Portal… lists phone as 已连接 and copies its config with the public IP as the Endpoint', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  const { requests } = await openInstances(page, { ...core27, ...vpnApi({ clients: [phone()] }) })
+  await labMenu(page).click()
+  await expect(page.getByRole('menuitem')).toHaveText(['编辑', 'VPN Portal…', '停用', '导出 TOML', '删除…'])
+  await page.keyboard.press('Escape')
+
+  const dlg = await openVpn(page)
+  await expect(clientRow(dlg, 'phone')).toContainText('10.88.0.20/24')
+  await expect(clientRow(dlg, 'phone')).toContainText('已连接')
+  await expect(dlg).toContainText('wg://0.0.0.0:22022')
+  expect(vpnReads(requests).map((r) => r.body)).toEqual([
+    { service_name: 'api.instance.VpnPortalRpcService', method_name: 'get_vpn_portal_info', payload: { instance: { id: strToUuid(INST) } } },
+  ])
+  const endpoint = dlg.getByLabel('服务器地址', { exact: true })
+  await expect(endpoint).toHaveValue('203.0.113.10:22022')
+
+  const copy = clientRow(dlg, 'phone').getByRole('button', { name: '复制配置' })
+  await copy.click()
+  await expect(page.getByText('已复制客户端配置')).toBeVisible()
+  const copied = await page.evaluate(() => navigator.clipboard.readText())
+  expect(copied).toContain('\nEndpoint = 203.0.113.10:22022\n')
+  expect(copied).toContain('Address = 10.88.0.20/32')
+  expect(copied).not.toContain('0.0.0.0')
+
+  // No server address, no config to copy.
+  await endpoint.fill('')
+  await expect(copy).toBeDisabled()
+  await expect(dlg.getByText('先填写服务器地址')).toBeVisible()
+  // A host without a port dials the listener's port; `$` is taken literally.
+  await endpoint.fill('vpn$&.example.com')
+  await expect(copy).toBeEnabled()
+  await copy.click()
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('\nEndpoint = vpn$&.example.com:22022\n')
+
+  await dlg.getByRole('button', { name: '关闭' }).click()
+  await expect(dlg).toHaveCount(0)
+})
+
+test('16b: VPN Portal… is not offered for a disabled instance', async ({ page }) => {
+  await openInstances(page, instanceApi({ disabled: true }))
+  await expect(labRow(page)).toContainText('已停用')
+  await labMenu(page).click()
+  await expect(page.getByRole('menuitem')).toHaveText(['编辑', '启用', '导出 TOML', '删除…'])
+})
+
+test('17: 添加 sends an ADD patch for client-1 on a free in-subnet address; the defaults then move on', async ({ page }) => {
+  const portal: Portal = { clients: [phone()] }
+  const { requests } = await openInstances(page, { ...core27, ...vpnApi(portal) })
+  const dlg = await openVpn(page)
+  await expect(dlg.getByLabel('名称', { exact: true })).toHaveValue('client-1')
+  // 10.88.0.3 is the instance itself and 10.88.0.20 is phone: the first free host is .1.
+  await expect(dlg.getByLabel('地址', { exact: true })).toHaveValue('10.88.0.1')
+  await expect(dlg.getByLabel('前缀', { exact: true })).toHaveValue('24')
+  await expect(dlg.getByLabel('分组', { exact: true })).toHaveValue('')
+
+  await dlg.getByRole('button', { name: '添加', exact: true }).click()
+  await expect(page.getByText('已添加 client-1')).toBeVisible()
+  expect(vpnPatches(requests)).toEqual([
+    { patches: [{ action: 'ADD', client: { name: 'client-1', virtual_ip: '10.88.0.1/24', groups: [] } }] },
+  ])
+  // Read again: client-1 is listed, and the form suggests the next name and address.
+  await expect(clientRow(dlg, 'client-1')).toContainText('未连接')
+  expect(vpnReads(requests)).toHaveLength(2)
+  await expect(dlg.getByLabel('名称', { exact: true })).toHaveValue('client-2')
+  await expect(dlg.getByLabel('地址', { exact: true })).toHaveValue('10.88.0.2')
+
+  // Groups are a comma-separated list; blanks are dropped.
+  await dlg.getByLabel('分组', { exact: true }).fill(' ops, ,guests ')
+  await dlg.getByRole('button', { name: '添加', exact: true }).click()
+  await expect(page.getByText('已添加 client-2')).toBeVisible()
+  expect(vpnPatches(requests)[1]).toEqual({
+    patches: [{ action: 'ADD', client: { name: 'client-2', virtual_ip: '10.88.0.2/24', groups: ['ops', 'guests'] } }],
+  })
+})
+
+test('18: 添加 stays disabled for an unusable address or name, and nothing is sent', async ({ page }) => {
+  const { requests } = await openInstances(page, { ...core27, ...vpnApi({ clients: [phone()] }) })
+  const dlg = await openVpn(page)
+  const add = dlg.getByRole('button', { name: '添加', exact: true })
+  const name = dlg.getByLabel('名称', { exact: true })
+  const address = dlg.getByLabel('地址', { exact: true })
+  const prefix = dlg.getByLabel('前缀', { exact: true })
+  await expect(add).toBeEnabled()
+
+  // Broadcast, network address, phone's, the instance's own, and one outside 10.88.0.0/24.
+  for (const bad of ['10.88.0.255', '10.88.0.0', '10.88.0.20', '10.88.0.3', '192.168.1.5', '10.88.0.1/24']) {
+    await address.fill(bad)
+    await expect(add, bad).toBeDisabled()
+    await expect(dlg.getByText('地址必须在实例的网段内，且未被使用')).toBeVisible()
+  }
+  await address.fill('10.88.0.1')
+  await expect(add).toBeEnabled()
+  await prefix.fill('')
+  await expect(add).toBeDisabled()
+  await prefix.fill('24')
+  await expect(add).toBeEnabled()
+
+  for (const bad of ['-bad', 'my phone', 'a'.repeat(64), '']) {
+    await name.fill(bad)
+    await expect(add, bad).toBeDisabled()
+    await expect(dlg.getByText('名称只能包含字母、数字和连字符')).toBeVisible()
+  }
+  await name.fill('phone')
+  await expect(add).toBeDisabled()
+  await expect(dlg.getByText('名称已存在')).toBeVisible()
+  // Enter submits the form, which sends nothing while it is invalid.
+  await name.press('Enter')
+  await name.fill('client-1')
+  await expect(add).toBeEnabled()
+  expect(vpnPatches(requests)).toEqual([])
+})
+
+test("19: a failed patch shows the backend's message under the form and keeps what was typed", async ({ page }) => {
+  const message = 'VPN portal client x has an unusable virtual IP 10.88.0.9'
+  const { requests } = await openInstances(page, {
+    ...core27,
+    ...vpnApi({ clients: [phone()], patch: () => status(500, { message }) }),
+  })
+  const dlg = await openVpn(page)
+  await dlg.getByLabel('名称', { exact: true }).fill('x')
+  await dlg.getByLabel('地址', { exact: true }).fill('10.88.0.9')
+  await dlg.getByRole('button', { name: '添加', exact: true }).click()
+  await expect(dlg.getByRole('alert')).toHaveText(message)
+  await expect(dlg.getByLabel('名称', { exact: true })).toHaveValue('x')
+  await expect(dlg.getByLabel('地址', { exact: true })).toHaveValue('10.88.0.9')
+  expect(vpnPatches(requests)).toHaveLength(1)
+})
+
+test('20: 删除 asks first, then sends a REMOVE patch for phone', async ({ page }) => {
+  const portal: Portal = { clients: [phone()] }
+  const { requests } = await openInstances(page, { ...core27, ...vpnApi(portal) })
+  const dlg = await openVpn(page)
+  await clientRow(dlg, 'phone').getByRole('button', { name: '删除' }).click()
+  let confirm = page.getByRole('dialog', { name: '删除客户端' })
+  await expect(confirm).toContainText('将删除客户端 phone，使用这个配置的设备将无法再连接。')
+  await confirm.getByRole('button', { name: '取消' }).click()
+  await expect(confirm).toHaveCount(0)
+  await expect(dlg).toBeVisible()
+  expect(vpnPatches(requests)).toEqual([])
+
+  await clientRow(dlg, 'phone').getByRole('button', { name: '删除' }).click()
+  confirm = page.getByRole('dialog', { name: '删除客户端' })
+  await confirm.getByRole('button', { name: '删除', exact: true }).click()
+  await expect(page.getByText('已删除 phone')).toBeVisible()
+  expect(vpnPatches(requests)).toEqual([{ patches: [{ action: 'REMOVE', client: { name: 'phone', virtual_ip: '', groups: [] } }] }])
+  await expect(clientRow(dlg, 'phone')).toHaveCount(0)
+  await expect(dlg).toBeVisible()
+})
+
+test('21: a VPN Portal that is not running shows the unavailable view with what the core said', async ({ page }) => {
+  let info: unknown = { vpn_portal_info: { vpn_type: 'wireguard', client_config: 'ERROR: Wireguard VPN Portal Not Started' } }
+  await openInstances(page, { ...core27, ...vpnApi({ clients: [], info: () => info }) })
+  let dlg = await openVpn(page)
+  await expect(dlg).toContainText(UNAVAILABLE)
+  await expect(dlg).toContainText('ERROR: Wireguard VPN Portal Not Started')
+  await expect(dlg.getByRole('button', { name: '添加', exact: true })).toHaveCount(0)
+  await expect(dlg.getByLabel('服务器地址', { exact: true })).toHaveCount(0)
+  await dlg.getByRole('button', { name: '关闭' }).click()
+
+  // A 2.7 core without a portal answers with vpn_type "null".
+  info = { vpn_portal_info: { vpn_type: 'null', clients: [] } }
+  dlg = await openVpn(page)
+  await expect(dlg).toContainText(UNAVAILABLE)
+  await expect(dlg.getByRole('button', { name: '添加', exact: true })).toHaveCount(0)
+})
+
+test('22: a 2.6 core shows its shared legacy config, Endpoint replaced and copyable, without add or remove', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  // core2 runs 2.6.4 in the fixtures; vpn-portal-info-core2.json was captured from it.
+  await openInstances(page, vpnApi({ clients: [], info: () => fixture('vpn-portal-info-core2.json') }))
+  const dlg = await openVpn(page)
+  await expect(dlg).toContainText('这是旧版 VPN Portal（2.7 之前的 core）：所有客户端共用这份配置，需要把 Address 改成客户端网段里一个未使用的地址。')
+  await expect(dlg).toContainText('0.0.0.0:22022')
+  await expect(dlg.getByLabel('服务器地址', { exact: true })).toHaveValue('203.0.113.10:22022')
+  const config = dlg.getByTestId('vpn-legacy-config')
+  await expect(config).toContainText('Endpoint = 203.0.113.10:22022')
+  await expect(config).toContainText('Address = 10.88.1.0/32')
+  await expect(config).not.toContainText('should be the public ip')
+
+  await dlg.getByRole('button', { name: '复制配置' }).click()
+  await expect(page.getByText('已复制客户端配置')).toBeVisible()
+  const copied = await page.evaluate(() => navigator.clipboard.readText())
+  expect(copied).toContain('\nEndpoint = 203.0.113.10:22022\n')
+  expect(copied).toContain('AllowedIPs = 10.88.0.0/24,10.88.1.0/24')
+
+  await expect(dlg.getByRole('button', { name: '添加', exact: true })).toHaveCount(0)
+  await expect(dlg.getByRole('button', { name: '删除' })).toHaveCount(0)
+  await expect(dlg.getByLabel('名称', { exact: true })).toHaveCount(0)
+})
+
+test('23: a failing read shows the error, and 重试 reads again', async ({ page }) => {
+  let fail = true
+  const { requests } = await openInstances(page, {
+    ...core27,
+    ...vpnApi({ clients: [phone()], info: () => (fail ? status(500, { message: 'rpc to core failed' }) : undefined) }),
+  })
+  const dlg = await openVpn(page)
+  await expect(dlg).toContainText('读取 VPN Portal 信息失败')
+  await expect(dlg).toContainText('rpc to core failed')
+  fail = false
+  await dlg.getByRole('button', { name: '重试' }).click()
+  await expect(clientRow(dlg, 'phone')).toContainText('已连接')
+  expect(vpnReads(requests)).toHaveLength(2)
 })

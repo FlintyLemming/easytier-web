@@ -26,6 +26,7 @@ import EmptyState from '../ui/EmptyState.vue'
 import SkeletonRows from '../ui/SkeletonRows.vue'
 import UiButton from '../ui/UiButton.vue'
 import InstanceRowView from './InstanceRowView.vue'
+import VpnPortalDialog from './VpnPortalDialog.vue'
 
 // The device's manual instances (spec §6.7): everything it runs except central-network instances.
 const props = defineProps<{
@@ -40,7 +41,7 @@ const narrow = useNarrow(640)
 
 // --- reading (polled every 5 s, single-flight; see useInstanceRows) ---
 
-// `infos` (each running instance's last read info) is the seam for the VPN Portal dialog.
+// `infos` (each running instance's last read info) also feeds the VPN Portal dialog.
 const { rows, infos, loadError, retrying, online, refreshNow, retry, dropMeta, rereadMeta } = useInstanceRows(
   () => props.device,
   () => props.centralIds,
@@ -202,6 +203,17 @@ async function save(key: string, draft: NetworkConfig) {
   }
 }
 
+// --- VPN Portal ---
+
+/** The instance whose VPN Portal dialog is open and the device it was opened on; null when closed. */
+const vpn = shallowRef<{ machineId: string; row: InstanceRow; opening: number } | null>(null)
+let vpnOpenings = 0
+
+function openVpn(row: InstanceRow) {
+  if (!stillOnline()) return
+  vpn.value = { machineId: props.device.id, row, opening: ++vpnOpenings }
+}
+
 // --- 导入 TOML ---
 
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -279,6 +291,7 @@ async function importFile(e: Event) {
           card
           :busy="pending.has(row.id)"
           @edit="edit(row)"
+          @vpn="openVpn(row)"
           @toggle="toggle(row)"
           @export="exportToml(row)"
           @delete="remove(row)"
@@ -299,6 +312,7 @@ async function importFile(e: Event) {
             :card="false"
             :busy="pending.has(row.id)"
             @edit="edit(row)"
+            @vpn="openVpn(row)"
             @toggle="toggle(row)"
             @export="exportToml(row)"
             @delete="remove(row)"
@@ -318,6 +332,18 @@ async function importFile(e: Event) {
       :note="editorNote"
       :actions="editorActions"
       @action="save"
+    />
+
+    <!-- Mounted per opening, so an answer meant for one opening never shows in another. -->
+    <VpnPortalDialog
+      v-if="vpn"
+      :key="vpn.opening"
+      :machine-id="vpn.machineId"
+      :row="vpn.row"
+      :info="infos[vpn.row.id] ?? null"
+      :core-version="device.version"
+      :online="online"
+      @close="vpn = null"
     />
   </section>
 </template>
