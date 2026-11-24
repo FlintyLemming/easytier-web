@@ -1,0 +1,38 @@
+// Networks page copy (plan 5), spread into the en locale.
+export default {
+  networks: {
+    title: 'Networks',
+    count: '{n} network | {n} networks',
+    new: 'New network',
+    empty: 'No networks yet',
+    emptyBody: 'Create a network, then add devices to it.',
+    cols: { name: 'Name', method: 'Networking', cidr: 'Subnet', members: 'Members' },
+    secureBadge: 'Secure mode',
+    method: { Gateway: 'Built-in gateway', PublicServer: 'Public server', Manual: 'Manual peers', Standalone: 'Standalone' },
+    field: {
+      displayName: 'Display name',
+      networkName: 'Network name',
+      networkNameHint: 'Leave blank to generate one',
+      method: 'Networking',
+      gatewayDisabled: 'The backend has no gateway enabled',
+      publicServerUrl: 'Public server URL',
+      peerUrls: 'Peer URLs',
+      virtualCidr: 'Subnet',
+      virtualCidrHint: 'Leave blank to let each member’s own config decide; a bare address means /24',
+      secureMode: 'Secure mode',
+      secureModeHint: 'Needed for credentials and temporary members',
+      secret: 'Network secret',
+      secretHint: 'Leave blank to generate one',
+      randomSecret: 'Generate',
+    },
+    invalid: {
+      required: 'Required',
+      url: 'Use protocol://host:port',
+      cidr: 'Enter a subnet, e.g. 10.144.144.0/24',
+      networkName: 'The network name cannot contain spaces',
+    },
+    create: 'Create',
+    created: 'Created {name}',
+    createFailed: 'Could not create the network: {message}',
+  },
+}

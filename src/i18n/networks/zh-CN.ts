@@ -1,0 +1,38 @@
+// Networks page copy (plan 5), spread into the zh-CN locale.
+export default {
+  networks: {
+    title: '网络',
+    count: '{n} 个网络',
+    new: '新建网络',
+    empty: '还没有网络',
+    emptyBody: '新建一个网络，再把设备加进来。',
+    cols: { name: '名称', method: '组网方式', cidr: '网段', members: '成员' },
+    secureBadge: '安全模式',
+    method: { Gateway: '内置网关', PublicServer: '公共服务器', Manual: '手动指定节点', Standalone: '独立' },
+    field: {
+      displayName: '显示名',
+      networkName: '网络名',
+      networkNameHint: '留空则自动生成',
+      method: '组网方式',
+      gatewayDisabled: '后端没有开启网关',
+      publicServerUrl: '公共服务器地址',
+      peerUrls: '节点地址',
+      virtualCidr: '网段',
+      virtualCidrHint: '留空则由成员自己的配置决定；只写地址时按 /24 处理',
+      secureMode: '安全模式',
+      secureModeHint: '开启后可以使用凭据和临时成员',
+      secret: '网络密钥',
+      secretHint: '留空则自动生成',
+      randomSecret: '随机生成',
+    },
+    invalid: {
+      required: '必填',
+      url: '格式应为 协议://地址:端口',
+      cidr: '请输入网段，例如 10.144.144.0/24',
+      networkName: '网络名不能包含空格',
+    },
+    create: '创建',
+    created: '已创建 {name}',
+    createFailed: '创建失败：{message}',
+  },
+}

@@ -1,6 +1,8 @@
 import { configFlagText } from './configFlags'
+import networksText from './networks/en'
 
 export default {
+  ...networksText,
   common: {
     cancel: 'Cancel',
     confirm: 'Confirm',
@@ -18,6 +20,7 @@ export default {
     menu: 'Navigation menu',
     overview: 'Overview',
     devices: 'Devices',
+    networks: 'Networks',
   },
   shell: {
     addDevice: 'Add device',

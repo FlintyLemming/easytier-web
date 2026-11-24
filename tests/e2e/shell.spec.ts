@@ -3,12 +3,12 @@ import { fixture, mockApi, status, type Overrides } from './mockApi'
 
 const CORE1 = '11111111-1111-4111-8111-111111111111'
 
-test('top nav shows the 概览 and 设备 tabs and no 网络 tab', async ({ page }) => {
+test('top nav shows the 概览, 设备 and 网络 tabs', async ({ page }) => {
   await mockApi(page)
   await page.goto('/#/devices')
   const nav = page.getByRole('navigation')
   await expect(nav.getByRole('link', { name: '设备', exact: true })).toBeVisible()
-  await expect(nav.getByRole('link', { name: '网络' })).toHaveCount(0)
+  await expect(nav.getByRole('link', { name: '网络', exact: true })).toBeVisible()
   await expect(nav.getByRole('link', { name: '概览' })).toBeVisible()
 })
 

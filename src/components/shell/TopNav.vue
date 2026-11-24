@@ -5,13 +5,17 @@ import { useI18n } from 'vue-i18n'
 import AddDevicePopover from './AddDevicePopover.vue'
 import BlockedBell from './BlockedBell.vue'
 import UserMenu from './UserMenu.vue'
+import { useSession } from '../../stores/session'
 
 const { t } = useI18n()
 const route = useRoute()
 
+const session = useSession()
 const tabs = computed(() => [
   { key: 'overview', label: t('nav.overview'), to: '/', active: route.name === 'overview' },
   { key: 'devices', label: t('nav.devices'), to: '/devices', active: route.path.startsWith('/devices') },
+  // Webhook mode has no central networks (spec §6.9).
+  ...(session.webhookMode ? [] : [{ key: 'networks', label: t('nav.networks'), to: '/networks', active: route.path.startsWith('/networks') }]),
 ])
 
 // Below 640px (spec §5.9) the tabs collapse into a menu button; logo, 添加设备, the bell and the

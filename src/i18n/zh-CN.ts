@@ -1,6 +1,8 @@
 import { configFlagText } from './configFlags'
+import networksText from './networks/zh-CN'
 
 export default {
+  ...networksText,
   common: {
     cancel: '取消',
     confirm: '确认',
@@ -18,6 +20,7 @@ export default {
     menu: '导航菜单',
     overview: '概览',
     devices: '设备',
+    networks: '网络',
   },
   shell: {
     addDevice: '添加设备',
