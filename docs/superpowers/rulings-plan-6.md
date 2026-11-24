@@ -101,3 +101,21 @@ User decisions: merge Plan 6 into main (done, fast-forward); add an auto-assign 
 - Finding: Address in use when the central instance started before the legacy one had stopped (1 of 37); fixed by the stop-wait.
 - Finding: one production device has two instances of group A; fixed (single migration per device).
 - Verification: production copy, default choices — 37 migrated and consistent in one run; batches into the existing network migrated the rest; routing modes of all migrated members equal their pre-upgrade TOML; whole rollback in 15 s (testenv/reports/prod-rehearsal-2026-11-25-auto-ip.md).
+
+### Second review of the follow-up (fresh reviewer, opus)
+
+Critical: none. Important 1–4 fixed, each test-first:
+
+- Final: fixed the stop-wait not covering the race (a 2.6.4 core drops the instance from its list before its listeners close) — settleMs pause after it is off the list (3 s; runtime config `migrateSettleMs`, which the mocked e2e sets to 0) — migrationRun 'after the device stops the legacy instance it waits settleMs more…' RED→GREEN, suite 503/503 unit, 211/211 e2e.
+- Final: fixed the routing mode failing toward automatic — `readManualRoutes` answers unknown for an empty TOML, no or another `instance_id` (CRLF, quotes, `routes=[]`, trailing comments handled); the run keeps the inventory's reading if its own read fails and does not start a running device with neither; a manual mode is written back before any re-enable, including the recheck-failed and disable-acted paths — migrationManualRoutes tests, migrationRun 'a running instance whose routing mode cannot be read…', 'the run cannot read the TOML but the inventory could…' RED→GREEN.
+- Final: fixed offline/unread devices being invisible to address selection — picks go from the top of the subnet down and avoid the live network's route table (list_route of one running legacy instance); step 3 warns when devices are offline or unread — classify 'highest address…', 'picks also skip addresses seen in the live network…', e2e 30 RED→GREEN.
+- Final: fixed a confirmed address moving without re-confirmation — `reconcileIpConfirmations` drops a `fixed_ip` confirmation when that device's address changes — classify test, e2e 29 RED→GREEN.
+- Final: Ruling: e2e 19 and 21 break proxy-rpc / swap a TOML after the run instead of before — the run now needs the running TOML to read the routing mode — cost: none.
+- Final: minor (deferred): `ipTaken` checks only a member's fixed address, not allocated/runtime (a kept address equal to a member's allocation silently reassigns that member).
+- Final: minor (deferred): legacy DHCP devices migrating in the same run get backend-allocated addresses that only avoid members (group A has no DHCP devices).
+- Final: minor (deferred): a secondary instance's card can confirm changes for the primary (confirmations are per device).
+- Final: minor (deferred): copy — otherInstance says 要迁移 even when the device is set to 暂不迁移; the summary's 暂不迁移 count includes secondary instances; English "Keep" could be "Keep own address".
+- Final: minor (deferred): no place to read the old → new address list after step 3 (the journal has both).
+- Final: minor (deferred): defaults are not recomputed when going back to step 2 and changing the subnet.
+- Final: minor (deferred): test gaps — mock glob `*` crosses `/`; no e2e for a write-back; rollbackDevice's write-back for an existing instance not exercised live.
+- Final: minor (deferred): the new radios have no visible focus ring (same as the existing 迁移 / 暂不迁移 radios).
