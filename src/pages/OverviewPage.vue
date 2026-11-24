@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AttentionList from '../components/overview/AttentionList.vue'
 import ConnectionQuality from '../components/overview/ConnectionQuality.vue'
@@ -27,6 +27,8 @@ const fleetPoller = usePolling(() => runtime.refreshFleet(), FLEET_POLL_MS)
 onMounted(() => {
   if (central.value) fleetPoller.start()
 })
+// Leaving the page: start no more fleet targets, so other pages' proxy-rpc calls do not queue behind them.
+onBeforeUnmount(() => runtime.cancelFleet())
 watch(
   () => inventory.loaded,
   (loaded) => {

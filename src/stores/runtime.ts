@@ -8,6 +8,11 @@ import { useSession } from './session'
 
 /** How often the overview refreshes the fleet's routes and peers. */
 export const FLEET_POLL_MS = 15_000
+/**
+ * Targets of one fleet pass in flight at once (each makes two proxy-rpc calls). Started one by one, so a
+ * cancelled pass leaves at most this many targets' calls ahead of other pages' requests in the limiter.
+ */
+export const FLEET_CONCURRENCY = 4
 
 /** Raw proxy-rpc answers of one device in one network (its central instance id == network id). */
 export interface RuntimeEntry { routes: NodeRouteInfo[]; peers: NodePeerInfo[]; fetchedAt: number }
@@ -31,6 +36,8 @@ export const useRuntime = defineStore('runtime', () => {
   let generation = 0
   const inflight = new Map<string, Promise<void>>()
   let fleetInflight: Promise<void> | null = null
+  /** The current fleet pass; cancelFleet() flags it so it starts no further target. */
+  let fleetPass: { cancelled: boolean } | null = null
 
   function runtimeKey(deviceId: string, networkId: string): string {
     return JSON.stringify([deviceId, networkId])
@@ -102,21 +109,47 @@ export const useRuntime = defineStore('runtime', () => {
     return targets
   })
 
-  /** Single-flight; never rejects. Waits for the inventory, which says who to ask. */
+  /**
+   * Single-flight; never rejects. Waits for the inventory, which says who to ask. Fetches the targets at
+   * most FLEET_CONCURRENCY at a time; fleetLoaded is set once a pass that was not cancelled has finished.
+   */
   function refreshFleet(): Promise<void> {
     if (!inventory.loaded) return Promise.resolve()
     if (!fleetInflight) {
       const gen = generation
-      const p: Promise<void> = Promise.all(fleetTargets.value.map((t) => fetch(t.deviceId, t.networkId)))
+      const pass = { cancelled: false }
+      const targets = [...fleetTargets.value]
+      let next = 0
+      const worker = async (): Promise<void> => {
+        // Checked before each target: a cancelled pass starts nothing more.
+        while (!pass.cancelled && next < targets.length) {
+          const t = targets[next++]!
+          await fetch(t.deviceId, t.networkId)
+        }
+      }
+      const workers = Array.from({ length: Math.min(FLEET_CONCURRENCY, targets.length) }, worker)
+      const p: Promise<void> = Promise.all(workers)
         .then(() => {
-          if (gen === generation) fleetLoaded.value = true
+          if (!pass.cancelled && gen === generation) fleetLoaded.value = true
         })
         .finally(() => {
           if (fleetInflight === p) fleetInflight = null
+          if (fleetPass === pass) fleetPass = null
         })
+      fleetPass = pass
       fleetInflight = p
     }
     return fleetInflight
+  }
+
+  /**
+   * Stop the current fleet pass (leaving the overview, logging out): no further target starts, the ones
+   * in flight finish normally, fleetLoaded is left as it is. The next refreshFleet() starts a new pass.
+   */
+  function cancelFleet(): void {
+    if (fleetPass) fleetPass.cancelled = true
+    fleetPass = null
+    fleetInflight = null
   }
 
   /** Network id → device id → links, for current targets whose latest fetch succeeded. */
@@ -135,8 +168,8 @@ export const useRuntime = defineStore('runtime', () => {
   /** Drop all data (logout / session expiry) and discard any fetch still in flight. */
   function reset(): void {
     generation++
+    cancelFleet()
     inflight.clear()
-    fleetInflight = null
     entries.value = {}
     errors.value = {}
     fleetLoaded.value = false
@@ -152,6 +185,7 @@ export const useRuntime = defineStore('runtime', () => {
     linksFor,
     fleetTargets,
     refreshFleet,
+    cancelFleet,
     fleetLinks,
     pairs,
     stats,

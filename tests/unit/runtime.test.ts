@@ -15,6 +15,7 @@ vi.mock('../../src/api/client', () => ({
   nodePeers: vi.fn(),
 }))
 import * as client from '../../src/api/client'
+import { strToUuid } from '../../src/lib/uuid'
 import { useInventory } from '../../src/stores/inventory'
 import { useSession } from '../../src/stores/session'
 import { useRuntime } from '../../src/stores/runtime'
@@ -55,6 +56,48 @@ function deferred() {
   return (dev?: string) => {
     for (const [d, answer] of pending) if (dev === undefined || d === dev) answer()
   }
+}
+
+/** Ten online members of NET (machine ids …01 to …10) instead of the fixture three. */
+function tenMembers(): string[] {
+  const ids = Array.from({ length: 10 }, (_, i) => `aaaaaaaa-0000-4000-8000-${String(i + 1).padStart(12, '0')}`)
+  const base = machinesFx.machines[0]!
+  m.listMachines.mockResolvedValue(ids.map((id, i) => ({
+    ...base, client_url: `udp://192.0.2.${i + 1}:1`, info: { ...base.info, machine_id: strToUuid(id), hostname: `n${i + 1}` },
+  })) as never)
+  m.listMembers.mockResolvedValue({
+    ...membersFx,
+    members: ids.map((id, i) => ({ ...membersFx.members[0]!, member_id: `m${i + 1}`, device_id: id, hostname: `n${i + 1}`, online: true })),
+  } as never)
+  return ids
+}
+
+/** Holds every nodeRoutes answer in call order and tracks how many are pending at once. */
+function held() {
+  const waiting: (() => void)[] = []
+  let active = 0
+  let max = 0
+  m.nodeRoutes.mockImplementation((dev) => {
+    max = Math.max(max, ++active)
+    return new Promise((r) => waiting.push(() => { active--; r(routesOf(dev) as never) }))
+  })
+  return {
+    releaseOne: () => waiting.shift()?.(),
+    releaseAll: () => { for (const answer of waiting.splice(0)) answer() },
+    get max() { return max },
+  }
+}
+const flush = () => new Promise((r) => setTimeout(r, 0))
+
+/** Answers held calls until `p` settles (each answer may start the next target). */
+async function drain(h: ReturnType<typeof held>, p: Promise<unknown>) {
+  let done = false
+  void p.then(() => { done = true })
+  for (let i = 0; i < 100 && !done; i++) {
+    h.releaseAll()
+    await flush()
+  }
+  expect(done).toBe(true)
 }
 
 beforeEach(() => {
@@ -170,6 +213,81 @@ describe('runtime store', () => {
     expect(rt.errors).toEqual({})
     expect(rt.fleetLoaded).toBe(false)
     expect(rt.stats).toEqual({ direct: 0, relayed: 0, rate: null })
+  })
+
+  it('refreshFleet keeps at most 4 targets in flight', async () => {
+    tenMembers()
+    await loadInventory()
+    const h = held()
+    const rt = useRuntime()
+    expect(rt.fleetTargets).toHaveLength(10)
+    const p = rt.refreshFleet()
+    await flush()
+    expect(m.nodeRoutes).toHaveBeenCalledTimes(4)
+    expect(m.nodePeers).toHaveBeenCalledTimes(4)
+    // One answer frees one slot: exactly one more target starts.
+    h.releaseOne()
+    await flush()
+    expect(m.nodeRoutes).toHaveBeenCalledTimes(5)
+    expect(m.nodePeers).toHaveBeenCalledTimes(5)
+    await drain(h, p)
+    expect(m.nodeRoutes).toHaveBeenCalledTimes(10)
+    expect(m.nodePeers).toHaveBeenCalledTimes(10)
+    expect(h.max).toBe(4)
+    expect(Object.keys(rt.entries)).toHaveLength(10)
+    expect(rt.fleetLoaded).toBe(true)
+  })
+
+  it('cancelFleet lets in-flight targets finish and starts no more; the next refresh starts afresh', async () => {
+    tenMembers()
+    await loadInventory()
+    const h = held()
+    const rt = useRuntime()
+    const p = rt.refreshFleet()
+    await flush()
+    expect(m.nodeRoutes).toHaveBeenCalledTimes(4)
+    rt.cancelFleet()
+    h.releaseAll()
+    await p
+    await flush()
+    expect(m.nodeRoutes).toHaveBeenCalledTimes(4)
+    expect(m.nodePeers).toHaveBeenCalledTimes(4)
+    expect(Object.keys(rt.entries)).toHaveLength(4)
+    expect(rt.fleetLoaded).toBe(false)
+
+    const q = rt.refreshFleet()
+    await flush()
+    expect(m.nodeRoutes).toHaveBeenCalledTimes(8)
+    await drain(h, q)
+    expect(m.nodeRoutes).toHaveBeenCalledTimes(14)
+    expect(rt.fleetLoaded).toBe(true)
+
+    // Cancelling never clears fleetLoaded.
+    const r = rt.refreshFleet()
+    await flush()
+    rt.cancelFleet()
+    h.releaseAll()
+    await r
+    expect(rt.fleetLoaded).toBe(true)
+    expect(m.nodeRoutes).toHaveBeenCalledTimes(18)
+  })
+
+  it('reset cancels the fleet pass', async () => {
+    tenMembers()
+    await loadInventory()
+    const h = held()
+    const rt = useRuntime()
+    const p = rt.refreshFleet()
+    await flush()
+    expect(m.nodeRoutes).toHaveBeenCalledTimes(4)
+    rt.reset()
+    h.releaseAll()
+    await p
+    await flush()
+    expect(m.nodeRoutes).toHaveBeenCalledTimes(4)
+    expect(m.nodePeers).toHaveBeenCalledTimes(4)
+    expect(rt.entries).toEqual({})
+    expect(rt.fleetLoaded).toBe(false)
   })
 
   it('fetch: single-flight per key, never rejects, an error keeps the previous entry', async () => {

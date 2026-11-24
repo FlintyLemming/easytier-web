@@ -54,6 +54,29 @@ test('direct rate reads 正在读取连接… until proxy-rpc answers', async ({
   await expect(direct.getByText('98%')).toBeVisible()
 })
 
+test('leaving the overview starts no further fleet requests', async ({ page }) => {
+  const { overrides } = fleetMock()
+  const rpc = overrides['POST /machines/*/proxy-rpc']!
+  let release!: () => void
+  const gate = new Promise<void>((r) => { release = r })
+  overrides['POST /machines/*/proxy-rpc'] = async (req) => {
+    await gate
+    return rpc(req)
+  }
+  const { requests } = await mockApi(page, overrides)
+  const rpcs = () => requests.filter((r) => r.path.endsWith('/proxy-rpc')).length
+  await page.goto('/#/')
+  // The global limiter lets four calls out: two devices' routes and peers.
+  await expect.poll(rpcs).toBe(4)
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '设备' }).click()
+  await expect(page).toHaveURL(/#\/devices$/)
+  release()
+  // The four devices already started finish (two calls each); none of the other 13 starts.
+  await expect.poll(rpcs).toBe(8)
+  await page.waitForTimeout(1000)
+  expect(rpcs()).toBe(8)
+})
+
 test('webhook mode shows two cells and makes no proxy-rpc requests', async ({ page }) => {
   const { requests } = await mockApi(page, {}, { webhook: true })
   await page.goto('/#/')
