@@ -121,6 +121,16 @@ node testenv/capture-instance-fixtures.ts
 
 注意：testenv 的 core 是 v2.6.4，只认旧版 VPN Portal 字段（`enable_vpn_portal` 等），v2.7 的 `vpn_portal_config` 会被静默丢弃；因此 `vpn-portal-info-core2.json` 是旧版形状（`client_config` 文本）。web v2.7.1 的 `generate-config` 拒绝旧字段，脚本改用 `vpn_portal_config` 调用它。
 
+## 网络相关的 fixtures
+
+```sh
+node testenv/capture-network-fixtures.ts
+```
+
+需要 testenv 在运行。脚本临时新建一个安全模式网络 `fixture-secure`（Standalone，网段 `10.201.0.0/24`，密钥 `fixture-secure-secret`），生成两个凭据（`fixture-cred` 和一个一次性的），把 core3 加为临时成员并等它运行，然后抓取：`network-created.json`、`networks-two.json`、`network-secure.json`、`acl-policy-empty.json`、`credential-created.json`、`members-secure.json`、`credentials.json`。`finally` 里删除这个网络，并等 core3 撤下它的实例（约 30 秒）。
+
+凭据密钥换成确定的占位值（按出现顺序 `base64("fixture-cred-1")`、`…-2`、`…-3`），到期时间平移到 2030-01-01 起，保持彼此的差值，这样 fixtures 每次抓取都一样。
+
 ## 观察到的响应形状（v2.7.1 web + 2.6.4 core）
 
 写前端和 mock 时容易踩的地方，均以 `tests/fixtures/v2.7.1/` 为准：

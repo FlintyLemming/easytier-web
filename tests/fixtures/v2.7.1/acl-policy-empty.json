@@ -1,0 +1,6 @@
+{
+  "policy": {
+    "default_action": "allow",
+    "rules": []
+  }
+}

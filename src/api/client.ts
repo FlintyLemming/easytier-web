@@ -4,9 +4,14 @@ import { normalizeVpnPortalInfo, type VpnPortalInfo } from '../lib/networkConfig
 import { ipv4FromU32 } from '../domain/format'
 import { ApiError, apiUrl, request } from './http'
 import type {
+  AclPolicy,
   BlockedDevice,
+  CentralNetworkDetail,
   CentralNetworkMember,
   CentralNetworkSummary,
+  GatewayInfo,
+  NetworkCredential,
+  NetworkSettings,
   ConfigSource,
   ConsoleInfo,
   InstanceList,
@@ -112,6 +117,64 @@ export async function listNetworks(): Promise<CentralNetworkSummary[]> {
   return r?.networks ?? []
 }
 
+export function getNetwork(id: string): Promise<CentralNetworkDetail> {
+  return request('GET', `/networks/${seg(id)}`)
+}
+
+const withSecret = (settings: NetworkSettings, secret?: string) =>
+  secret ? { settings, network_secret: secret } : { settings }
+
+export function createNetwork(settings: NetworkSettings, secret?: string): Promise<CentralNetworkDetail> {
+  return request('POST', '/networks', { body: withSecret(settings, secret) })
+}
+
+export function updateNetwork(id: string, settings: NetworkSettings, secret?: string): Promise<CentralNetworkDetail> {
+  return request('PATCH', `/networks/${seg(id)}`, { body: withSecret(settings, secret) })
+}
+
+export async function deleteNetwork(id: string): Promise<void> {
+  await request('DELETE', `/networks/${seg(id)}`)
+}
+
+/** Never rejects: a failed read means no gateway (the option stays unavailable). */
+export async function getGatewayInfo(): Promise<GatewayInfo> {
+  try {
+    return (await request<GatewayInfo>('GET', '/networks/gateway-info')) ?? { enabled: false }
+  } catch {
+    return { enabled: false }
+  }
+}
+
+export async function getAclPolicy(id: string): Promise<AclPolicy> {
+  const r = await request<{ policy?: AclPolicy }>('GET', `/networks/${seg(id)}/acl-policy`)
+  return r?.policy ?? { default_action: 'allow', rules: [] }
+}
+
+/** The body is the policy itself (not `{policy}`); the answer is `{policy}`. */
+export async function putAclPolicy(id: string, policy: AclPolicy): Promise<AclPolicy> {
+  const r = await request<{ policy?: AclPolicy }>('PUT', `/networks/${seg(id)}/acl-policy`, { body: policy })
+  return r?.policy ?? policy
+}
+
+export async function listCredentials(id: string): Promise<NetworkCredential[]> {
+  const r = await request<{ credentials?: NetworkCredential[] }>('GET', `/networks/${seg(id)}/credentials`)
+  return r?.credentials ?? []
+}
+
+export function generateCredential(
+  id: string,
+  req: { ttlSeconds: number; reusable: boolean; credentialId?: string },
+): Promise<NetworkCredential> {
+  const body: Record<string, unknown> = { ttl_seconds: req.ttlSeconds, reusable: req.reusable }
+  const custom = req.credentialId?.trim()
+  if (custom) body.credential_id = custom
+  return request('POST', `/networks/${seg(id)}/credentials`, { body })
+}
+
+export async function revokeCredential(id: string, credentialId: string): Promise<void> {
+  await request('DELETE', `/networks/${seg(id)}/credentials/${seg(credentialId)}`)
+}
+
 export async function listMembers(
   networkId: string,
 ): Promise<{ members: CentralNetworkMember[]; temporary_peers: TemporaryPeer[] }> {
@@ -122,10 +185,15 @@ export async function listMembers(
   return { members: r?.members ?? [], temporary_peers: r?.temporary_peers ?? [] }
 }
 
-export async function addMembers(networkId: string, deviceIds: string[]): Promise<void> {
-  await request('POST', `/networks/${seg(networkId)}/members`, {
-    body: { device_ids: deviceIds, temporary: false },
-  })
+export async function addMembers(
+  networkId: string,
+  deviceIds: string[],
+  opts: { temporary?: boolean; ttlSeconds?: number } = {},
+): Promise<void> {
+  const temporary = opts.temporary === true
+  const body: Record<string, unknown> = { device_ids: deviceIds, temporary }
+  if (temporary && opts.ttlSeconds !== undefined) body.ttl_seconds = opts.ttlSeconds
+  await request('POST', `/networks/${seg(networkId)}/members`, { body })
 }
 
 export function updateMember(

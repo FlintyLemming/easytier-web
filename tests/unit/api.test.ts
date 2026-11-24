@@ -6,8 +6,15 @@ import {
   setMachineAlias, unblockDevice, listMembers, updateMember, getMemberConfig,
   listInstances, instanceMetas, instanceInfo, getInstanceConfig, saveInstanceConfig, runInstance,
   setInstanceDisabled, deleteInstance, vpnPortalInfo, patchVpnPortalClients, generateToml, parseToml,
-  TOML_EMPTY_ANSWER,
+  TOML_EMPTY_ANSWER, addMembers, getNetwork, createNetwork, updateNetwork, deleteNetwork, getGatewayInfo,
+  getAclPolicy, putAclPolicy, listCredentials, generateCredential, revokeCredential,
 } from '../../src/api/client'
+import type { NetworkSettings } from '../../src/api/types'
+import networkSecureFx from '../fixtures/v2.7.1/network-secure.json'
+import networkCreatedFx from '../fixtures/v2.7.1/network-created.json'
+import aclFx from '../fixtures/v2.7.1/acl-policy.json'
+import credentialsFx from '../fixtures/v2.7.1/credentials.json'
+import credentialCreatedFx from '../fixtures/v2.7.1/credential-created.json'
 import instancesFx from '../fixtures/v2.7.1/instances-core2.json'
 import metasFx from '../fixtures/v2.7.1/instance-metas-core2.json'
 import instConfigFx from '../fixtures/v2.7.1/instance-config-core2.json'
@@ -361,5 +368,110 @@ describe('api client', () => {
       stub(() => json({ message: 'boom' }, 500))
       await expect(parseToml('a = 1')).rejects.toBeInstanceOf(ApiError)
     })
+  })
+})
+
+describe('networks, acl and credentials', () => {
+  const N = 'net/1'
+  const NE = encodeURIComponent(N)
+  const body = (i = 0) => JSON.parse(calls[i]!.init.body as string)
+  const path = (i = 0) => new URL(calls[i]!.url, 'http://x').pathname.replace(/^.*\/api\/v1/, '')
+  const settings: NetworkSettings = {
+    display_name: 'Lab', network_name: null, networking_method: 'Manual', public_server_url: null,
+    peer_urls: ['tcp://1.2.3.4:11010'], virtual_cidr: '10.9.0.0/24', secure_mode: false,
+  }
+
+  it('getNetwork reads one network by encoded id', async () => {
+    stub(() => json(networkSecureFx))
+    expect(await getNetwork(N)).toEqual(networkSecureFx)
+    expect(calls[0]!.init.method).toBe('GET')
+    expect(path()).toBe(`/networks/${NE}`)
+  })
+
+  it('createNetwork posts settings, with network_secret only when given', async () => {
+    stub(() => json(networkCreatedFx))
+    expect(await createNetwork(settings)).toEqual(networkCreatedFx)
+    expect(calls[0]!.init.method).toBe('POST')
+    expect(path()).toBe('/networks')
+    expect(body()).toEqual({ settings })
+    expect('network_secret' in body()).toBe(false)
+    await createNetwork(settings, 's3cret')
+    expect(body(1)).toEqual({ settings, network_secret: 's3cret' })
+  })
+
+  it('updateNetwork patches settings, with network_secret only when given', async () => {
+    stub(() => json(networkSecureFx))
+    await updateNetwork(N, settings)
+    expect(calls[0]!.init.method).toBe('PATCH')
+    expect(path()).toBe(`/networks/${NE}`)
+    expect(body()).toEqual({ settings })
+    await updateNetwork(N, settings, 'new')
+    expect(body(1)).toEqual({ settings, network_secret: 'new' })
+  })
+
+  it('deleteNetwork deletes by encoded id', async () => {
+    stub(() => new Response(null, { status: 204 }))
+    await deleteNetwork(N)
+    expect(calls[0]!.init.method).toBe('DELETE')
+    expect(path()).toBe(`/networks/${NE}`)
+  })
+
+  it('getGatewayInfo returns the answer, or { enabled: false } on failure', async () => {
+    stub(() => json({ enabled: true, peer_url: 'tcp://gw:22020', relay_data: false }))
+    expect(await getGatewayInfo()).toEqual({ enabled: true, peer_url: 'tcp://gw:22020', relay_data: false })
+    expect(path()).toBe('/networks/gateway-info')
+    stub(() => json({ message: 'boom' }, 500))
+    expect(await getGatewayInfo()).toEqual({ enabled: false })
+  })
+
+  it('addMembers sends temporary: false by default, and ttl_seconds only for temporary members', async () => {
+    stub(() => new Response(null, { status: 204 }))
+    await addMembers(N, ['d1', 'd2'])
+    expect(path()).toBe(`/networks/${NE}/members`)
+    expect(body()).toEqual({ device_ids: ['d1', 'd2'], temporary: false })
+    await addMembers(N, ['d1'], { temporary: true, ttlSeconds: 3600 })
+    expect(body(1)).toEqual({ device_ids: ['d1'], temporary: true, ttl_seconds: 3600 })
+    await addMembers(N, ['d1'], { temporary: false, ttlSeconds: 3600 })
+    expect(body(2)).toEqual({ device_ids: ['d1'], temporary: false })
+  })
+
+  it('getAclPolicy returns the policy; a missing policy reads as the default', async () => {
+    stub(() => json(aclFx))
+    expect(await getAclPolicy(N)).toEqual(aclFx.policy)
+    expect(path()).toBe(`/networks/${NE}/acl-policy`)
+    stub(() => json({}))
+    expect(await getAclPolicy(N)).toEqual({ default_action: 'allow', rules: [] })
+  })
+
+  it('putAclPolicy sends the policy itself and returns the stored one', async () => {
+    stub(() => json(aclFx))
+    const policy = aclFx.policy as Parameters<typeof putAclPolicy>[1]
+    expect(await putAclPolicy(N, policy)).toEqual(aclFx.policy)
+    expect(calls[0]!.init.method).toBe('PUT')
+    expect(path()).toBe(`/networks/${NE}/acl-policy`)
+    expect(body()).toEqual(aclFx.policy)
+  })
+
+  it('listCredentials returns the list', async () => {
+    stub(() => json(credentialsFx))
+    expect(await listCredentials(N)).toEqual(credentialsFx.credentials)
+    expect(path()).toBe(`/networks/${NE}/credentials`)
+  })
+
+  it('generateCredential sends ttl and reusable, and a trimmed non-empty id only', async () => {
+    stub(() => json(credentialCreatedFx))
+    expect(await generateCredential(N, { ttlSeconds: 86400, reusable: true, credentialId: '  ' })).toEqual(credentialCreatedFx)
+    expect(calls[0]!.init.method).toBe('POST')
+    expect(path()).toBe(`/networks/${NE}/credentials`)
+    expect(body()).toEqual({ ttl_seconds: 86400, reusable: true })
+    await generateCredential(N, { ttlSeconds: 60, reusable: false, credentialId: ' guest ' })
+    expect(body(1)).toEqual({ ttl_seconds: 60, reusable: false, credential_id: 'guest' })
+  })
+
+  it('revokeCredential deletes by encoded ids', async () => {
+    stub(() => new Response(null, { status: 204 }))
+    await revokeCredential(N, 'a/b')
+    expect(calls[0]!.init.method).toBe('DELETE')
+    expect(path()).toBe(`/networks/${NE}/credentials/${encodeURIComponent('a/b')}`)
   })
 })

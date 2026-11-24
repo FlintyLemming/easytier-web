@@ -43,6 +43,7 @@ const GET_ROUTES: Route[] = [
   [/^\/networks\/[^/]+\/members$/, 'members.json'],
   [/^\/networks\/[^/]+\/members\/[^/]+\/config$/, 'member-config-core3.json'],
   [/^\/networks\/[^/]+\/acl-policy$/, 'acl-policy.json'],
+  [/^\/networks\/[^/]+\/credentials$/, 'credentials.json'],
   [/^\/blocked-devices$/, 'blocked-devices.json'],
 ]
 

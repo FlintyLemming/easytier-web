@@ -1,0 +1,24 @@
+{
+  "members": [
+    {
+      "member_id": "fd36ed0e-1486-4c5f-b5a3-5cb59e6b73b3",
+      "device_id": "33333333-3333-4333-8333-333333333333",
+      "hostname": "core3",
+      "hostname_override": null,
+      "alias": null,
+      "virtual_ipv4": null,
+      "allocated_ipv4": "10.201.0.1",
+      "online": true,
+      "running": true,
+      "runtime_virtual_ipv4": "10.201.0.1/24",
+      "version": "2.6.4-8428a89d",
+      "error_msg": null,
+      "has_override": false,
+      "proxy_cidrs": [],
+      "temporary": true,
+      "credential_id": "member-fd36ed0e-1486-4c5f-b5a3-5cb59e6b73b3",
+      "credential_expiry_unix": 1893456000
+    }
+  ],
+  "temporary_peers": []
+}

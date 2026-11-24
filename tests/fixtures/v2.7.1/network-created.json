@@ -1,0 +1,12 @@
+{
+  "network_id": "a49af27d-3b11-458e-b258-7edc9a379867",
+  "display_name": "fixture-secure",
+  "network_name": "fixture-secure",
+  "network_secret": "fixture-secure-secret",
+  "networking_method": "Standalone",
+  "virtual_cidr": "10.201.0.0/24",
+  "secure_mode": true,
+  "public_server_url": null,
+  "peer_urls": [],
+  "member_count": 0
+}

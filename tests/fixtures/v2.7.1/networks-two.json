@@ -1,0 +1,24 @@
+{
+  "networks": [
+    {
+      "network_id": "66b08ebb-fbf8-47f4-b4b6-24aba31ee1d0",
+      "display_name": "home-central",
+      "network_name": "home-central",
+      "networking_method": "Manual",
+      "virtual_cidr": "10.144.144.0/24",
+      "secure_mode": false,
+      "member_count": 3,
+      "online_member_count": 3
+    },
+    {
+      "network_id": "a49af27d-3b11-458e-b258-7edc9a379867",
+      "display_name": "fixture-secure",
+      "network_name": "fixture-secure",
+      "networking_method": "Standalone",
+      "virtual_cidr": "10.201.0.0/24",
+      "secure_mode": true,
+      "member_count": 0,
+      "online_member_count": 0
+    }
+  ]
+}

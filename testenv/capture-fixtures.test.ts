@@ -221,7 +221,9 @@ test('every network_id / inst_id referenced in the fixtures equals index.network
   }
   // The per-device instance fixtures describe other (manual) instances, not the central network.
   const instanceFixtures = new Set(['instances-core2.json', 'instance-metas-core2.json', 'instance-config-core2.json',
-    'instance-info-core2.json', 'generate-config-ok.json', 'parse-config-ok.json'])
+    'instance-info-core2.json', 'generate-config-ok.json', 'parse-config-ok.json',
+    // The secure-network fixtures describe a second (temporary) network; checked separately below.
+    'network-created.json', 'network-secure.json', 'networks-two.json'])
   for (const { f, data } of allFixtures()) if (!instanceFixtures.has(f)) walk(data, f)
   const files = new Set(refs.map((r) => r.where.slice(0, r.where.indexOf('.json') + 5)))
   for (const f of ['network.json', 'networks.json', 'machines.json', 'list-route-core1.json', 'show-node-info-core3.json']) {
@@ -231,4 +233,26 @@ test('every network_id / inst_id referenced in the fixtures equals index.network
     refs.filter((r) => r.id.toLowerCase() !== networkId).map((r) => `${r.where} = ${r.id}`),
     [],
   )
+})
+
+test('network fixtures: secure network, temporary member, credentials and the empty ACL policy', () => {
+  const { networkId } = load('index.json')
+  const two = load('networks-two.json').networks
+  assert.equal(two.length, 2)
+  assert.equal(two[0].network_id, networkId)
+  const secure = load('network-secure.json')
+  assert.notEqual(secure.network_id, networkId)
+  assert.equal(two[1].network_id, secure.network_id)
+  assert.equal(load('network-created.json').network_id, secure.network_id)
+  assert.equal(secure.secure_mode, true)
+  assert.equal(secure.network_secret, 'fixture-secure-secret')
+  const temp = load('members-secure.json').members.filter((m: { temporary: boolean }) => m.temporary)
+  assert.equal(temp.length, 1)
+  assert.match(temp[0].credential_id, /^member-/)
+  const creds = load('credentials.json').credentials as { credential_id: string; credential_secret: string }[]
+  assert.equal(creds.length, 3)
+  assert.ok(creds.some((c) => c.credential_id === 'fixture-cred'))
+  assert.ok(creds.some((c) => c.credential_id.startsWith('member-')))
+  for (const c of [...creds, load('credential-created.json')]) assert.match(c.credential_secret, /^Zml4dHVyZS1jcmVkLT/)
+  assert.deepEqual(load('acl-policy-empty.json'), { policy: { default_action: 'allow', rules: [] } })
 })

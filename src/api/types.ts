@@ -23,11 +23,67 @@ export interface CentralNetworkSummary {
   online_member_count: number
 }
 
-export interface CentralNetworkDetail extends CentralNetworkSummary {
+/** `GET /networks/{id}`: the detail answer has no online_member_count. */
+export type CentralNetworkDetail = Omit<CentralNetworkSummary, 'online_member_count'> & {
   network_secret: string
-  virtual_cidr?: string | null
   public_server_url?: string | null
   peer_urls: string[]
+}
+
+export type NetworkingMethod = 'PublicServer' | 'Manual' | 'Standalone' | 'Gateway'
+
+/** The settings object `POST /networks` and `PATCH /networks/{id}` take (all keys required). */
+export interface NetworkSettings {
+  display_name: string
+  /** null: let the backend generate one (create) or keep the current one (update). */
+  network_name: string | null
+  networking_method: NetworkingMethod
+  public_server_url: string | null
+  peer_urls: string[]
+  virtual_cidr: string | null
+  secure_mode: boolean
+}
+
+export interface GatewayInfo {
+  enabled: boolean
+  peer_url?: string
+  relay_data?: boolean
+}
+
+// --- central ACL policy (easytier-web central_network/model.rs, plain serde JSON) ---
+
+export type AclAction = 'allow' | 'deny'
+export type AclProtocol = 'tcp' | 'udp' | 'icmp' | 'icmpv6' | 'any'
+export type AclSource = { type: 'all' } | { type: 'member'; member_id: string } | { type: 'group'; name: string }
+export type AclDestination =
+  | { type: 'all' }
+  | { type: 'member'; member_id: string }
+  | { type: 'subnet'; member_id: string; cidrs: string[] }
+export interface AclProtocolTarget {
+  protocol: AclProtocol
+  ports: string[]
+  stateful: boolean
+}
+export interface AclRule {
+  id: string
+  name: string
+  enabled: boolean
+  action: AclAction
+  sources: AclSource[]
+  destinations: AclDestination[]
+  protocols: AclProtocolTarget[]
+}
+export interface AclPolicy {
+  default_action: AclAction
+  rules: AclRule[]
+}
+
+export interface NetworkCredential {
+  credential_id: string
+  credential_secret: string
+  expiry_unix: number
+  reusable: boolean
+  online_peers: TemporaryPeer[]
 }
 
 export interface CentralNetworkMember {
