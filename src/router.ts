@@ -2,6 +2,7 @@ import { createRouter, createWebHashHistory, type LocationQueryRaw, type RouteLo
 import { ApiError, onUnauthorized } from './api/http'
 import { useSession } from './stores/session'
 import { useInventory } from './stores/inventory'
+import { useRuntime } from './stores/runtime'
 import { useToast } from './composables/useToast'
 import { t } from './i18n'
 import AppShell from './components/shell/AppShell.vue'
@@ -72,6 +73,7 @@ onUnauthorized(() => {
   redirecting = true
   useSession().reset()
   useInventory().reset()
+  useRuntime().reset()
   void router
     .replace({ name: 'login', query: { next: cur.fullPath } })
     .finally(() => {

@@ -128,17 +128,61 @@ export function classifyPeers(i: {
   })
 }
 
-export function pairStats(linksByDevice: Record<string, PeerLink[]>): { direct: number; relayed: number; rate: number | null } {
-  const pairs = new Map<string, boolean>()
-  for (const [reporter, links] of Object.entries(linksByDevice)) {
-    for (const l of links) {
-      if (l.kind !== 'member' || l.deviceId === null || l.deviceId === reporter) continue
-      const key = JSON.stringify([reporter, l.deviceId].sort())
-      pairs.set(key, (pairs.get(key) ?? false) || l.mode.type === 'p2p')
+/**
+ * Two member devices of one network, merged from both ends' reports. The representative report is a
+ * direct one when the pair is direct, else a relayed one, with the lowest non-null latency; ties (or no
+ * latency at all) go to the lexicographically smaller reporter. `a` is that reporter, `b` its peer, and
+ * `mode`/`latencyMs` come from that report.
+ */
+export interface DevicePair { networkId: string; a: string; b: string; direct: boolean; mode: LinkMode; latencyMs: number | null }
+
+interface Report { reporter: string; peer: string; link: PeerLink }
+
+function better(x: Report, y: Report): Report {
+  const lx = x.link.latencyMs
+  const ly = y.link.latencyMs
+  if (lx !== null && (ly === null || lx < ly)) return x
+  if (ly !== null && (lx === null || ly < lx)) return y
+  return y.reporter < x.reporter ? y : x
+}
+
+const cmp = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0)
+
+/**
+ * Device pairs per network from each reporter's links (network id → reporting device id → links).
+ * Only member links to another identified device count; infra and temporary nodes never form pairs.
+ * Each unordered pair is counted once per network and is direct if either end reports p2p.
+ */
+export function buildPairs(linksByNetwork: Record<string, Record<string, PeerLink[]>>): DevicePair[] {
+  const groups = new Map<string, { networkId: string; reports: Report[] }>()
+  for (const [networkId, byDevice] of Object.entries(linksByNetwork)) {
+    for (const [reporter, links] of Object.entries(byDevice)) {
+      for (const link of links) {
+        const peer = link.deviceId
+        if (link.kind !== 'member' || !peer || peer === reporter) continue
+        const key = JSON.stringify([networkId, ...[reporter, peer].sort()])
+        let g = groups.get(key)
+        if (!g) groups.set(key, (g = { networkId, reports: [] }))
+        g.reports.push({ reporter, peer, link })
+      }
     }
   }
+  const pairs: DevicePair[] = []
+  for (const { networkId, reports } of groups.values()) {
+    const direct = reports.some((r) => r.link.mode.type === 'p2p')
+    const rep = reports.filter((r) => (r.link.mode.type === 'p2p') === direct).reduce(better)
+    pairs.push({ networkId, a: rep.reporter, b: rep.peer, direct, mode: rep.link.mode, latencyMs: rep.link.latencyMs })
+  }
+  return pairs.sort((x, y) => cmp(x.networkId, y.networkId) || cmp(x.a, y.a) || cmp(x.b, y.b))
+}
+
+export function summarizePairs(pairs: DevicePair[]): { direct: number; relayed: number; rate: number | null } {
   let direct = 0
-  for (const d of pairs.values()) if (d) direct++
-  const relayed = pairs.size - direct
-  return { direct, relayed, rate: pairs.size === 0 ? null : direct / pairs.size }
+  for (const p of pairs) if (p.direct) direct++
+  return { direct, relayed: pairs.length - direct, rate: pairs.length === 0 ? null : direct / pairs.length }
+}
+
+/** Direct rate of one network's links (reporting device id → links). */
+export function pairStats(linksByDevice: Record<string, PeerLink[]>): { direct: number; relayed: number; rate: number | null } {
+  return summarizePairs(buildPairs({ '': linksByDevice }))
 }

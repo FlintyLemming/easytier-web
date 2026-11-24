@@ -18,6 +18,7 @@ vi.mock('../../src/api/client', () => ({
 import * as client from '../../src/api/client'
 import { useInventory } from '../../src/stores/inventory'
 import { useDeviceRuntime } from '../../src/composables/useDeviceRuntime'
+import { useRuntime } from '../../src/stores/runtime'
 
 const m = vi.mocked(client)
 const CORE1 = '11111111-1111-4111-8111-111111111111'
@@ -194,5 +195,18 @@ describe('useDeviceRuntime', () => {
     useInventory().networks = [{ ...networksFx.networks[0]!, networking_method: 'Gateway' }]
     await nextTick()
     expect(rt.links.value?.find((l) => l.peerId === 4242)).toMatchObject({ kind: 'infra', infra: 'gateway' })
+  })
+
+  it('shows links already in the runtime store before its own fetch resolves', async () => {
+    await useRuntime().fetch(CORE1, NET)
+    m.nodeRoutes.mockClear()
+    m.nodeRoutes.mockImplementation(() => new Promise(() => {}))
+    const { rt } = setup()
+    expect(rt.links.value?.map((l) => l.name).sort()).toEqual(['core2', 'core3'])
+    await vi.advanceTimersByTimeAsync(0)
+    expect(m.nodeRoutes).toHaveBeenCalledTimes(1)
+    expect(rt.loading.value).toBe(true)
+    expect(rt.links.value).not.toBeNull()
+    expect(rt.error.value).toBeNull()
   })
 })

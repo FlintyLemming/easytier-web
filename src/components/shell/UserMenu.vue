@@ -6,6 +6,7 @@ import { logout } from '../../api/client'
 import { setLocale } from '../../i18n'
 import { useSession } from '../../stores/session'
 import { useInventory } from '../../stores/inventory'
+import { useRuntime } from '../../stores/runtime'
 import UiMenu, { type UiMenuItem } from '../ui/UiMenu.vue'
 import ChangePasswordDialog from './ChangePasswordDialog.vue'
 
@@ -13,6 +14,7 @@ const { t, locale } = useI18n()
 const router = useRouter()
 const session = useSession()
 const inventory = useInventory()
+const runtime = useRuntime()
 const passwordOpen = ref(false)
 
 async function signOut() {
@@ -21,6 +23,7 @@ async function signOut() {
   } finally {
     session.reset()
     inventory.reset()
+    runtime.reset()
     await router.replace({ name: 'login' })
   }
 }

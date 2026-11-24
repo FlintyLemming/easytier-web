@@ -4,7 +4,7 @@ import peersFx from '../fixtures/v2.7.1/list-peer-core1.json'
 import membersFx from '../fixtures/v2.7.1/members.json'
 import machinesFx from '../fixtures/v2.7.1/machines.json'
 import type { CentralNetworkMember, NodePeerInfo, NodeRouteInfo, TemporaryPeer } from '../../src/api/types'
-import { classifyPeers, infraLabelFor, pairStats, type PeerLink } from '../../src/domain/connections'
+import { buildPairs, classifyPeers, infraLabelFor, pairStats, summarizePairs, type PeerLink } from '../../src/domain/connections'
 import { uuidToStr } from '../../src/lib/uuid'
 
 const routes = routesFx.routes as unknown as NodeRouteInfo[]
@@ -180,5 +180,53 @@ describe('pairStats', () => {
   it('ignores self links and empty input', () => {
     expect(pairStats({})).toEqual({ direct: 0, relayed: 0, rate: null })
     expect(pairStats({ A: [L('A', true)] }).rate).toBeNull()
+  })
+})
+
+const R = (deviceId: string | null, p2p: boolean, latencyMs: number | null, kind: PeerLink['kind'] = 'member'): PeerLink => ({
+  ...L(deviceId, p2p, kind), latencyMs,
+})
+
+describe('buildPairs', () => {
+  it('both ends report direct: one pair, lowest latency picks the representative', () => {
+    const pairs = buildPairs({ N: { A: [R('B', true, 2)], B: [R('A', true, 3)] } })
+    expect(pairs).toEqual([{ networkId: 'N', a: 'A', b: 'B', direct: true, mode: { type: 'p2p', tunnel: 'tcp' }, latencyMs: 2 }])
+  })
+
+  it('direct wins over a relayed report even when the relay is listed first', () => {
+    const pairs = buildPairs({ N: { A: [R('B', false, 40)], B: [R('A', true, 5)] } })
+    expect(pairs).toHaveLength(1)
+    expect(pairs[0]).toMatchObject({ a: 'B', b: 'A', direct: true, latencyMs: 5, mode: { type: 'p2p' } })
+  })
+
+  it('relayed pair: lowest non-null latency among the relay reports, ties go to the smaller reporter id', () => {
+    expect(buildPairs({ N: { A: [R('B', false, null)], B: [R('A', false, 30)] } })[0])
+      .toMatchObject({ a: 'B', b: 'A', direct: false, latencyMs: 30, mode: { type: 'relay' } })
+    expect(buildPairs({ N: { B: [R('A', false, 7)], A: [R('B', false, 7)] } })[0]).toMatchObject({ a: 'A', b: 'B' })
+    expect(buildPairs({ N: { B: [R('A', false, null)], A: [R('B', false, null)] } })[0])
+      .toMatchObject({ a: 'A', b: 'B', latencyMs: null })
+  })
+
+  it('infra, temporary, unidentified and self links are not pairs', () => {
+    expect(buildPairs({
+      N: { A: [R('Z', true, 1, 'infra'), R(null, true, 1, 'temporary'), R(null, true, 1), R('A', true, 1)] },
+    })).toEqual([])
+    expect(buildPairs({})).toEqual([])
+  })
+
+  it('the same two devices in two networks are two pairs; output sorted by network, a, b', () => {
+    const pairs = buildPairs({
+      N2: { B: [R('A', true, 1)] },
+      N1: { C: [R('A', false, 9)], A: [R('B', true, 4)] },
+    })
+    expect(pairs.map((p) => [p.networkId, p.a, p.b])).toEqual([['N1', 'A', 'B'], ['N1', 'C', 'A'], ['N2', 'B', 'A']])
+  })
+})
+
+describe('summarizePairs', () => {
+  const P = (direct: boolean) => ({ networkId: 'N', a: 'A', b: 'B', direct, mode: L('B', direct).mode, latencyMs: null })
+  it('counts direct and relayed pairs; rate is null without pairs', () => {
+    expect(summarizePairs([P(true), P(false), P(true), P(true)])).toEqual({ direct: 3, relayed: 1, rate: 0.75 })
+    expect(summarizePairs([])).toEqual({ direct: 0, relayed: 0, rate: null })
   })
 })
