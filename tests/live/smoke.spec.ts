@@ -327,3 +327,117 @@ test.describe('manual instances', () => {
     expect(await instancesNamed(page.request, MANUAL)).toEqual([])
   })
 })
+
+test.describe('networks page', () => {
+  const LIVE_NET = 'live-net'
+  const CORE3 = '33333333-3333-4333-8333-333333333333'
+
+  async function liveNetIds(api: APIRequestContext): Promise<string[]> {
+    const res = await api.get('/api/v1/networks')
+    if (!res.ok()) throw new Error(`network list failed: ${res.status()}`)
+    const nets = (await res.json()).networks as { network_id: string; display_name: string }[]
+    return nets.filter((n) => n.display_name === LIVE_NET).map((n) => n.network_id)
+  }
+
+  async function core3Runs(api: APIRequestContext, id: string): Promise<boolean> {
+    const res = await api.get(`/api/v1/machines/${CORE3}/networks`)
+    const list = (await res.json()) as { running_inst_ids?: UUID[] }
+    return (list.running_inst_ids ?? []).map(uuidToStr).includes(id)
+  }
+
+  test.afterEach(async ({}, testInfo) => {
+    await cleanUp(testInfo, `${LIVE_NET} networks`, async (api) => {
+      for (const id of await liveNetIds(api)) {
+        const res = await api.delete(`/api/v1/networks/${id}`)
+        if (!res.ok()) throw new Error(`cleanup DELETE ${id} failed: ${res.status()}`)
+      }
+      const left = await liveNetIds(api)
+      if (left.length > 0) throw new Error(`${LIVE_NET} networks left: ${left.join(', ')}`)
+    })
+  })
+
+  test('live smoke: create a secure network, temporary member, acl, credential, settings, delete', async ({ page }) => {
+    test.setTimeout(300_000)
+    await loginUi(page)
+    expect(await liveNetIds(page.request), `no ${LIVE_NET} network before the test`).toEqual([])
+
+    // 1. one network: /networks opens it
+    await page.goto('/#/networks')
+    const home = await networkId(page.request)
+    await expect(page).toHaveURL(new RegExp(`#/networks/${home}$`))
+    for (const name of ['core1', 'core2', 'lab-box']) await expect(page.getByTestId('member-row').filter({ hasText: name })).toHaveCount(1)
+
+    // 2. back to the list and create a secure standalone network
+    await page.getByRole('link', { name: '网络', exact: true }).last().click()
+    await page.getByRole('button', { name: '新建网络' }).click()
+    const create = page.getByRole('dialog', { name: '新建网络' })
+    await create.getByLabel('显示名').fill(LIVE_NET)
+    await create.getByRole('radio', { name: '独立' }).check()
+    await create.getByLabel('网段').fill('10.202.0.0/24')
+    await create.getByRole('checkbox', { name: '安全模式' }).check()
+    await create.getByRole('button', { name: '创建' }).click()
+    await expect(page.getByRole('heading', { level: 1, name: LIVE_NET })).toBeVisible()
+    const [net] = await liveNetIds(page.request)
+    expect(net).toBeTruthy()
+    await expect(page).toHaveURL(new RegExp(`#/networks/${net}$`))
+
+    // 3. core3 joins as a temporary member and runs
+    await page.getByRole('button', { name: '添加成员' }).click()
+    const add = page.getByRole('dialog', { name: '添加成员' })
+    await add.getByRole('checkbox', { name: /core3/ }).check()
+    await add.getByRole('checkbox', { name: '作为临时成员加入' }).check()
+    await add.getByLabel('有效期').selectOption({ label: '24 小时' })
+    await add.getByRole('button', { name: '添加 1 台设备' }).click()
+    const core3 = page.getByTestId('member-row').filter({ hasText: 'core3' })
+    await expect(core3.getByText('临时', { exact: true })).toBeVisible()
+    await expect(core3).toContainText('运行中', { timeout: 60_000 })
+
+    // 4. an ACL rule round trip
+    await page.getByRole('tab', { name: 'ACL' }).click()
+    await page.getByRole('button', { name: '添加规则' }).click()
+    const rule = page.getByRole('dialog', { name: '添加规则' })
+    await rule.getByLabel('名称').fill('live-rule')
+    await rule.getByRole('group', { name: '来源' }).getByRole('checkbox', { name: '全部成员' }).check()
+    await rule.getByRole('group', { name: '目标' }).getByRole('checkbox', { name: /^core3/ }).check()
+    await rule.getByLabel('端口 1').fill('22')
+    await rule.getByRole('button', { name: '完成' }).click()
+    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await expect(page.getByText('已保存 ACL')).toBeVisible()
+    const acl = await (await page.request.get(`/api/v1/networks/${net}/acl-policy`)).json()
+    const saved = acl.policy.rules.find((r: { name: string }) => r.name === 'live-rule')
+    expect(saved.protocols).toEqual([{ protocol: 'tcp', ports: ['22'], stateful: true }])
+
+    // 5. a credential: join info, then revoke
+    await page.getByRole('tab', { name: '凭据' }).click()
+    await page.getByRole('button', { name: '生成凭据' }).click()
+    const gen = page.getByRole('dialog', { name: '生成凭据' })
+    await gen.getByLabel('有效期').selectOption({ label: '1 小时' })
+    await gen.getByRole('button', { name: '生成', exact: true }).click()
+    const join = page.getByRole('dialog', { name: /^接入信息 · credential-/ })
+    const networkName = (await (await page.request.get(`/api/v1/networks/${net}`)).json()).network_name as string
+    await expect(join.getByRole('textbox')).toHaveValue(new RegExp(`--network-name ${networkName} --secure-mode --credential `))
+    const credId = ((await join.getByRole('heading').textContent()) ?? '').replace('接入信息 · ', '').trim()
+    await page.keyboard.press('Escape')
+    const credRow = page.getByTestId('credential-row').filter({ hasText: credId })
+    await credRow.getByRole('button', { name: `${credId} 的操作` }).click()
+    await page.getByRole('menuitem', { name: '吊销…' }).click()
+    await page.getByRole('dialog', { name: '吊销凭据' }).getByRole('button', { name: '吊销' }).click()
+    await expect(credRow).toHaveCount(0)
+
+    // 6. settings: a new subnet, confirmed
+    await page.getByRole('tab', { name: '设置' }).click()
+    await page.getByLabel('网段').fill('10.203.0.0/24')
+    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await page.getByRole('dialog', { name: '保存网络设置' }).getByRole('button', { name: '确认' }).click()
+    await expect(page.getByText('已保存网络设置')).toBeVisible()
+    expect((await (await page.request.get(`/api/v1/networks/${net}`)).json()).virtual_cidr).toBe('10.203.0.0/24')
+
+    // 7. delete: back to the list, and core3 drops the instance
+    await page.getByRole('button', { name: '删除网络…' }).click()
+    await page.getByRole('dialog', { name: '删除网络' }).getByRole('button', { name: '删除', exact: true }).click()
+    await expect(page).toHaveURL(/#\/networks\?list=1$/)
+    expect(await liveNetIds(page.request)).toEqual([])
+    await expect.poll(() => core3Runs(page.request, net!), { timeout: 90_000, intervals: [3000] }).toBe(false)
+    expect(await core3Runs(page.request, home)).toBe(true)
+  })
+})
