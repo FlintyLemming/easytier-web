@@ -5,10 +5,14 @@
 | 项目 | 值 |
 | --- | --- |
 | 主机 | `idc-ucloud` |
-| 容器 | `easytier-web` |
-| 数据目录（宿主机） | `/home/flintylemming/appdata/11211,22020-easytier-web/data`（容器内 `/app`；里面是 `et.db`、`et.db-wal`、`et.db-shm`） |
-| 旧镜像 | `easytier/easytier:v2.6.4`，上游 digest `sha256:91d6732ea5ff71542fdb99333d2ee7b168e973443114db84db061e452427d91e` |
-| 新镜像 | `easytier/easytier:v2.7.1`，上游 digest `sha256:24248ca25f55f97fde509af450124b31decd44421403518350c6f4109fb139ef`（镜像站 `mirror-hub.flinty.moe` 上的同一版本也可以，digest 应相同） |
+| 管理方式 | docker compose：`/home/flintylemming/appdata/11211,22020-easytier-web/compose.yaml`，里面有两个服务 `easytier-web` 和 `easytier-core`（本机的 core，`network_mode: host`） |
+| 容器 | `easytier-web`（`entrypoint: easytier-web-embed`，`command: --disable-registration`，`ET_DISABLE_REGISTRATION=true`，`TZ=Asia/Shanghai`，端口 `11211/tcp`、`22020/udp`，`./data:/app`） |
+| 数据目录（宿主机） | `/home/flintylemming/appdata/11211,22020-easytier-web/data`（容器内 `/app`；`et.db`、`et.db-wal`、`et.db-shm`，属主 flintylemming） |
+| 旧镜像 | compose 里写的是 `mirror-hub.flinty.moe/easytier/easytier:latest`，本机这个 `latest` 是 **2.6.4**：digest `sha256:91d6732ea5ff71542fdb99333d2ee7b168e973443114db84db061e452427d91e`（和上游 `easytier/easytier:v2.6.4` 相同；2026-11-24 只读查看） |
+| 新镜像 | `mirror-hub.flinty.moe/easytier/easytier:v2.7.1`（或 `easytier/easytier:v2.7.1`），上游 digest `sha256:24248ca25f55f97fde509af450124b31decd44421403518350c6f4109fb139ef` |
+| 主机上的工具 | 没有 `sqlite3`（2026-11-24 只读查看） |
+
+> **不要**在这台主机上执行 `docker compose pull` 或不带服务名的 `docker compose up`：两个服务都用 `:latest`，拉取后 `easytier-core` 也会被换成新版本。下面只操作 `easytier-web` 这一个服务。
 
 下面的命令都在 `idc-ucloud` 上执行。先设好变量：
 
@@ -26,7 +30,15 @@ BK="$APP/backups/$STAMP"
 - [`testenv/reports/migrate-rehearsal-2026-11-24.md`](../testenv/reports/migrate-rehearsal-2026-11-24.md)：合成数据上完整走一遍迁移向导、校验、单台回滚、整体回滚。
 - [`testenv/reports/prod-rehearsal-2026-11-24.md`](../testenv/reports/prod-rehearsal-2026-11-24.md)：用**生产数据库的副本**做同样的演练。
 
-## 2. 记录现状
+## 2. 升级前在 2.6.4 原版前端做的一件事
+
+生产库里有 **2 个已停用的组 A 实例**，存储的配置里还带着很早以前版本写进去的 `rpc_port` 字段。2.6.4 能读，v2.7.1 不认识这个字段：读取这两个实例时返回 500 `unknown field rpc_port`，迁移向导会把这两台设备列在「读取失败」里，手动实例页也读不出它们（生产副本演练确认，见报告）。
+
+升级前在 2.6.4 原版前端里，把组 A 中**已停用**的实例（共 4 个）逐个打开、不做任何修改直接保存一次。2.6.4 保存时只会去掉 `rpc_port`，其他字段不变，实例仍是停用状态（演练里逐字段比较过）。不再需要的停用实例也可以直接删除。运行中的实例不用处理：v2.7.1 第一次心跳时就会用 core 上报的配置把它们重写掉。
+
+升级后可以在迁移向导第 1 步确认：没有「读取失败」。
+
+## 3. 记录现状
 
 ```sh
 mkdir -p "$BK"
@@ -37,11 +49,17 @@ docker inspect -f 'ports={{json .HostConfig.PortBindings}} binds={{json .HostCon
 docker inspect -f 'compose={{index .Config.Labels "com.docker.compose.project.working_dir"}}' easytier-web
 ```
 
-- `image-digests.json` 应包含上表里 2.6.4 的 digest（镜像站的镜像也一样）。回滚就用它。
+- `image-digests.json` 应包含上表里 2.6.4 的 digest。回滚就用它。
 - `cmd` 里应有 `--disable-registration`。升级后参数必须**完全不变**。
-- `compose=` 后面有路径 → 这个容器由 docker compose 管理，第 4、8 步用「compose」那一种做法；为空 → 用「docker run」那一种。
+- `compose=` 后面应是 `/home/flintylemming/appdata/11211,22020-easytier-web`（compose 管理）。
 
-## 3. 停机备份
+再保存一份 compose 文件：
+
+```sh
+cp -a "$APP/compose.yaml" "$BK/compose.yaml"
+```
+
+## 4. 停机备份
 
 ```sh
 docker stop easytier-web
@@ -50,28 +68,29 @@ ls -la "$BK/data"                                     # et.db（以及 et.db-wal
 sqlite3 -readonly "$BK/data/et.db" 'PRAGMA integrity_check'   # 必须输出 ok
 ```
 
-主机上没有 `sqlite3` 时，把 `$BK/data` 复制到本机再检查。输出不是 `ok` 就**停下**：不升级，`docker start easytier-web` 恢复原状，再排查。
-
-**从这一步起，第 7 步之前任何时候都可以零成本回滚（第 8 步）。**
-
-## 4. 换成 v2.7.1（参数不变）
-
-**docker run 管理的容器**：保留旧容器（改名、不删除），用同样的参数创建新容器。
+这台主机上没有 `sqlite3`：把 `$BK/data` 复制到本机再检查（本机执行，`<STAMP>` 换成上面的值）：
 
 ```sh
-docker rename easytier-web easytier-web-2.6.4
-# 下面这条照抄原来的 docker run 命令，只把镜像换成 v2.7.1。
-# 参数以第 2 步打印的 entrypoint / cmd / ports / binds / restart 为准，例如：
-docker run -d --name easytier-web --restart unless-stopped \
-  -p 11211:11211 -p 22020:22020/udp \
-  -v "$APP/data:/app" \
-  --entrypoint easytier-web-embed \
-  easytier/easytier:v2.7.1 --disable-registration
+mkdir -p ~/et-backup-check && ssh idc-ucloud "tar -C '/home/flintylemming/appdata/11211,22020-easytier-web/backups/<STAMP>/data' -cf - ." | tar -x -C ~/et-backup-check
+sqlite3 ~/et-backup-check/et.db 'PRAGMA integrity_check'      # 必须输出 ok
 ```
 
-**compose 管理的容器**：在 compose 文件里把 `image:` 改成 `easytier/easytier:v2.7.1`（或镜像站的同一版本），其他不动，然后在 compose 文件所在目录执行 `docker compose up -d easytier-web`。
+输出不是 `ok` 就**停下**：不升级，`docker start easytier-web` 恢复原状，再排查。
 
-## 5. 检查
+**从这一步起，第 8 步之前任何时候都可以零成本回滚（第 9 步）。**
+
+## 5. 换成 v2.7.1（参数不变）
+
+在 `$APP/compose.yaml` 里只把 `easytier-web` 服务的 `image:` 改成 `mirror-hub.flinty.moe/easytier/easytier:v2.7.1`（`easytier-core` 服务不动），其他不动，然后：
+
+```sh
+cd "$APP"
+docker compose pull easytier-web          # 只拉 easytier-web 的新镜像
+docker compose up -d easytier-web         # 只重建 easytier-web
+docker image inspect mirror-hub.flinty.moe/easytier/easytier:v2.7.1 -f '{{json .RepoDigests}}'   # 应含上表的 2.7.1 digest
+```
+
+## 6. 检查
 
 ```sh
 docker logs --tail 50 easytier-web        # 没有 panic；数据库迁移完成
@@ -83,26 +102,30 @@ docker ps --filter name=easytier-web      # 状态 Up
 - 旧实例照常运行：随便打开几台设备，网络实例都在、在运行。
 - 已知、无害：每次给 2.6.4 core 下发**中央网络**实例时，日志里有一条 `ERROR Failed to cache runtime config after run: … Instance not found or API service not available`，实例照常运行（门禁报告）。
 
-有任何一项不对 → 第 8 步回滚。
+有任何一项不对 → 第 9 步回滚。
 
-## 6. 部署新前端
+## 7. 部署新前端
 
 按 README「部署」：本机 `npm run build`，把 `dist/` 复制到服务器，用 Caddy（`deploy/`）或现有的反向代理把 `/api/*` 转发到 easytier-web 的 11211 端口、其余路径托管 `dist/`。用原来的账号登录新前端。原版前端可以继续保留在 11211 端口，作为对照。
 
-## 7. 运行迁移向导
+## 8. 运行迁移向导
 
 新前端概览页顶部的横幅「检测到 N 个旧版网络实例…」→「开始迁移」，或者直接打开 `/#/migrate`。建议：
 
-1. 第一次只选一台设备（其余选「暂不迁移」），确认它迁移后校验「一致」、网络通，再迁移其余设备。已经迁移的设备在第 3 步显示「已是成员，跳过」。
-2. 第 4 步会先下载一份导出文件（含网络密钥），和第 3 步的备份放在一起。
+1. 第一次只选一台设备（其余选「暂不迁移」），确认它迁移后校验「一致」、网络通，再迁移其余设备。已经迁移的设备在向导第 3 步显示「已是成员，跳过」。
+2. 向导第 4 步会先下载一份导出文件（含网络密钥），和本手册第 4 步的备份放在一起。
 3. 迁移完成后，到校验报告看结果；离线的设备上线后在报告里「重新校验」。
-4. 单独配置过 ACL 的设备：迁移不会转换 ACL，按报告顶部的链接到网络的 ACL 页写成中央规则。
+4. 单独配置过 ACL 的设备：迁移不会转换 ACL，按报告顶部的链接到网络的 ACL 页写成中央规则。生产副本里的 5 份 ACL 配置全是空的（0 条规则），所以预计不会出现。
+5. **组 A 有多台设备共用同一个固定 IP**（生产副本里 38 个运行中的实例只有 15 个不同的地址）。中央网络里一个地址只能给一台设备（后端会拒绝重复），所以向导第 3 步会把共用地址的设备标为「固定 IP … 和 … 重复」，「下一步」不可用，直到每个地址只剩一台选了「迁移」。演练时每个地址保留按名称排第一的那台、其余选「暂不迁移」，一次迁移了 15 台。其余设备要么先在 2.6.4 原版前端给它们改成不重复的固定 IP，要么等向导支持「改为自动分配」（待定）。
+6. 组 B（4 个实例，全部停用、DHCP）默认「暂不迁移」，原样保留为手动实例。
 
-**第 7 步开始后再整体回滚，升级后的所有修改都会丢失**（新建的网络、成员、迁移结果）。单台设备有问题时，优先用校验报告里的「回滚这台…」。
+已知、无害：向导停用旧实例时，v2.7.1 会用 core 上报的运行配置覆盖存储的配置；2.6.4 的 core 不上报和系统主机名相同的 `hostname`，所以这类实例（生产副本里 12 个）在迁移记录里、以及「回滚这台…」重建出的实例里少了 `hostname` 这一行。core 没有这一行时用的就是系统主机名，实际效果相同。
 
-## 8. 回滚（整体）
+**第 8 步开始后再整体回滚，升级后的所有修改都会丢失**（新建的网络、成员、迁移结果）。单台设备有问题时，优先用校验报告里的「回滚这台…」。
 
-顺序：**停 web → 恢复备份 → 用旧镜像（2.6.4 的 digest）启动**。web 2.6.4 不能直接打开 v2.7.1 迁移过的数据库（启动即 panic：`Migration file of version '…' is missing`），所以必须恢复第 3 步的备份。
+## 9. 回滚（整体）
+
+顺序：**停 web → 恢复备份 → 用旧镜像（2.6.4 的 digest）启动**。web 2.6.4 不能直接打开 v2.7.1 迁移过的数据库（启动即 panic：`Migration file of version '…' is missing`），所以必须恢复第 4 步的备份。
 
 ```sh
 docker stop easytier-web
@@ -110,20 +133,12 @@ mv "$APP/data" "$APP/data.failed-$STAMP"          # 保留现场，不删除
 cp -a "$BK/data" "$APP/data"
 ```
 
-**docker run 管理的容器**（第 4 步保留了旧容器）：
+然后把 `easytier-web` 服务的 `image:` 改回 `mirror-hub.flinty.moe/easytier/easytier@sha256:91d6732ea5ff71542fdb99333d2ee7b168e973443114db84db061e452427d91e`（第 3 步记下的 digest；本机已有这个镜像，不需要拉取），或者直接用 `cp -a "$BK/compose.yaml" "$APP/compose.yaml"` 换回原来的文件（原来的 `:latest` 在本机仍指向 2.6.4，只要没有 pull 过），然后 `docker compose up -d easytier-web`。
 
-```sh
-docker rename easytier-web easytier-web-2.7.1
-docker rename easytier-web-2.6.4 easytier-web
-docker start easytier-web
-```
-
-**compose 管理的容器**：把 compose 文件里的 `image:` 改成 `easytier/easytier@sha256:91d6732ea5ff71542fdb99333d2ee7b168e973443114db84db061e452427d91e`（第 2 步记下的 digest），`docker compose up -d easytier-web`。
-
-回滚后会发生什么（合成数据演练已验证，见 `testenv/reports/migrate-rehearsal-2026-11-24.md`）：
+回滚后会发生什么（合成数据和生产副本的演练都验证过，见第 1 步的报告）：
 
 - web 2.6.4 在每台设备第一次心跳时（十几秒内），**自动删除** v2.7.1 下发的中央网络实例，并按数据库重新运行迁移时删掉的旧实例。**不需要手动清理。**
-- 在 v2.7.1 上用「回滚这台…」重建过旧实例的设备：web 2.6.4 会把这个实例在数据库里的来源改成 `webhook`（配置不变）。不启用 webhook 时没有任何影响。想让它完全回到原样：恢复数据库后、启动 web 2.6.4 之前，重启这台设备上的 easytier-core。
+- 在 v2.7.1 上被停用又重新启用、或者用「回滚这台…」重建过旧实例的设备（包括迁移失败后自动回滚的设备）：core 会继续运行 v2.7.1 最后下发的那份配置，直到 easytier-core 重启；和备份里的配置相比只差系统主机名那一行 `hostname`，重建过的还会被 web 2.6.4 把数据库里的来源改成 `webhook`（配置不变）。不启用 webhook 时都没有实际影响。想让它们完全回到原样：恢复数据库后、启动 web 2.6.4 **之前**，重启这些设备上的 easytier-core（演练里这样做之后，全部实例的 TOML 和升级前逐字节相同）。
 - 浏览器里的本地迁移记录（localStorage `et.migrate.<用户名>`）已经过时。回滚后校验都会是「等待上线后校验」，报告里清除不了；在浏览器开发者工具里删掉这个键即可。
 
-确认一切正常后，可以删除 `easytier-web-2.7.1` 容器和 `data.failed-*` 目录；备份 `$BK` 建议至少保留到迁移完成后一周。
+确认一切正常后，可以删除 `data.failed-*` 目录；备份 `$BK` 建议至少保留到迁移完成后一周。
