@@ -119,6 +119,36 @@ describe('ConfigEditor form', () => {
     expect(control(section(w, 'network'), '网络名').element.value).toBe('lab-manual')
   })
 
+  it('a static instance may have no virtual IP, as the core allows', async () => {
+    // A core reads back `virtual_ipv4` / `network_length` only when the node has an address (a relay
+    // has none), so such an instance arrives as `dhcp: false` with neither field.
+    const value = input((raw) => { delete raw.virtual_ipv4; delete raw.network_length })
+    const w = mountEditor({ modelValue: value })
+    const net = section(w, 'network')
+    expect(lastValid(w)).toBe(true)
+    expect(net.text()).not.toContain('必填')
+    const flush = (w.vm as unknown as { flush(): Promise<NetworkConfig | null> }).flush
+    await expect(flush()).resolves.toStrictEqual(value)
+
+    // An address that is there must be one; a blank prefix length means the core's default of 24.
+    await control(net, '虚拟 IPv4').setValue('10.88.0')
+    expect(lastValid(w)).toBe(false)
+    expect(net.text()).toContain('请输入 IPv4 地址')
+    await control(net, '虚拟 IPv4').setValue('10.88.0.9')
+    expect(lastValid(w)).toBe(true)
+    await control(net, '前缀长度').setValue('40')
+    expect(lastValid(w)).toBe(false)
+    expect(net.text()).toContain('前缀长度范围 1–32')
+    await control(net, '前缀长度').setValue('16')
+    expect(lastDraft(w)).toMatchObject({ virtual_ipv4: '10.88.0.9', network_length: 16 })
+
+    // Clearing both again gives back the config as read.
+    await control(net, '前缀长度').setValue('')
+    await control(net, '虚拟 IPv4').setValue('')
+    expect(lastValid(w)).toBe(true)
+    expect(lastDraft(w)).toStrictEqual(value)
+  })
+
   it('a port outside 1–65535 makes the draft invalid', async () => {
     const w = mountEditor({ modelValue: input() })
     expect(lastValid(w)).toBe(true)
@@ -259,8 +289,9 @@ describe('ConfigEditor VPN portal (legacy cores)', () => {
     expect(lastValid(w)).toBe(false)
   })
 
-  it('enabling the legacy portal fills in defaults; disabling drops only the switch', async () => {
-    const w = mountEditor({ modelValue: input(withoutLegacy), coreVersion: '2.6.4' })
+  it('enabling the legacy portal fills in defaults; disabling again changes nothing', async () => {
+    const value = input(withoutLegacy)
+    const w = mountEditor({ modelValue: value, coreVersion: '2.6.4' })
     const vpn = section(w, 'vpnPortal')
     await control(vpn, '启用').setValue(true)
     expect(lastDraft(w)).toMatchObject({
@@ -270,12 +301,38 @@ describe('ConfigEditor VPN portal (legacy cores)', () => {
       vpn_portal_client_network_len: 24,
     })
 
-    // Off is the switch's default, so the field goes; the port and network stay for next time.
+    // Off is the switch's default, so the field goes; the port and network it hides go back to how
+    // they were read, which here is absent.
     await control(vpn, '启用').setValue(false)
     const off = lastDraft(w)
-    expect('enable_vpn_portal' in off).toBe(false)
-    expect(off).toMatchObject({ vpn_portal_listen_port: 22022, vpn_portal_client_network_addr: '10.14.14.0', vpn_portal_client_network_len: 24 })
+    expect(off).toStrictEqual(value)
+    expect(toBackendNetworkConfig(off)).toStrictEqual(toBackendNetworkConfig(value))
     expect(control(vpn, '启用').element.checked).toBe(false)
+  })
+
+  it('disabling the legacy portal puts back the port and network as read', async () => {
+    const value = input()
+    const w = mountEditor({ modelValue: value, coreVersion: '2.6.4' })
+    const vpn = section(w, 'vpnPortal')
+    await control(vpn, '监听端口').setValue('30000')
+    await control(vpn, '客户端网段').setValue('10.77.0.0/16')
+    await control(vpn, '启用').setValue(false)
+
+    expect(lastDraft(w)).toStrictEqual(input((raw) => delete raw.enable_vpn_portal))
+
+    await control(vpn, '启用').setValue(true)
+    expect(lastDraft(w)).toStrictEqual(value)
+    expect(control(vpn, '监听端口').element.value).toBe('22022')
+    expect(control(vpn, '客户端网段').element.value).toBe('10.88.1.0/24')
+  })
+
+  it('a new config from the parent becomes what disabling the legacy portal goes back to', async () => {
+    const w = mountEditor({ modelValue: input(withoutLegacy), coreVersion: '2.6.4' })
+    const next = input((raw) => { raw.vpn_portal_listen_port = 30000 })
+    await w.setProps({ modelValue: next })
+    await control(section(w, 'vpnPortal'), '启用').setValue(false)
+
+    expect(lastDraft(w)).toMatchObject({ vpn_portal_listen_port: 30000, vpn_portal_client_network_addr: '10.88.1.0' })
   })
 
   it('generates TOML without the legacy fields', async () => {
@@ -378,6 +435,17 @@ describe('ConfigEditorDialog', () => {
     mtu.dispatchEvent(new Event('input'))
     await flushPromises()
     expect(button('保存')!.disabled).toBe(true)
+  })
+
+  it('saves a static instance that has no virtual IP', async () => {
+    const value = input((raw) => { delete raw.virtual_ipv4; delete raw.network_length })
+    const w = mountDialog({ initial: value })
+    await flushPromises()
+    expect(button('保存')!.disabled).toBe(false)
+    button('保存')!.click()
+    await flushPromises()
+
+    expect(w.emitted('action')).toEqual([['save', value]])
   })
 
   it('does not emit when the TOML does not parse', async () => {

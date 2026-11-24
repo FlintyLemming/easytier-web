@@ -6,7 +6,7 @@ import CheckboxField from './CheckboxField.vue'
 import EditorSection from './EditorSection.vue'
 import ListField from './ListField.vue'
 import NumberField from './NumberField.vue'
-import { cidrRule, flagOn, ipv4Rule, networkLengthRule, requiredRule, setFlag, useInvalidText } from './rules'
+import { cidrRule, flagOn, networkLengthRule, requiredRule, setFlag, useInvalidText, virtualIpv4Rule } from './rules'
 
 // Instance mode only: in a central network these fields belong to the network.
 const props = defineProps<{ draft: NetworkConfig }>()
@@ -16,6 +16,18 @@ const invalid = useInvalidText()
 function setHostname(value: string) {
   if (value) props.draft.hostname = value
   else delete props.draft.hostname
+}
+
+// Blank leaves the field out, as a core reads back a static node without an address (or a prefix
+// length, which then defaults to 24).
+function setVirtualIpv4(value: string) {
+  if (value) props.draft.virtual_ipv4 = value
+  else delete props.draft.virtual_ipv4
+}
+
+function setNetworkLength(value: number | null | undefined) {
+  if (value === null || value === undefined) delete props.draft.network_length
+  else props.draft.network_length = value
 }
 </script>
 
@@ -51,8 +63,8 @@ function setHostname(value: string) {
         :label="t('config.field.virtualIpv4')"
         placeholder="10.144.144.1"
         mono
-        :error="invalid(ipv4Rule(draft.virtual_ipv4 ?? ''))"
-        @update:model-value="(v) => (draft.virtual_ipv4 = v)"
+        :error="invalid(virtualIpv4Rule(draft.virtual_ipv4))"
+        @update:model-value="setVirtualIpv4"
       />
       <NumberField
         :model-value="draft.network_length"
@@ -61,7 +73,7 @@ function setHostname(value: string) {
         :min="1"
         :max="32"
         :error="invalid(networkLengthRule(draft.network_length))"
-        @update:model-value="(v) => (draft.network_length = v ?? NaN)"
+        @update:model-value="setNetworkLength"
       />
     </div>
     <UiInput :model-value="draft.hostname ?? ''" :label="t('config.field.hostname')" autocomplete="off" @update:model-value="setHostname" />

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { createVpnPortalConfig, usesLegacyVpn } from '../../domain/vpnPortal'
+import { createVpnPortalConfig, LEGACY_VPN_FIELDS, usesLegacyVpn } from '../../domain/vpnPortal'
 import type { NetworkConfig, VpnPortalClientConfig } from '../../lib/networkConfig'
 import UiInput from '../ui/UiInput.vue'
 import AddButton from './AddButton.vue'
@@ -22,7 +22,12 @@ import {
 } from './rules'
 import { FIELD_CLASS, LABEL_CLASS, REMOVE_CLASS } from './styles'
 
-const props = defineProps<{ draft: NetworkConfig; coreVersion: string }>()
+const props = defineProps<{
+  draft: NetworkConfig
+  coreVersion: string
+  /** The legacy fields the editor opened with (see `splitLegacyVpn`). */
+  openedLegacy: Record<string, unknown>
+}>()
 const { t } = useI18n()
 const invalid = useInvalidText()
 const clientsId = useId()
@@ -33,11 +38,21 @@ const legacy = computed(() => usesLegacyVpn(props.coreVersion, props.draft))
 
 // --- legacy: one shared WireGuard config for a client network ---
 
-// Like any switch, off (the default) leaves `enable_vpn_portal` out; the port and network stay.
+// Like any switch, off (the default) leaves `enable_vpn_portal` out. The port and network are hidden
+// while off, so they go back to how they were read: turning the portal on and off again changes
+// nothing, and values the config already had are there next time.
 function setLegacyOn(on: boolean) {
   const d = props.draft
   setFlag(d, 'enable_vpn_portal', on)
-  if (!on) return
+  if (!on) {
+    const rec = d as unknown as Record<string, unknown>
+    for (const field of LEGACY_VPN_FIELDS) {
+      if (field === 'enable_vpn_portal') continue
+      if (field in props.openedLegacy) rec[field] = props.openedLegacy[field]
+      else delete rec[field]
+    }
+    return
+  }
   d.vpn_portal_listen_port ??= 22022
   if (!d.vpn_portal_client_network_addr && d.vpn_portal_client_network_len === undefined) {
     d.vpn_portal_client_network_addr = '10.14.14.0'

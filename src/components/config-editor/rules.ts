@@ -53,7 +53,13 @@ const intIn = (v: number | null | undefined, min: number, max: number) =>
   typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max
 
 export const portRule: Rule<number | null | undefined> = (v) => (intIn(v, 1, 65535) ? null : 'port')
-export const networkLengthRule: Rule<number | null | undefined> = (v) => (intIn(v, 1, 32) ? null : 'networkLength')
+
+// With DHCP off a node may still have no virtual IP (a relay, say: the core then sets no address),
+// and a blank prefix length means the core's default of 24. So both may stay blank.
+export const virtualIpv4Rule: Rule<string | undefined> = (v) => (v ? ipv4Rule(v) : null)
+export const networkLengthRule: Rule<number | null | undefined> = (v) =>
+  v === null || v === undefined || intIn(v, 1, 32) ? null : 'networkLength'
+
 /** Blank means the default MTU. */
 export const mtuRule: Rule<number | null | undefined> = (v) => (v === null || v === undefined || intIn(v, 400, 1380) ? null : 'mtu')
 
@@ -102,7 +108,7 @@ export function draftValid(d: NetworkConfig, opts: { mode: 'member' | 'instance'
   if (opts.mode === 'instance') {
     checks.push(requiredRule(d.network_name))
     each(d.peer_urls, requiredRule)
-    if (!flagOn(d, 'dhcp')) checks.push(ipv4Rule(d.virtual_ipv4 ?? ''), networkLengthRule(d.network_length))
+    if (!flagOn(d, 'dhcp')) checks.push(virtualIpv4Rule(d.virtual_ipv4), networkLengthRule(d.network_length))
     each(d.proxy_cidrs, cidrRule)
   }
   each(d.listener_urls, listenerRule)
