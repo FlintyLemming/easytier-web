@@ -13,6 +13,7 @@ import NotInNetworkState from '../components/device-detail/NotInNetworkState.vue
 import OverviewCard from '../components/device-detail/OverviewCard.vue'
 import { errorMessage, pushIfStill, refreshInventoryFresh } from '../components/device-detail/writes'
 import DeleteDeviceDialog from '../components/devices/DeleteDeviceDialog.vue'
+import InstancesPanel from '../components/instances/InstancesPanel.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import SkeletonRows from '../components/ui/SkeletonRows.vue'
 import UiButton from '../components/ui/UiButton.vue'
@@ -51,10 +52,13 @@ const member = computed(() => {
 })
 const ip = computed(() => (member.value ? memberIp(member.value) : null))
 /**
- * Webhook mode (spec §6.9) or a device without a machine id yet: header + overview only — no central
- * network cards, no proxy-rpc, no alias/delete (manual instances arrive with a later plan).
+ * Webhook mode (spec §6.9) or a device without a machine id yet: no central network cards, no
+ * proxy-rpc, no alias/delete. In webhook mode the left column holds the manual instances instead; a
+ * device without a machine id shows the overview only.
  */
 const limited = computed(() => session.webhookMode || !!device.value?.pending)
+/** Webhook mode has no central networks, so no instance is excluded as one. */
+const NO_CENTRAL_IDS: string[] = []
 const online = computed(() => device.value?.online ?? false)
 /** Remount per-network editors when switching networks so no draft leaks across. */
 const networkKey = computed(() => `${machineId.value}:${networkId.value ?? ''}`)
@@ -155,7 +159,7 @@ async function confirmDelete(block: boolean) {
         @delete="deleteTarget = device"
       />
 
-      <div v-if="limited" class="w-full max-w-[560px]">
+      <div v-if="device.pending" class="w-full max-w-[560px]">
         <OverviewCard
           :device="device"
           :ip="ip"
@@ -168,8 +172,11 @@ async function confirmDelete(block: boolean) {
 
       <div v-else class="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
         <div class="flex min-w-0 flex-col gap-4">
+          <InstancesPanel v-if="session.webhookMode" :key="`instances:${device.id}`" :device="device" :central-ids="NO_CENTRAL_IDS" />
+
           <NotInNetworkState
-            v-if="device.networks.length === 0"
+            v-else-if="device.networks.length === 0"
+            :machine-id="device.id"
             :primary-name="inventory.primaryNetwork?.display_name ?? null"
             :busy="joining"
             @join="joinPrimary"
@@ -228,6 +235,7 @@ async function confirmDelete(block: boolean) {
             :network-name="inNetwork ? networkName : null"
             :network-cidr="inNetwork ? (network?.virtual_cidr ?? null) : null"
             :now="now"
+            :show-network="!session.webhookMode"
           />
         </aside>
       </div>

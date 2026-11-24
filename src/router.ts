@@ -10,6 +10,7 @@ import LoginPage from './pages/LoginPage.vue'
 import RegisterPage from './pages/RegisterPage.vue'
 import DevicesPage from './pages/DevicesPage.vue'
 import DeviceDetailPage from './pages/DeviceDetailPage.vue'
+import DeviceInstancesPage from './pages/DeviceInstancesPage.vue'
 
 /** Fully percent-encode query values (`next=%2Fdevices%2F…`) so the login URL is unambiguous. */
 function stringifyQuery(query: LocationQueryRaw | undefined): string {
@@ -37,6 +38,7 @@ export const router = createRouter({
         { path: 'devices', name: 'devices', component: DevicesPage },
         { path: 'devices/:machineId', name: 'device', component: DeviceDetailPage },
         { path: 'devices/:machineId/networks/:networkId', name: 'device-network', component: DeviceDetailPage },
+        { path: 'devices/:machineId/instances', name: 'device-instances', component: DeviceInstancesPage },
       ],
     },
   ],

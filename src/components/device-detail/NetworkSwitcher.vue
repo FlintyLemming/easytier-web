@@ -37,6 +37,10 @@ const items = computed<UiMenuItem[]>(() => [
     hint: canJoin.value ? undefined : t('detail.switcher.allJoined'),
     onSelect: () => emit('join'),
   },
+  {
+    label: t('detail.switcher.instances'),
+    onSelect: () => void router.push({ name: 'device-instances', params: { machineId: props.device.id } }),
+  },
 ])
 </script>
 
