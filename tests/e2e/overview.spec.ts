@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test'
-import { fleetMock } from './fleet'
-import { mockApi } from './mockApi'
+import { expect, test, type Page } from '@playwright/test'
+import { fleetLocationCache, fleetMock } from './fleet'
+import { fixture, mockApi } from './mockApi'
 import { strToUuid } from '../../src/lib/uuid'
 
 test('overview heading, nav state and logo navigation', async ({ page }) => {
@@ -146,4 +146,200 @@ test('webhook mode has no connection quality and no unjoined rows', async ({ pag
   await expect(page.getByTestId('attention-list')).toBeVisible()
   await expect(page.getByTestId('connection-quality')).toHaveCount(0)
   await expect(page.getByText('还没加入网络')).toHaveCount(0)
+})
+
+test.describe('node map', () => {
+  test.use({ viewport: { width: 1280, height: 800 } })
+
+  /** The fleet with the two offline devices' cached locations (上海, 法兰克福) seeded. */
+  async function openFleet(page: Page) {
+    const { overrides, ids } = fleetMock()
+    const cache = JSON.stringify(fleetLocationCache(ids))
+    await page.addInitScript((c) => localStorage.setItem('et.locations.admin', c), cache)
+    const api = await mockApi(page, overrides)
+    await page.goto('/#/')
+    const map = page.getByTestId('node-map')
+    await expect(map.locator('[data-cluster]').first()).toBeVisible()
+    return { map, ...api }
+  }
+  const cluster = (map: ReturnType<Page['getByTestId']>, prefix: string) => map.locator(`[data-cluster][aria-label^="${prefix}"]`)
+
+  test('focus view shows the East Asian clusters and edge chips for the far ones', async ({ page }) => {
+    const { map } = await openFleet(page)
+    for (const city of ['上海', '南京', '北京', '东京']) await expect(cluster(map, city)).toHaveCount(1)
+    await expect(map.locator('[data-cluster][aria-label="香港 等 2 地，3 台设备，3 台在线"]')).toHaveCount(1)
+    await expect(cluster(map, '洛杉矶')).toHaveCount(0)
+    const box = (await map.locator('svg').first().boundingBox())!
+    const mid = box.x + box.width / 2
+    const la = map.getByRole('button', { name: '洛杉矶，1 台设备，切换到世界视图' })
+    await expect(la).toHaveText('洛杉矶 1 →')
+    const laBox = (await la.boundingBox())!
+    expect(laBox.x).toBeGreaterThan(mid)
+    const fra = map.getByRole('button', { name: '法兰克福，1 台设备，切换到世界视图' })
+    await expect(fra).toHaveText('← 法兰克福 1')
+    const fraBox = (await fra.boundingBox())!
+    expect(fraBox.x + fraBox.width).toBeLessThan(mid)
+  })
+
+  test('hovering a cluster lists its devices; clicking it filters the device list', async ({ page }) => {
+    const { map } = await openFleet(page)
+    const sh = cluster(map, '上海')
+    await sh.hover()
+    const card = map.getByTestId('map-hover-card')
+    await expect(card).toBeVisible()
+    await expect(card).toContainText('上海')
+    await expect(card).toContainText('6/7 在线')
+    await expect(card.getByTestId('hover-device')).toHaveCount(6)
+    await expect(card).toContainText('还有 1 台 · 点击查看全部')
+    await page.mouse.move(5, 5)
+    await expect(card).toHaveCount(0)
+    await sh.click()
+    await expect.poll(() => decodeURIComponent(page.url())).toMatch(/#\/devices\?city=上海$/)
+    await expect(page.getByRole('row').filter({ has: page.getByTestId('device-name') })).toHaveCount(7)
+  })
+
+  test('keyboard focus shows the card, Esc hides it, Enter opens the filtered list', async ({ page }) => {
+    const { map } = await openFleet(page)
+    const nj = cluster(map, '南京')
+    await nj.focus()
+    const card = map.getByTestId('map-hover-card')
+    await expect(card).toContainText('3/3 在线')
+    await page.keyboard.press('Escape')
+    await expect(card).toHaveCount(0)
+    await page.keyboard.press('Enter')
+    await expect.poll(() => decodeURIComponent(page.url())).toMatch(/#\/devices\?city=南京$/)
+  })
+
+  test('an edge chip switches to the world view', async ({ page }) => {
+    const { map } = await openFleet(page)
+    const world = page.getByRole('button', { name: '世界', exact: true })
+    await expect(world).toHaveAttribute('aria-pressed', 'false')
+    await expect(page.getByRole('button', { name: '聚焦', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await map.getByText('← 法兰克福 1').click()
+    await expect(world).toHaveAttribute('aria-pressed', 'true')
+    await expect(cluster(map, '洛杉矶')).toHaveCount(1)
+    await expect(cluster(map, '法兰克福')).toHaveAttribute('data-offline', '')
+    await expect(cluster(map, '洛杉矶')).not.toHaveAttribute('data-offline', '')
+    await expect(map.getByText('洛杉矶 1 →')).toHaveCount(0)
+  })
+
+  test('connection arcs, relays dashed, and the 连接线 toggle', async ({ page }) => {
+    const { map } = await openFleet(page)
+    await expect.poll(() => map.locator('[data-arc]').count()).toBeGreaterThan(0)
+    await expect.poll(() => map.locator('[data-relay]').count()).toBeGreaterThanOrEqual(1)
+    await expect(map.locator('[data-relay]').first()).toHaveAttribute('stroke-dasharray', '4 4')
+    const legend = map.getByTestId('map-legend')
+    await expect(legend).toContainText('直连 P2P')
+    await expect(legend).toContainText('中继')
+    await expect(legend).toContainText('全部离线')
+    const lines = page.getByRole('button', { name: '连接线' })
+    await expect(lines).toHaveAttribute('aria-pressed', 'true')
+    await lines.click()
+    await expect(lines).toHaveAttribute('aria-pressed', 'false')
+    await expect(map.locator('[data-arc]')).toHaveCount(0)
+    await expect(legend).toHaveCount(0)
+  })
+
+  test('location ranking rows link to the filtered device list', async ({ page }) => {
+    await openFleet(page)
+    const ranking = page.getByTestId('location-ranking')
+    await expect(ranking).toContainText('按位置 · 在线/总数')
+    const rows = ranking.getByTestId('ranking-row')
+    await expect(rows.first()).toContainText('上海')
+    await expect(rows.first()).toContainText('6/7')
+    const local = rows.filter({ hasText: '本地网络' })
+    await expect(local).toContainText('无公网位置')
+    await expect(local).toContainText('2/2')
+    await local.getByRole('link').click()
+    await expect.poll(() => decodeURIComponent(page.url())).toMatch(/#\/devices\?city=本地网络$/)
+    const listed = page.getByRole('row').filter({ has: page.getByTestId('device-name') })
+    await expect(listed).toHaveCount(2)
+    await expect(listed.nth(0)).toContainText('lab-a')
+    await expect(listed.nth(1)).toContainText('lab-b')
+  })
+
+  test('header counts located and local devices', async ({ page }) => {
+    await openFleet(page)
+    const section = page.getByTestId('map-section')
+    await expect(section.getByRole('heading', { name: '节点分布' })).toBeVisible()
+    await expect(section).toContainText('18 台已定位 · 2 台在本地网络')
+    await expect(section).not.toContainText('台未定位')
+    await expect(section).not.toContainText('--geoip-db')
+  })
+
+  test('the overview makes no third-party requests', async ({ page, baseURL }) => {
+    const urls: string[] = []
+    page.on('request', (r) => urls.push(r.url()))
+    const { map } = await openFleet(page)
+    await expect.poll(() => map.locator('[data-arc]').count()).toBeGreaterThan(0)
+    const origin = new URL(baseURL!).origin
+    expect(urls.length).toBeGreaterThan(0)
+    expect(urls.filter((u) => !u.startsWith(origin + '/'))).toEqual([])
+  })
+
+  test('without locatable devices the map shows its empty state', async ({ page }) => {
+    await mockApi(page)
+    await page.goto('/#/')
+    const section = page.getByTestId('map-section')
+    await expect(section.getByText('还没有可以定位的设备')).toBeVisible()
+    await expect(section.getByText('设备的位置来自公网 IP。在本地网络中、或者位置未知的设备不会显示在地图上。')).toBeVisible()
+    await expect(section.locator('[data-cluster]')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '聚焦', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '世界', exact: true })).toHaveCount(0)
+    const local = page.getByTestId('ranking-row').filter({ hasText: '本地网络' })
+    await expect(local).toContainText('3/3')
+    await expect(section).toContainText('0 台已定位 · 3 台在本地网络')
+    expect(await page.locator('body').innerText()).not.toContain('NaN')
+    expect(await section.locator('svg').first().innerHTML()).not.toContain('NaN')
+  })
+
+  test('country-only locations make one dot and a precision hint', async ({ page }) => {
+    await mockApi(page, {
+      'GET /machines': () => {
+        const data = fixture('machines.json')
+        for (const m of data.machines) m.location = { country: '中国' }
+        return data
+      },
+    })
+    await page.goto('/#/')
+    const map = page.getByTestId('node-map')
+    const clusters = map.locator('[data-cluster]')
+    await expect(clusters).toHaveCount(1)
+    await expect(clusters.first()).toHaveAttribute('aria-label', '中国，3 台设备，3 台在线')
+    await expect(clusters.first()).toContainText('中国')
+    const hint = page.getByTestId('map-precision-hint')
+    await expect(hint).toBeVisible()
+    await expect(hint).toContainText('--geoip-db')
+    await expect(hint.locator('.font-mono')).toHaveText('--geoip-db')
+  })
+
+  test('the map follows the width of its container', async ({ page }) => {
+    const { map } = await openFleet(page)
+    const svg = map.locator('svg').first()
+    const before = (await svg.boundingBox())!.width
+    await page.setViewportSize({ width: 1100, height: 800 })
+    await expect.poll(async () => (await svg.boundingBox())!.width).toBeLessThan(before - 50)
+    const box = (await map.boundingBox())!
+    expect((await svg.boundingBox())!.width).toBeCloseTo(box.width, 0)
+  })
+
+  test('narrow screens stack the ranking under the map without horizontal scroll', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    const { map } = await openFleet(page)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+    const mapBox = (await map.boundingBox())!
+    const rankBox = (await page.getByTestId('location-ranking').boundingBox())!
+    expect(rankBox.y).toBeGreaterThan(mapBox.y + mapBox.height)
+    expect((await map.locator('svg').first().boundingBox())!.height).toBe(260)
+  })
+})
+
+test('webhook mode draws the map without connection lines', async ({ page }) => {
+  await mockApi(page, {}, { webhook: true })
+  await page.goto('/#/')
+  const section = page.getByTestId('map-section')
+  await expect(section).toContainText('0 台已定位 · 3 台在本地网络')
+  await expect(page.getByRole('button', { name: '连接线' })).toHaveCount(0)
+  await expect(section.locator('[data-arc]')).toHaveCount(0)
+  await expect(section.getByTestId('map-legend')).toHaveCount(0)
 })

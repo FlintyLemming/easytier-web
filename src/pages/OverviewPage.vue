@@ -3,11 +3,14 @@ import { computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AttentionList from '../components/overview/AttentionList.vue'
 import ConnectionQuality from '../components/overview/ConnectionQuality.vue'
+import MapSection from '../components/overview/MapSection.vue'
 import StatCards from '../components/overview/StatCards.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import SkeletonRows from '../components/ui/SkeletonRows.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import { usePolling } from '../composables/usePolling'
+import { computeFocus } from '../domain/geo/focus'
+import { summarizeLocations } from '../domain/geo/groups'
 import { overviewStats } from '../domain/overview'
 import { useInventory } from '../stores/inventory'
 import { FLEET_POLL_MS, useRuntime } from '../stores/runtime'
@@ -32,6 +35,8 @@ watch(
 )
 
 const stats = computed(() => overviewStats(inventory.devices, inventory.networks, inventory.primaryNetwork))
+const locations = computed(() => summarizeLocations(inventory.devices))
+const focus = computed(() => computeFocus(locations.value.groups))
 </script>
 
 <template>
@@ -49,6 +54,7 @@ const stats = computed(() => overviewStats(inventory.devices, inventory.networks
 
     <template v-else>
       <StatCards :stats="stats" :central="central" :fleet-loaded="runtime.fleetLoaded" :direct="runtime.stats" />
+      <MapSection :summary="locations" :focus="focus" :pairs="runtime.pairs" :central="central" :fleet-loaded="runtime.fleetLoaded" />
       <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <AttentionList :central="central" :class="central ? '' : 'lg:col-span-2'" />
         <ConnectionQuality v-if="central" />
