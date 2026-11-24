@@ -69,6 +69,39 @@ test('live smoke: login, devices, connections, fixed IP round trip', async ({ pa
   await expect.poll(async () => (await core2Member(page.request, net)).virtual_ipv4).toBeNull()
 })
 
+test('overview against the real backend', async ({ page }) => {
+  await page.addInitScript(() => {
+    try { localStorage.setItem('et.locale', 'zh-CN') } catch { /* ignore */ }
+  })
+  const origins = new Set<string>()
+  page.on('request', (req) => {
+    const u = new URL(req.url())
+    if (u.protocol === 'http:' || u.protocol === 'https:') origins.add(u.origin)
+  })
+  await page.goto('/#/login')
+  await page.getByLabel('用户名').fill('admin')
+  await page.getByLabel('密码').fill('admin')
+  await page.getByRole('button', { name: '登录' }).click()
+  await expect(page).toHaveURL(/#\/$/)
+
+  const online = page.getByTestId('stat-online')
+  await expect(online.getByText('3', { exact: true })).toBeVisible()
+  await expect(online.getByText('/ 3')).toBeVisible()
+  // proxy-rpc answers can take a while; the card shows 「—」 until then
+  const direct = page.getByTestId('stat-direct')
+  await expect(direct.getByText(/^\d+%$/)).toBeVisible({ timeout: 40_000 })
+  console.log('[live overview] direct rate:', await direct.getByText(/^\d+%$/).textContent())
+
+  const ranking = page.getByTestId('location-ranking')
+  await expect(ranking).toContainText('本地网络')
+  await expect(ranking).toContainText('3/3')
+  await expect(page.getByTestId('map-section').getByText('还没有可以定位的设备')).toBeVisible()
+
+  const allowed = new Set([new URL(page.url()).origin, new URL(LIVE_API).origin])
+  const stray = [...origins].filter((o) => !allowed.has(o))
+  expect(stray, 'requests outside the app origin and the API').toEqual([])
+})
+
 // Independent safety net: own API context + explicit login, so it works even after a page crash or
 // test timeout. Cleanup errors are logged and never replace the test's own failure.
 // Only resets core2: the test asserts core2 starts on automatic IP and is the only member it changes.

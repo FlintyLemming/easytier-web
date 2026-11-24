@@ -28,6 +28,22 @@ ET_DATA_DIR=./data-central docker compose -f testenv/docker-compose.yml up -d
 npx playwright test -c playwright.live.config.ts   # 后端地址默认 http://localhost:11211，可用 ET_LIVE_API 覆盖
 ```
 
+## 概览页
+
+登录后的首页（`/`）是整个设备群的概览：
+
+- 四个统计数字：在线设备、网络、直连率、可更新设备（webhook 模式下只有在线设备和可更新设备两格）。
+- 节点地图：按位置聚合设备，自动聚焦到设备集中的区域，远处的位置显示在两侧的边缘标记上，点击可切换到世界视图；悬停查看该位置的设备，点击跳到按城市筛选后的设备列表。
+- 位置排行、需要关注（被拉黑后仍在尝试连接、未加入网络、长时间离线、可更新）和连接质量（最慢的中继连接）。
+
+**位置精度。** easytier-web 内置的 GeoIP 库只能定位到国家，所以默认情况下地图上的点落在国家级位置（页面会给出提示）。要精确到城市：
+
+1. 在 MaxMind 注册免费账号，下载 GeoLite2-City（`GeoLite2-City.mmdb`）。
+2. 把它挂载进 easytier-web 容器，例如 `-v ./GeoLite2-City.mmdb:/app/GeoLite2-City.mmdb:ro`。
+3. 在启动参数里加上 `--geoip-db /app/GeoLite2-City.mmdb`。
+
+**数据来源。** 世界地图使用 [Natural Earth](https://www.naturalearthdata.com/)（公有领域）和 [world-atlas](https://github.com/topojson/world-atlas)（ISC）。城市坐标表用 `npm run geo` 重新生成。
+
 ## 测试环境
 
 本地 Docker 测试环境（easytier-web v2.7.1 + 三个 easytier-core）的启动、账号、数据目录与返回结构说明见 [`testenv/README.md`](testenv/README.md)。
