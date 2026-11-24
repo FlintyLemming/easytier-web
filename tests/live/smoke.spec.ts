@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { expect, request as pwRequest, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test'
+import { expect, request as pwRequest, test, type APIRequestContext, type Locator, type Page, type TestInfo } from '@playwright/test'
 
 import { CENTRAL_OWNED_FIELDS, overrideState } from '../../src/domain/memberOverride'
 import { uuidToStr, type UUID } from '../../src/lib/uuid'
@@ -208,40 +208,66 @@ test.describe('member advanced config', () => {
       await expect(dlg).toBeVisible()
       return dlg
     }
+    // R17: the TOML tab (the real generate-config), a comment line appended, back to 表单 (the real
+    // parse-config, which only runs on an edited TOML).
+    const tomlRoundTrip = async (dlg: Locator, expected: RegExp) => {
+      const generatedRes = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/v1/generate-config'))
+      await dlg.getByRole('tab', { name: 'TOML' }).click()
+      const generateBody = (await (await generatedRes).json()) as { error?: string | null }
+      expect(generateBody.error ?? null, 'generate-config accepts the draft').toBeNull()
+      const toml = dlg.getByRole('textbox', { name: 'TOML' })
+      await expect(toml).toHaveValue(expected)
+      const generated = await toml.inputValue()
+      await toml.fill(`${generated.endsWith('\n') ? generated : `${generated}\n`}# live-smoke\n`)
+      const parsed = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/v1/parse-config'))
+      await dlg.getByRole('tab', { name: '表单' }).click()
+      const parseBody = (await (await parsed).json()) as { error?: string | null }
+      expect(parseBody.error ?? null, 'parse-config accepts the edited TOML').toBeNull()
+      await expect(dlg.getByRole('tab', { name: '表单' })).toHaveAttribute('aria-selected', 'true')
+    }
+    const save = async (dlg: Locator) => {
+      await dlg.getByRole('button', { name: '保存', exact: true }).click()
+      await expect(dlg).toHaveCount(0)
+    }
 
-    // 1. MTU 1300 through the form.
+    // 1. A TOML round trip from the 默认 state must leave core2 without an override: anything
+    // non-central and non-default that parse-config adds would be written and flip the row to 已覆盖.
+    // The dialog closes only after its write (if any) has finished, so the reads below see it.
     let dlg = await openEditor()
+    await tomlRoundTrip(dlg, /\S/)
+    await save(dlg)
+    expect(await memberConfig(page.request, net), 'TOML round trip from 默认 writes no override').toEqual({})
+    expect((await core2Member(page.request, net)).has_override ?? false, 'core2 still has no override object').toBe(false)
+    await expect(state).toHaveText('默认')
+
+    // 2. MTU 1300 through the form.
+    dlg = await openEditor()
     await dlg.getByLabel('MTU', { exact: true }).fill('1300')
-    await dlg.getByRole('button', { name: '保存', exact: true }).click()
-    await expect(dlg).toHaveCount(0)
+    await save(dlg)
     await expect.poll(async () => (await memberConfig(page.request, net)).mtu).toBe(1300)
     const saved = await memberConfig(page.request, net)
     expect(saved).not.toHaveProperty('network_name')
     await expect(state).toHaveText('已覆盖')
 
-    // 2. Through the TOML tab: the real generate-config, an edit, the real parse-config on the way back.
+    // 3. A TOML round trip from the overridden state must store the same override: the state alone
+    // cannot tell (mtu 1300 already makes it 已覆盖), so compare with what the form save stored.
     dlg = await openEditor()
-    await dlg.getByRole('tab', { name: 'TOML' }).click()
-    const toml = dlg.getByRole('textbox', { name: 'TOML' })
-    await expect(toml).toHaveValue(/mtu = 1300/)
-    const generated = await toml.inputValue()
-    await toml.fill(`${generated.endsWith('\n') ? generated : `${generated}\n`}# live-smoke\n`)
-    const parsed = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/v1/parse-config'))
-    await dlg.getByRole('tab', { name: '表单' }).click()
-    const parseBody = (await (await parsed).json()) as { error?: string | null }
-    expect(parseBody.error ?? null, 'parse-config accepts the edited TOML').toBeNull()
+    await tomlRoundTrip(dlg, /mtu = 1300/)
     await expect(dlg.getByLabel('MTU', { exact: true })).toHaveValue('1300')
-    await dlg.getByRole('button', { name: '保存', exact: true }).click()
-    await expect(dlg).toHaveCount(0)
+    await save(dlg)
     const roundTrip = await memberConfig(page.request, net)
     for (const field of CENTRAL_OWNED_FIELDS) expect(roundTrip, `central-owned ${field}`).not.toHaveProperty(field)
     expect(roundTrip.mtu).toBe(1300)
     expect(overrideState(roundTrip)).toBe('overridden')
     const added = Object.fromEntries(Object.entries(roundTrip).filter(([k]) => !(k in saved)))
     console.log(`[live member override] form save ${JSON.stringify(saved)}; the TOML round trip added ${JSON.stringify(added)}`)
+    expect(overrideState(added), 'TOML round trip added non-default fields').toBe('default')
+    // Stricter: even a default-valued field in the override would pin it against the central config.
+    expect(added, 'TOML round trip added fields to the override').toEqual({})
+    expect(roundTrip, 'TOML round trip stores the override the form saved').toEqual(saved)
     await expect(state).toHaveText('已覆盖')
 
-    // 3. 恢复默认, confirmed.
+    // 4. 恢复默认, confirmed.
     await row.getByRole('button', { name: '恢复默认' }).click()
     const confirm = page.getByRole('dialog', { name: '恢复默认配置' })
     await confirm.getByRole('button', { name: '恢复默认' }).click()
