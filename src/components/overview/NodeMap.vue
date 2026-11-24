@@ -140,7 +140,7 @@ function open(c: MapCluster) {
         :width="width"
         :height="height"
         :viewBox="`0 0 ${width} ${height}`"
-        role="img"
+        role="group"
         :aria-label="t('overview.map.label')"
         class="block"
       >
@@ -239,7 +239,7 @@ function open(c: MapCluster) {
 
     <!-- Under the map's bottom-left corner, in a row kept even while hidden, so it covers no dot and never shifts the layout. -->
     <div class="mt-2 h-4">
-      <div v-if="lines" data-testid="map-legend" class="flex items-center gap-4 text-[12px] leading-4 text-muted">
+      <div v-if="lines && summary.groups.length >= 2" data-testid="map-legend" class="flex items-center gap-4 text-[12px] leading-4 text-muted">
         <span class="inline-flex items-center gap-1.5">
           <svg width="20" height="6" aria-hidden="true"><line x1="0" y1="3" x2="20" y2="3" stroke="#26251e" stroke-opacity="0.5" stroke-width="1.2" /></svg>
           {{ t('overview.map.legendDirect') }}

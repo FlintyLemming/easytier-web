@@ -126,7 +126,7 @@ function sub(i: AttentionItem): string {
 <template>
   <SectionCard data-testid="attention-list" :title="t('overview.attention.title', { n: items.length })">
     <template v-if="items.length > LIMIT" #action>
-      <UiButton variant="text" size="sm" @click="expanded = !expanded">
+      <UiButton variant="text" size="sm" :aria-expanded="expanded" @click="expanded = !expanded">
         {{ expanded ? t('overview.attention.collapse') : t('overview.attention.all', { n: items.length }) }}
       </UiButton>
     </template>
@@ -151,6 +151,7 @@ function sub(i: AttentionItem): string {
           variant="secondary"
           size="sm"
           :loading="busy.has(keyOf(i))"
+          :aria-label="t('overview.attention.unblockLabel', { name: i.name })"
           @click="unblock(i.id)"
         >{{ t('overview.attention.unblock') }}</UiButton>
         <UiButton
@@ -158,6 +159,7 @@ function sub(i: AttentionItem): string {
           variant="secondary"
           size="sm"
           :loading="busy.has(keyOf(i))"
+          :aria-label="t('overview.attention.joinLabel', { name: i.device.name, network: primaryName })"
           @click="join(i.device)"
         >{{ t('devices.join', { network: primaryName }) }}</UiButton>
       </li>

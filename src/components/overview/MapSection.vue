@@ -27,7 +27,8 @@ const view = computed<MapView>({
 })
 
 const linesOn = ref(true)
-const linesToggle = computed(() => props.central && props.fleetLoaded)
+/** Lines join two places, so with fewer there is nothing to toggle. */
+const linesToggle = computed(() => props.central && props.fleetLoaded && props.summary.groups.length >= 2)
 
 const meta = computed(() => {
   const located = props.summary.groups.reduce((s, g) => s + g.total, 0)
