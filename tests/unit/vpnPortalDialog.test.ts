@@ -77,6 +77,7 @@ async function type(label: string, value: string) {
 }
 const pressEscape = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
 const OFFLINE = () => i18n.global.t('instances.offline')
+const CLIENT_NAME = /^client-[0-9a-f]{8}$/
 
 const wrappers: VueWrapper[] = []
 
@@ -156,10 +157,11 @@ describe('VpnPortalDialog patches', () => {
     patchApi.mockReturnValue(sent.promise)
     const w = mountDialog()
     await flushPromises()
+    const name = field('名称').value
     button('添加')!.click()
     await flushPromises()
     expect(patchApi).toHaveBeenCalledWith('m1', A, [
-      { action: 'ADD', client: { name: 'client-1', virtual_ip: '10.88.0.1/24', groups: [] } },
+      { action: 'ADD', client: { name, virtual_ip: '10.88.0.1/24', groups: [] } },
     ])
     expect(button('关闭')!.disabled).toBe(true)
     pressEscape()
@@ -178,15 +180,101 @@ describe('VpnPortalDialog patches', () => {
     portalApi.mockResolvedValueOnce(portal()).mockRejectedValueOnce(new Error('rpc timeout'))
     mountDialog()
     await flushPromises()
-    expect(field('名称').value).toBe('client-1')
+    const first = field('名称').value
+    expect(first).toMatch(CLIENT_NAME)
     expect(field('地址').value).toBe('10.88.0.1')
     button('添加')!.click()
     await flushPromises()
 
-    expect(text()).toContain('client-1')
-    expect(field('名称').value).toBe('client-2')
+    expect(text()).toContain(first)
+    const second = field('名称').value
+    expect(second).toMatch(CLIENT_NAME)
+    expect(second).not.toBe(first)
     expect(field('地址').value).toBe('10.88.0.2')
     expect(text()).toContain(i18n.global.t('vpn.loadFailed'))
+  })
+})
+
+describe('VpnPortalDialog default client name (R15)', () => {
+  it('suggests client- and 8 random hex characters, never a recycled name, and says what a name means', async () => {
+    mountDialog()
+    await flushPromises()
+    const first = field('名称').value
+    expect(first).toMatch(CLIENT_NAME)
+    expect(text()).toContain('名称决定客户端的密钥：再次添加删除过的名称，会恢复原来那份配置的访问权限。')
+
+    // Removing a client and adding again never brings its name back as the default.
+    button('删除')!.click()
+    await flushPromises()
+    settleConfirm(confirmQueue[0]!.id, true)
+    await flushPromises()
+    expect(patchApi).toHaveBeenLastCalledWith('m1', A, [{ action: 'REMOVE', client: { name: 'phone', virtual_ip: '', groups: [] } }])
+    portalApi.mockResolvedValue(normalizeVpnPortalInfo({ vpn_type: 'wireguard', listener: 'wg://0.0.0.0:22022', clients: [] }))
+    button('添加')!.click()
+    await flushPromises()
+    expect(patchApi).toHaveBeenLastCalledWith('m1', A, [{ action: 'ADD', client: { name: first, virtual_ip: '10.88.0.1/24', groups: [] } }])
+    const second = field('名称').value
+    expect(second).toMatch(CLIENT_NAME)
+    expect(second).not.toBe(first)
+  })
+})
+
+describe('VpnPortalDialog while the instance network is unknown (R16b)', () => {
+  /** A running DHCP instance that has no virtual IP yet. */
+  const NO_IP: InstanceRunningInfo = { running: true, my_node_info: {} }
+  const NETWORK_UNKNOWN = '实例还没有虚拟 IP，暂时不能添加客户端'
+
+  it('disables 添加 and sends nothing, then suggests an address once the network is known', async () => {
+    const w = mountDialog({ info: NO_IP })
+    await flushPromises()
+    expect(text()).toContain('phone')
+    expect(text()).toContain(NETWORK_UNKNOWN)
+    expect(field('地址').value).toBe('')
+    expect(button('添加')!.disabled).toBe(true)
+    // An address outside 10.88.0.0/24 is no less refused while the network is unknown.
+    await type('地址', '192.168.1.5')
+    await type('前缀', '24')
+    expect(button('添加')!.disabled).toBe(true)
+    document.body.querySelector('form')!.dispatchEvent(new Event('submit'))
+    await flushPromises()
+    expect(patchApi).not.toHaveBeenCalled()
+
+    // The typed address stays when the network turns up; an untouched form gets the suggestion.
+    await w.setProps({ info: INFO })
+    expect(text()).not.toContain(NETWORK_UNKNOWN)
+    expect(field('地址').value).toBe('192.168.1.5')
+    expect(button('添加')!.disabled).toBe(true)
+    await type('地址', '')
+    await type('前缀', '')
+    await w.setProps({ info: NO_IP })
+    await w.setProps({ info: INFO })
+    expect(field('地址').value).toBe('10.88.0.1')
+    expect(field('前缀').value).toBe('24')
+    expect(button('添加')!.disabled).toBe(false)
+  })
+
+  it('applies the suggestion when the network arrives after the first read', async () => {
+    const w = mountDialog({ info: NO_IP })
+    await flushPromises()
+    expect(field('地址').value).toBe('')
+    expect(field('前缀').value).toBe('')
+    await w.setProps({ info: INFO })
+    expect(field('地址').value).toBe('10.88.0.1')
+    expect(field('前缀').value).toBe('24')
+    expect(button('添加')!.disabled).toBe(false)
+  })
+
+  it('disables 添加 again when the info goes away while the dialog is open, keeping what was typed', async () => {
+    const w = mountDialog()
+    await flushPromises()
+    expect(button('添加')!.disabled).toBe(false)
+    await w.setProps({ info: null })
+    expect(text()).toContain(NETWORK_UNKNOWN)
+    expect(button('添加')!.disabled).toBe(true)
+    expect(field('地址').value).toBe('10.88.0.1')
+    document.body.querySelector('form')!.dispatchEvent(new Event('submit'))
+    await flushPromises()
+    expect(patchApi).not.toHaveBeenCalled()
   })
 })
 

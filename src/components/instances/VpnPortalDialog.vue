@@ -9,6 +9,7 @@ import { ipv4FromU32 } from '../../domain/format'
 import type { InstanceRow } from '../../domain/instances'
 import {
   normalizeVpnPortalEndpoint,
+  randomVpnClientName,
   suggestVpnPortalAddress,
   usesLegacyVpn,
   validVpnClientName,
@@ -152,7 +153,11 @@ function stateDot(state: VpnPortalClientState): string {
   return 'bg-muted-soft'
 }
 
-/** The instance's network (10.88.0.3/24 stands for 10.88.0.0/24): client addresses must lie in it. */
+/**
+ * The instance's network (10.88.0.3/24 stands for 10.88.0.0/24): client addresses must lie in it.
+ * Unknown while the instance has no virtual IP (DHCP not done yet, or the info went away when it
+ * stopped); nothing can be added then, as no address can be checked against it.
+ */
 const network = computed(() => {
   const v4 = props.info?.my_node_info?.virtual_ipv4
   const addr = v4?.address?.addr
@@ -166,20 +171,43 @@ const used = computed(() => vpnPortalUsedIps(props.info, clients.value))
 // --- adding ---
 
 const form = reactive({ name: '', address: '', prefix: '', groups: '' })
+/** The address and prefix last put in the form, so a later suggestion may replace them while untouched. */
+const suggested = { address: '', prefix: '' }
 
-/** The next free `client-{n}` and a free address; after an add, the next ones. */
-function resetForm() {
-  const taken = new Set(clients.value.map((c) => c.name))
-  let n = 1
-  while (taken.has(`client-${n}`)) n++
+function suggestAddress(): { address: string; prefix: string } {
   // 2.7 cores report client addresses without a prefix, so the suggestion comes from the
   // instance's own network, the one client addresses must lie in.
-  const suggestion = suggestVpnPortalAddress(props.info, [], used.value)
-  form.name = `client-${n}`
-  form.address = suggestion.address
-  form.prefix = suggestion.prefix === undefined ? '' : String(suggestion.prefix)
-  form.groups = ''
+  const s = suggestVpnPortalAddress(props.info, [], used.value)
+  return { address: s.address, prefix: s.prefix === undefined ? '' : String(s.prefix) }
 }
+
+/**
+ * A fresh random name (R15: a recycled one would restore a deleted client's access) and a free
+ * address; after an add, new ones.
+ */
+function resetForm() {
+  const s = suggestAddress()
+  form.name = randomVpnClientName(new Set(clients.value.map((c) => c.name)))
+  form.address = s.address
+  form.prefix = s.prefix
+  form.groups = ''
+  Object.assign(suggested, s)
+}
+
+// The network may only become known after the first read (a DHCP instance getting its IP): an
+// address and prefix nobody has typed over then take the suggestion for it.
+watch(network, (net) => {
+  if (!net || !loaded.value || view.value !== 'clients') return
+  const s = suggestAddress()
+  if (form.address.trim() === '' || form.address === suggested.address) {
+    form.address = s.address
+    suggested.address = s.address
+  }
+  if (form.prefix.trim() === '' || form.prefix === suggested.prefix) {
+    form.prefix = s.prefix
+    suggested.prefix = s.prefix
+  }
+})
 
 const name = computed(() => form.name.trim())
 const address = computed(() => form.address.trim())
@@ -189,7 +217,12 @@ const nameError = computed(() => {
   if (clients.value.some((c) => c.name === name.value)) return t('vpn.duplicate')
   return undefined
 })
-const addressValid = computed(() => validVpnPortalAddress(address.value, prefix.value, used.value, network.value))
+/** Never valid while the instance network is unknown: an address outside it could not be told apart. */
+const addressValid = computed(
+  () => network.value !== undefined && validVpnPortalAddress(address.value, prefix.value, used.value, network.value),
+)
+/** The address field's own complaint; while the network is unknown the form says why instead. */
+const addressError = computed(() => (network.value !== undefined && !addressValid.value ? t('vpn.invalidAddress') : undefined))
 
 // --- writing ---
 
@@ -361,10 +394,14 @@ function close() {
 
           <form class="mt-6 flex flex-col gap-3 border-t border-hairline-soft pt-5" :aria-label="t('vpn.add')" @submit.prevent="add">
             <div class="grid items-start gap-3 sm:grid-cols-[1fr_1fr_96px]">
-              <UiInput v-model="form.name" :label="t('vpn.name')" mono :error="nameError" />
-              <UiInput v-model="form.address" :label="t('vpn.address')" mono :error="addressValid ? undefined : t('vpn.invalidAddress')" />
+              <div class="flex min-w-0 flex-col gap-1.5">
+                <UiInput v-model="form.name" :label="t('vpn.name')" mono :error="nameError" />
+                <p class="text-[12px] text-muted">{{ t('vpn.nameHint') }}</p>
+              </div>
+              <UiInput v-model="form.address" :label="t('vpn.address')" mono :error="addressError" />
               <UiInput v-model="form.prefix" :label="t('vpn.prefix')" mono />
             </div>
+            <p v-if="network === undefined" class="text-[13px] text-muted">{{ t('vpn.networkUnknown') }}</p>
             <UiInput v-model="form.groups" :label="t('vpn.groups')" placeholder="ops, guests" />
             <p v-if="patchError" role="alert" class="text-[13px] break-words text-error">{{ patchError }}</p>
             <div class="flex justify-end">

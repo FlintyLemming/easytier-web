@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import coreInfo from '../fixtures/v2.7.1/instance-info-core2.json'
 import portal from '../fixtures/v2.7.1/vpn-portal-info-core2.json'
 import instanceConfig from '../fixtures/v2.7.1/instance-config-core2.json'
@@ -7,6 +7,7 @@ import {
   createVpnPortalConfig,
   LEGACY_VPN_FIELDS,
   normalizeVpnPortalEndpoint,
+  randomVpnClientName,
   splitLegacyVpn,
   suggestVpnPortalAddress,
   usesLegacyVpn,
@@ -69,11 +70,53 @@ describe('address helpers', () => {
     expect(validVpnPortalAddress('nope', 24, used)).toBe(false)
   })
 
+  it("rejects the instance network's own network and broadcast addresses, whatever prefix was typed (R16a)", () => {
+    const used = new Set([ip(10, 88, 0, 3)])
+    const net = '10.88.0.0/24'
+    // Hosts of a /16, but the network and broadcast addresses of the instance's /24.
+    expect(validVpnPortalAddress('10.88.0.255', 16, used, net)).toBe(false)
+    expect(validVpnPortalAddress('10.88.0.0', 16, used, net)).toBe(false)
+    expect(validVpnPortalAddress('10.88.0.255', 23, used, net)).toBe(false)
+    expect(validVpnPortalAddress('10.88.0.1', 16, used, net)).toBe(true)
+    expect(validVpnPortalAddress('10.88.0.254', 24, used, net)).toBe(true)
+    // A /31 or /32 network has no network or broadcast address to keep free.
+    expect(validVpnPortalAddress('10.88.0.1', 16, new Set(), '10.88.0.0/31')).toBe(true)
+    expect(validVpnPortalAddress('10.88.0.7', 16, new Set(), '10.88.0.7/32')).toBe(true)
+  })
+
   it('validates client names', () => {
     expect(validVpnClientName('phone-1')).toBe(true)
     expect(validVpnClientName('-x')).toBe(false)
     expect(validVpnClientName('')).toBe(false)
     expect(validVpnClientName('a'.repeat(64))).toBe(false)
+  })
+})
+
+describe('randomVpnClientName (R15)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('is client- and 8 random hex characters, a valid name, fresh each time', () => {
+    const first = randomVpnClientName()
+    const second = randomVpnClientName()
+    expect(first).toMatch(/^client-[0-9a-f]{8}$/)
+    expect(second).toMatch(/^client-[0-9a-f]{8}$/)
+    expect(validVpnClientName(first)).toBe(true)
+    expect(second).not.toBe(first)
+  })
+
+  it('draws from crypto.getRandomValues and never returns a taken name', () => {
+    const draws = [
+      [0xde, 0xad, 0xbe, 0xef],
+      [0x00, 0x0a, 0xff, 0x01],
+    ]
+    const spy = vi.spyOn(crypto, 'getRandomValues').mockImplementation(<T extends ArrayBufferView | null>(array: T): T => {
+      ;(array as unknown as Uint8Array).set(draws.shift()!)
+      return array
+    })
+    expect(randomVpnClientName(new Set(['client-deadbeef']))).toBe('client-000aff01')
+    expect(spy).toHaveBeenCalledTimes(2)
   })
 })
 

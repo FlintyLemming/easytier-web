@@ -168,7 +168,8 @@ export function suggestVpnPortalAddress(
 
 /**
  * A host address of its /prefix network that is not taken. With `network` (a CIDR such as the
- * instance's `10.88.0.0/24`) the address must also lie inside that network.
+ * instance's `10.88.0.0/24`) the address must also be a host of that network: inside it, and not
+ * its network or broadcast address, whatever prefix was typed.
  */
 export function validVpnPortalAddress(
   address: string,
@@ -183,10 +184,25 @@ export function validVpnPortalAddress(
   if (network) {
     const net = cidrRange(network)
     if (!net || parsed < net.first || parsed > net.last) return false
+    // A /31 or /32 has no network or broadcast address (RFC 3021); any shorter one keeps both free.
+    if (net.prefix < 31 && (parsed === net.first || parsed === net.last)) return false
   }
   return true
 }
 
 export function validVpnClientName(name: string): boolean {
   return /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/.test(name)
+}
+
+/**
+ * A fresh client name, `client-` and 8 random hex characters, none of `taken` (R15). A 2.7 core
+ * derives a client's key from the portal key and the client's name alone, so a recycled name such
+ * as a smallest-free `client-{n}` would give a deleted client's device its access back.
+ */
+export function randomVpnClientName(taken: ReadonlySet<string> = new Set()): string {
+  for (;;) {
+    const bytes = crypto.getRandomValues(new Uint8Array(4))
+    const name = `client-${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`
+    if (!taken.has(name)) return name
+  }
 }
