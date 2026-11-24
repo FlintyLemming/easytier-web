@@ -594,6 +594,25 @@ describe('ConfigEditorDialog', () => {
     expect(button('保存')!.disabled).toBe(true)
   })
 
+  it('disabled: the actions are off and emit nothing, while the draft stays editable and 取消 still closes', async () => {
+    const w = mountDialog({ disabled: true })
+    await flushPromises()
+    expect(button('保存')!.disabled).toBe(true)
+    button('保存')!.click()
+    await flushPromises()
+    expect(w.emitted('action')).toBeUndefined()
+    const mtu = document.body.querySelector<HTMLInputElement>('input[type="number"][placeholder="1380"]')!
+    expect(mtu.disabled).toBe(false)
+
+    await w.setProps({ disabled: false })
+    expect(button('保存')!.disabled).toBe(false)
+    await w.setProps({ disabled: true })
+    expect(button('取消')!.disabled).toBe(false)
+    button('取消')!.click()
+    await flushPromises()
+    expect(closes(w)).toEqual([[false]])
+  })
+
   it('saves a static instance that has no virtual IP', async () => {
     const value = input((raw) => { delete raw.virtual_ipv4; delete raw.network_length })
     const w = mountDialog({ initial: value })

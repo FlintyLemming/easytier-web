@@ -64,5 +64,40 @@ describe('instance-config-core2 round trip', () => {
     ]) {
       expect(out[key], key).toEqual(input[key])
     }
+    // Nothing else changes, and nothing is added (the fixture has no public_server_url).
+    expect(out).toEqual({ ...input, mtu: 1300 })
+    expect('public_server_url' in out).toBe(false)
+  })
+})
+
+describe('networking method', () => {
+  const backend = (config: Record<string, unknown>) =>
+    toBackendNetworkConfig(normalizeNetworkConfig(config as unknown as NetworkConfig)) as unknown as Record<string, unknown>
+
+  it('keeps public_server_url as read for a manual config', () => {
+    const base = { network_name: 'n', networking_method: 'Manual', peer_urls: ['tcp://10.0.0.1:11010'] }
+    expect('public_server_url' in backend(base)).toBe(false)
+    expect(backend({ ...base, public_server_url: '' }).public_server_url).toBe('')
+    expect(backend({ ...base, public_server_url: 'tcp://stale:11010' }).public_server_url).toBe('tcp://stale:11010')
+    expect(backend(base).networking_method).toBe('Manual')
+    expect(backend(base).peer_urls).toEqual(['tcp://10.0.0.1:11010'])
+  })
+
+  it('turns a public-server config into a manual one that peers with the server', () => {
+    const out = backend({ network_name: 'n', networking_method: 'PublicServer', public_server_url: 'tcp://public.easytier.top:11010' })
+    expect(out.networking_method).toBe('Manual')
+    expect(out.peer_urls).toEqual(['tcp://public.easytier.top:11010'])
+    expect(out.public_server_url).toBe('')
+  })
+
+  it('turns a standalone config into a manual one without peers', () => {
+    const out = backend({ network_name: 'n', networking_method: 'Standalone', peer_urls: ['tcp://10.0.0.1:11010'] })
+    expect(out.networking_method).toBe('Manual')
+    expect(out.peer_urls ?? []).toEqual([])
+    expect('public_server_url' in out).toBe(false)
+  })
+
+  it('always carries networking_method, which generate-config needs', () => {
+    expect(backend({ network_name: 'n' }).networking_method).toBe('Manual')
   })
 })

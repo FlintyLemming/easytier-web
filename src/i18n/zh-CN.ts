@@ -347,6 +347,7 @@ export default {
       disable: '停用',
       export: '导出 TOML',
       delete: '删除…',
+      label: '{name} 的操作',
     },
     createTitle: '新建实例',
     createRun: '创建并运行',

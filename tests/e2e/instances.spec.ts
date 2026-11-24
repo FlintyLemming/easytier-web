@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { expect, test, type Page, type Request } from '@playwright/test'
-import { uuidToStr } from '../../src/lib/uuid'
+import { strToUuid, uuidToStr } from '../../src/lib/uuid'
 import { fixture, mockApi, status, type Overrides, type RecordedRequest } from './mockApi'
 
 const CORE2 = '22222222-2222-4222-8222-222222222222'
@@ -39,9 +39,11 @@ async function openInstances(page: Page, overrides: Overrides = {}) {
 }
 
 const labRow = (page: Page) => page.getByTestId('instance-row').filter({ hasText: 'lab-manual' })
+/** Each row's ⋯ menu is named after its instance. */
+const labMenu = (page: Page) => labRow(page).getByRole('button', { name: 'lab-manual 的操作' })
 
 async function rowAction(page: Page, item: string) {
-  await labRow(page).getByRole('button', { name: '更多操作' }).click()
+  await labMenu(page).click()
   await page.getByRole('menuitem', { name: item, exact: true }).click()
 }
 
@@ -88,9 +90,74 @@ test('2: 停用 PUTs { disabled: true }; the row then reads 已停用 and offers
     .toEqual({ disabled: true })
   await expect(labRow(page)).toContainText('已停用')
   await expect(labRow(page)).not.toContainText('10.88.0.3')
-  await labRow(page).getByRole('button', { name: '更多操作' }).click()
+  await labMenu(page).click()
   await expect(page.getByRole('menuitem', { name: '启用', exact: true })).toBeVisible()
   await expect(page.getByRole('menuitem', { name: '停用', exact: true })).toHaveCount(0)
+})
+
+test('2b: a disabled instance gets no info reads; metas are asked once per id, then only for a new id', async ({ page }) => {
+  await page.clock.install()
+  const NEW = '5eed0000-0000-4000-8000-000000000002'
+  const state = { disabled: false, extra: false }
+  const { requests } = await openInstances(page, {
+    [`GET /machines/${CORE2}/networks`]: () => {
+      const list = instanceApi(state)[`GET /machines/${CORE2}/networks`]!({} as Request) as {
+        running_inst_ids: object[]
+        disabled_inst_ids: object[]
+      }
+      if (state.extra) list.running_inst_ids.push(strToUuid(NEW))
+      return list
+    },
+    // Like the backend, answers for the asked ids only.
+    [`POST /machines/${CORE2}/networks/metas`]: (req: Request) => {
+      const all = fixture('instance-metas-core2.json').metas
+      all[NEW] = { ...all[INST], inst_id: strToUuid(NEW), network_name: 'new-manual', instance_name: 'new-manual' }
+      const asked = (req.postDataJSON() as { instance_ids: string[] }).instance_ids
+      return { metas: Object.fromEntries(asked.filter((id) => all[id]).map((id) => [id, all[id]])) }
+    },
+    [`PUT /machines/${CORE2}/networks/${INST}`]: (req: Request) => {
+      state.disabled = (req.postDataJSON() as { disabled: boolean }).disabled
+      return {}
+    },
+  })
+  const count = (method: string, path: string, from = 0) =>
+    requests.slice(from).filter((r) => r.method === method && r.path === path).length
+  const lists = (from = 0) => count('GET', `/machines/${CORE2}/networks`, from)
+  const metaBodies = () => requests.filter((r) => r.path === `/machines/${CORE2}/networks/metas`).map((r) => r.body)
+  const labInfo = `/machines/${CORE2}/networks/info/${INST}`
+  // The next poll is only scheduled once a read has finished, so let fake time pass a second at a time.
+  const cycles = async (n: number) => {
+    const target = lists() + n
+    await expect.poll(async () => {
+      await page.clock.runFor(1_000)
+      return lists()
+    }, { timeout: 20_000, intervals: [50] }).toBeGreaterThanOrEqual(target)
+  }
+
+  await expect(labRow(page)).toContainText('运行中')
+  expect(metaBodies()).toEqual([{ instance_ids: [INST] }])
+  expect(count('GET', labInfo)).toBeGreaterThan(0)
+
+  // Two more poll cycles with the same ids: no second metas request.
+  await cycles(2)
+  expect(metaBodies()).toEqual([{ instance_ids: [INST] }])
+
+  // 停用: from the PUT on, lab-manual is disabled and its info is no longer read.
+  await rowAction(page, '停用')
+  await expect(labRow(page)).toContainText('已停用')
+  const putAt = requests.findIndex((r) => r.method === 'PUT' && r.path === `/machines/${CORE2}/networks/${INST}`)
+  expect(putAt).toBeGreaterThan(0)
+  await cycles(2)
+  expect(lists(putAt)).toBeGreaterThanOrEqual(3) // the toggle's own read, then two polls
+  expect(count('GET', labInfo, putAt)).toBe(0)
+  expect(metaBodies()).toEqual([{ instance_ids: [INST] }])
+
+  // A new instance appears: metas are asked for it alone, once.
+  state.extra = true
+  await cycles(1)
+  await expect(page.getByTestId('instance-row').filter({ hasText: 'new-manual' })).toBeVisible()
+  await cycles(2)
+  expect(metaBodies()).toEqual([{ instance_ids: [INST] }, { instance_ids: [NEW] }])
 })
 
 test('3: 编辑 → MTU 1300 → 保存 reruns the instance under its id with every other field as read', async ({ page }) => {
@@ -115,6 +182,9 @@ test('3: 编辑 → MTU 1300 → 保存 reruns the instance under its id with ev
   for (const key of ['routes', 'exit_nodes', 'acl', 'port_forwards', 'dns', 'mapped_listeners', ...LEGACY]) {
     expect(body.config[key], key).toEqual(read[key])
   }
+  // Nothing is added either: the config as read had no public_server_url.
+  expect('public_server_url' in body.config).toBe(false)
+  expect(body.config).toEqual({ ...read, mtu: 1300 })
 })
 
 test('3b: editing a disabled instance saves its config without starting it', async ({ page }) => {
@@ -210,7 +280,7 @@ test('5: 导入 TOML opens the editor with the parsed config under a new id; a p
 
 test('6: 导出 TOML downloads lab-manual.toml, without the id or the legacy VPN fields', async ({ page }) => {
   const { requests } = await openInstances(page)
-  await labRow(page).getByRole('button', { name: '更多操作' }).click()
+  await labMenu(page).click()
   const download = page.waitForEvent('download')
   await page.getByRole('menuitem', { name: '导出 TOML' }).click()
   const file = await download
@@ -309,6 +379,10 @@ test('10: webhook mode: the device detail shows the instances panel beside the o
   await expect(panel.getByTestId('instance-row')).toHaveCount(2)
   await expect(page.getByTestId('overview-card')).toContainText(CORE2)
   await expect(page.getByRole('button', { name: '新建实例' })).toBeEnabled()
+  // Each row's menu is named after its instance, apart from the header's own 更多操作.
+  await expect(panel.getByRole('button', { name: 'lab-manual 的操作' })).toBeVisible()
+  await expect(panel.getByRole('button', { name: 'home-central 的操作' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '更多操作', exact: true })).toHaveCount(1)
   expect(requests.filter((r) => r.path.startsWith('/networks'))).toEqual([])
 })
 
@@ -362,7 +436,7 @@ test('14: a device-local, read-only, undeletable instance in error', async ({ pa
   })
   await expect(labRow(page)).toContainText('设备本地配置')
   await expect(labRow(page)).toContainText('错误：tun device busy')
-  await labRow(page).getByRole('button', { name: '更多操作' }).click()
+  await labMenu(page).click()
   await expect(page.getByRole('menuitem')).toHaveText(['停用', '导出 TOML'])
 })
 

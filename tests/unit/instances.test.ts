@@ -83,6 +83,13 @@ describe('buildInstanceRows', () => {
     expect(only).toMatchObject({ editable: false, deletable: true })
   })
 
+  it('an instance whose meta is unknown is neither editable nor deletable until the meta arrives', () => {
+    const [row] = buildInstanceRows([{ id: 'a', disabled: false }], {}, { a: { running: true } })
+    expect(row).toMatchObject({ name: 'a', state: 'running', editable: false, deletable: false, local: false })
+    const [known] = buildInstanceRows([{ id: 'a', disabled: false }], { a: meta() }, { a: { running: true } })
+    expect(known).toMatchObject({ editable: true, deletable: true })
+  })
+
   it('sorts by name', () => {
     const rows = buildInstanceRows(
       [{ id: 'a', disabled: false }, { id: 'b', disabled: false }],

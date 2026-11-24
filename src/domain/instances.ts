@@ -58,7 +58,8 @@ export function buildInstanceRows(
       const meta = metas[id]
       const info = infos[id]
       const state = stateOf(disabled, info)
-      const permission = meta?.permission ?? 0
+      // Without its meta the permission is unknown: no 编辑 or 删除… until the meta arrives.
+      const permission = meta ? meta.permission : CONFIG_READ_ONLY | CONFIG_NO_DELETE
       return {
         id,
         name: meta?.networkName || meta?.instanceName || id,

@@ -23,6 +23,9 @@ const statusText = computed(() =>
     : t(`instances.state.${props.row.state}`),
 )
 
+// Named after the instance, so each row's menu is told apart (also from the page header's 更多操作).
+const menuLabel = computed(() => t('instances.menu.label', { name: props.row.name }))
+
 const items = computed<UiMenuItem[]>(() => [
   ...(props.row.editable ? [{ label: t('instances.menu.edit'), onSelect: () => emit('edit') }] : []),
   { label: disabled.value ? t('instances.menu.enable') : t('instances.menu.disable'), onSelect: () => emit('toggle') },
@@ -58,7 +61,7 @@ const items = computed<UiMenuItem[]>(() => [
         <template #trigger>
           <button
             type="button"
-            :aria-label="t('devices.actions')"
+            :aria-label="menuLabel"
             :disabled="busy"
             class="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-control text-muted hover:bg-surface-strong hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -87,7 +90,7 @@ const items = computed<UiMenuItem[]>(() => [
         <template #trigger>
           <button
             type="button"
-            :aria-label="t('devices.actions')"
+            :aria-label="menuLabel"
             :disabled="busy"
             class="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-control text-muted hover:bg-surface-strong hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:cursor-not-allowed disabled:opacity-50"
           >

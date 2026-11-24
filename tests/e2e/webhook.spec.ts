@@ -1,7 +1,14 @@
 import { expect, test } from '@playwright/test'
-import { fixture, mockApi, type RecordedRequest } from './mockApi'
+import { fixture, mockApi, type Overrides, type RecordedRequest } from './mockApi'
 
 const CORE1 = '11111111-1111-4111-8111-111111111111'
+
+/** CORE1's per-device instance endpoints, answered with the Task 1 instance fixtures (captured on core2). */
+const instanceApi = (machine: string): Overrides => ({
+  [`GET /machines/${machine}/networks`]: () => fixture('instances-core2.json'),
+  [`POST /machines/${machine}/networks/metas`]: () => fixture('instance-metas-core2.json'),
+  [`GET /machines/${machine}/networks/info/*`]: () => fixture('instance-info-core2.json'),
+})
 
 const networkCalls = (reqs: RecordedRequest[]) => reqs.filter((r) => r.path.startsWith('/networks'))
 const rpcCalls = (reqs: RecordedRequest[]) => reqs.filter((r) => r.path.includes('/proxy-rpc'))
@@ -28,9 +35,9 @@ test('webhook mode: device list loads without join buttons or 未加入网络', 
   expect(networkCalls(requests)).toEqual([])
 })
 
-test('webhook mode: device detail shows the overview only', async ({ page }) => {
+test('webhook mode: device detail shows the overview and the instances panel, and no central-network parts', async ({ page }) => {
   await page.clock.install()
-  const { requests } = await mockApi(page, {}, { webhook: true })
+  const { requests } = await mockApi(page, instanceApi(CORE1), { webhook: true })
   await page.goto(`/#/devices/${CORE1}`)
   const ov = page.getByTestId('overview-card')
   await expect(ov).toContainText(CORE1)
@@ -43,7 +50,14 @@ test('webhook mode: device detail shows the overview only', async ({ page }) => 
   await expect(page.getByText('还没加入网络')).toHaveCount(0)
   await expect(page.getByRole('button', { name: /切换网络/ })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /修改别名/ })).toHaveCount(0)
-  await page.getByRole('button', { name: '更多操作' }).click()
+  // The left column is the manual instances panel; webhook mode excludes no central network.
+  const panel = page.getByTestId('instances-panel')
+  await expect(panel.getByTestId('instance-row')).toHaveCount(2)
+  await expect(panel.getByTestId('instance-row').filter({ hasText: 'lab-manual' })).toContainText('运行中')
+  await expect(panel.getByText('读取实例失败')).toHaveCount(0)
+  // The header's menu (its rows' menus are named after their instances).
+  const header = page.locator('header').filter({ has: page.getByRole('heading', { name: 'core1' }) })
+  await header.getByRole('button', { name: '更多操作' }).click()
   await expect(page.getByRole('menuitem')).toHaveText(['复制设备 ID'])
   await page.keyboard.press('Escape')
 

@@ -347,6 +347,7 @@ export default {
       disable: 'Disable',
       export: 'Export TOML',
       delete: 'Delete…',
+      label: 'Actions for {name}',
     },
     createTitle: 'New instance',
     createRun: 'Create and run',

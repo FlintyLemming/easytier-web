@@ -14,6 +14,11 @@ const props = defineProps<{
   /** The device's `easytier_version`. */
   coreVersion: string
   busy: boolean
+  /**
+   * The actions cannot run for now (e.g. the device went offline): they are disabled, but unlike
+   * `busy` the draft stays editable and the dialog can still be closed.
+   */
+  disabled?: boolean
   /** Shown above the form. */
   note?: string
   actions: { key: string; label: string }[]
@@ -47,7 +52,7 @@ function requestOpen(v: boolean) {
 }
 
 async function run(key: string) {
-  if (!editor.value || flushing.value || props.busy || !valid.value) return
+  if (!editor.value || flushing.value || props.busy || props.disabled || !valid.value) return
   lastKey.value = key
   flushing.value = true
   try {
@@ -78,7 +83,7 @@ async function run(key: string) {
         :key="a.key"
         variant="secondary"
         :loading="(busy || flushing) && lastKey === a.key"
-        :disabled="!valid || locked"
+        :disabled="!valid || locked || disabled"
         @click="run(a.key)"
       >
         {{ a.label }}

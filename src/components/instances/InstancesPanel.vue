@@ -1,26 +1,22 @@
 <script setup lang="ts">
 import { v4 as uuidv4 } from 'uuid'
-import { computed, onScopeDispose, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, reactive, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   deleteInstance,
   generateToml,
   getInstanceConfig,
-  instanceInfo,
-  instanceMetas,
-  listInstances,
   parseToml,
   runInstance,
   saveInstanceConfig,
   setInstanceDisabled,
 } from '../../api/client'
-import type { InstanceMeta, InstanceRunningInfo } from '../../api/types'
 import { useConfirm } from '../../composables/useConfirm'
+import { useInstanceRows } from '../../composables/useInstanceRows'
 import { useNarrow } from '../../composables/useNarrow'
-import { usePolling } from '../../composables/usePolling'
 import { useToast } from '../../composables/useToast'
 import type { DeviceView } from '../../domain/devices'
-import { buildInstanceRows, manualInstanceIds, type InstanceRow } from '../../domain/instances'
+import type { InstanceRow } from '../../domain/instances'
 import { splitLegacyVpn } from '../../domain/vpnPortal'
 import { downloadText } from '../../lib/download'
 import { DEFAULT_NETWORK_CONFIG, normalizeNetworkConfig, toBackendNetworkConfig, type NetworkConfig } from '../../lib/networkConfig'
@@ -42,97 +38,23 @@ const toast = useToast()
 const { confirm } = useConfirm()
 const narrow = useNarrow(640)
 
-const POLL_MS = 5_000
+// --- reading (polled every 5 s, single-flight; see useInstanceRows) ---
 
-// --- reading ---
-
-/** null until the first successful read. */
-const rows = ref<InstanceRow[] | null>(null)
-/** The running info of each listed running instance, as last read; the VPN Portal dialog reads it. */
-const infos = shallowRef<Record<string, InstanceRunningInfo | null>>({})
-const loadError = ref<string | null>(null)
-const retrying = ref(false)
-/** Metas only change through an edit or a delete here, which drop the entry. */
-const metas: Record<string, InstanceMeta> = {}
-/**
- * Bumped per read, when the device goes offline and on unmount. A read checks it after every
- * await: once a newer read started (or the device went offline, or the panel is gone) it stops,
- * sending nothing more and applying nothing.
- */
-let seq = 0
-let disposed = false
-onScopeDispose(() => {
-  disposed = true
-  seq++
-})
-
-async function refresh(): Promise<void> {
-  // An offline device is not asked anything, and neither is one whose panel is gone.
-  if (disposed || !props.device.online) return
-  const machineId = props.device.id
-  const mine = ++seq
-  // Only the list decides whether the read failed; the rest degrades per instance.
-  let ids: { id: string; disabled: boolean }[]
-  try {
-    ids = manualInstanceIds(await listInstances(machineId), props.centralIds)
-  } catch (e) {
-    if (mine === seq) loadError.value = errorMessage(e)
-    return
-  }
-  if (mine !== seq) return
-  const unknown = ids.map((i) => i.id).filter((id) => !metas[id])
-  if (unknown.length) {
-    let fetched: Record<string, InstanceMeta> = {}
-    try {
-      fetched = await instanceMetas(machineId, unknown)
-    } catch {
-      // Left uncached: those rows show their id as the name, and the next read asks again.
-    }
-    if (mine !== seq) return
-    Object.assign(metas, fetched)
-  }
-  const last = infos.value
-  const next: Record<string, InstanceRunningInfo | null> = {}
-  await Promise.all(
-    ids.filter((i) => !i.disabled).map(async ({ id }) => {
-      try {
-        next[id] = await instanceInfo(machineId, id)
-      } catch {
-        // One unreadable instance keeps its last info (none yet shows 启动中); the others still update.
-        next[id] = last[id] ?? null
-      }
-    }),
-  )
-  if (mine !== seq) return
-  infos.value = next
-  rows.value = buildInstanceRows(ids, metas, next)
-  loadError.value = null
-}
-
-async function retry() {
-  retrying.value = true
-  try {
-    await refresh()
-  } finally {
-    retrying.value = false
-  }
-}
-
-const online = computed(() => props.device.online)
-const poller = usePolling(refresh, POLL_MS)
-// An offline device is not asked anything; it is read again as soon as it is back.
-watch(
-  online,
-  (on) => {
-    if (on) {
-      poller.start()
-    } else {
-      poller.stop()
-      seq++
-    }
-  },
-  { immediate: true },
+// `infos` (each running instance's last read info) is the seam for the VPN Portal dialog.
+const { rows, infos, loadError, retrying, online, refreshNow, retry, dropMeta, rereadMeta } = useInstanceRows(
+  () => props.device,
+  () => props.centralIds,
 )
+
+/**
+ * Nothing is sent to an offline device, user actions included: checked right before every request
+ * (after any await, such as the confirm), an action that finds the device offline stops and says so.
+ */
+function stillOnline(): boolean {
+  if (props.device.online) return true
+  toast.error(t('instances.offline'))
+  return false
+}
 
 // --- row actions ---
 
@@ -154,9 +76,10 @@ async function rowTask(row: InstanceRow, task: (machineId: string) => Promise<vo
 function toggle(row: InstanceRow) {
   const disabled = row.state === 'disabled'
   return rowTask(row, async (machineId) => {
+    if (!stillOnline()) return
     await setInstanceDisabled(machineId, row.id, !disabled)
     toast.success(disabled ? t('instances.enabled') : t('instances.disabled'))
-    await refresh()
+    await refreshNow()
   })
 }
 
@@ -164,10 +87,12 @@ function exportToml(row: InstanceRow) {
   return rowTask(
     row,
     async (machineId) => {
+      if (!stillOnline()) return
       const config = toBackendNetworkConfig(normalizeNetworkConfig((await getInstanceConfig(machineId, row.id)) as NetworkConfig))
       // web 2.7 rejects the legacy VPN portal fields, so they stay out of the file, which says so.
       const { rest, legacy } = splitLegacyVpn(config)
       const { instance_id: _id, ...portable } = rest
+      if (!stillOnline()) return
       const r = await generateToml(portable)
       if ('error' in r) {
         toast.error(t('instances.exportFailed', { message: r.error }))
@@ -181,6 +106,7 @@ function exportToml(row: InstanceRow) {
 }
 
 async function remove(row: InstanceRow) {
+  if (!stillOnline()) return
   const ok = await confirm({
     title: t('instances.deleteTitle'),
     body: t('instances.deleteBody', { name: row.name }),
@@ -189,10 +115,12 @@ async function remove(row: InstanceRow) {
   })
   if (!ok) return
   await rowTask(row, async (machineId) => {
+    // The device may have gone offline while the confirm was open.
+    if (!stillOnline()) return
     await deleteInstance(machineId, row.id)
-    delete metas[row.id]
+    dropMeta(row.id)
     toast.success(t('instances.deleted', { name: row.name }))
-    await refresh()
+    await refreshNow()
   })
 }
 
@@ -212,6 +140,8 @@ const editorTitle = computed(() => {
   return target.kind === 'edit' ? t('instances.editTitle', { name: target.name }) : t('instances.createTitle')
 })
 const editorNote = computed(() => {
+  // An offline device takes no writes: the draft stays, its actions wait until the device is back.
+  if (!online.value) return t('instances.offline')
   const target = editorTarget.value
   return target.kind === 'edit' && target.running ? t('instances.restartNote') : undefined
 })
@@ -237,14 +167,18 @@ function create(initial: NetworkConfig = DEFAULT_NETWORK_CONFIG()) {
 
 function edit(row: InstanceRow) {
   return rowTask(row, async (machineId) => {
+    if (!stillOnline()) return
     const config = normalizeNetworkConfig((await getInstanceConfig(machineId, row.id)) as NetworkConfig)
+    // Offline by the time the config arrived: no editor whose save could not be sent.
+    if (!stillOnline()) return
     // Running covers starting and failed ones too: the instance is in the running list.
     openEditor({ kind: 'edit', id: row.id, name: row.name, running: row.state !== 'disabled' }, config)
   })
 }
 
 async function save(key: string, draft: NetworkConfig) {
-  if (saving.value) return
+  // The dialog disables its actions while the device is offline; this is the last line.
+  if (saving.value || !stillOnline()) return
   const target = editorTarget.value
   const machineId = editorMachine
   // An existing instance keeps its id whatever the TOML said.
@@ -256,10 +190,10 @@ async function save(key: string, draft: NetworkConfig) {
   try {
     if (run) await runInstance(machineId, backend, true)
     else await saveInstanceConfig(machineId, config.instance_id, backend)
-    if (target.kind === 'edit') delete metas[target.id]
+    if (target.kind === 'edit') rereadMeta(target.id)
     toast.success(target.kind === 'edit' ? t('instances.saved', { name }) : t('instances.created', { name }))
     editorOpen.value = false
-    void refresh()
+    void refreshNow()
   } catch (e) {
     // The dialog stays open with the draft, so the user can retry or adjust.
     toast.error(t('instances.failed', { message: errorMessage(e) }))
@@ -282,7 +216,9 @@ async function importFile(e: Event) {
   }
   importing.value = true
   try {
-    const r = await parseToml(await file.text())
+    const text = await file.text()
+    if (!stillOnline()) return
+    const r = await parseToml(text)
     if ('error' in r) {
       toast.error(t('instances.parseFailed', { message: r.error }))
       return
@@ -290,6 +226,7 @@ async function importFile(e: Event) {
     // An import is a new instance, even when the file carries the id of an existing one.
     const config = normalizeNetworkConfig(r.config as unknown as NetworkConfig)
     config.instance_id = uuidv4()
+    if (!stillOnline()) return
     create(config)
   } catch (err) {
     toast.error(t('instances.parseFailed', { message: errorMessage(err) }))
@@ -377,6 +314,7 @@ async function importFile(e: Event) {
       :initial="editorInitial"
       :core-version="device.version"
       :busy="saving"
+      :disabled="!online"
       :note="editorNote"
       :actions="editorActions"
       @action="save"

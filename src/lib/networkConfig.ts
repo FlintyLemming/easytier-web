@@ -388,6 +388,8 @@ function applyNetworkingMethod(
       config.peer_urls = publicServerUrl
         ? [publicServerUrl]
         : (options.fillPeerUrlsFromPeers ? existingPeers.map((peer) => peer.uri) : [])
+      // The server is now a peer url, so the url field is spent (upstream clears it).
+      if (config.public_server_url !== undefined) config.public_server_url = ''
       break
     case NetworkingMethod.Manual:
       break
@@ -397,8 +399,9 @@ function applyNetworkingMethod(
       break
   }
 
+  // Manual and standalone configs keep public_server_url exactly as read (absent stays absent): the
+  // form never shows it, and a manual config ignores it anyway.
   config.networking_method = NetworkingMethod.Manual
-  config.public_server_url = ''
   config.peers = peersFromUrls(config.peer_urls, existingPeers)
 }
 
