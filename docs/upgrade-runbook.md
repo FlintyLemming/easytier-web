@@ -25,11 +25,12 @@ echo "$BK"          # 记下这个路径：第 9 步回滚要用（第 4 步也�
 
 ## 1. 前置验证（已在本机完成，不碰生产）
 
-执行前确认下面三份报告的第一行都是 PASS：
+执行前确认下面四份报告的第一行都是 PASS：
 
 - [`testenv/reports/gate-2026-11-23.md`](../testenv/reports/gate-2026-11-23.md)：v2.7.1 web + 2.6.4 core——旧实例照常下发运行、设备自动登记、中央网络能在 2.6.4 core 上运行；升级后再回滚到 2.6.4 也验证过。
 - [`testenv/reports/migrate-rehearsal-2026-11-24.md`](../testenv/reports/migrate-rehearsal-2026-11-24.md)：合成数据上完整走一遍迁移向导、校验、单台回滚、整体回滚。
 - [`testenv/reports/prod-rehearsal-2026-11-24.md`](../testenv/reports/prod-rehearsal-2026-11-24.md)：用**生产数据库的副本**做同样的演练。
+- [`testenv/reports/prod-rehearsal-2026-11-25-auto-ip.md`](../testenv/reports/prod-rehearsal-2026-11-25-auto-ip.md)：在生产副本上验证共用固定 IP 的自动选址，以及 `routes = []`、端口占用、同一设备两个实例这三处修复；38 台运行中的设备全部迁移成功过。
 
 ## 2. （可选）两个 v2.7.1 读不出的停用实例
 

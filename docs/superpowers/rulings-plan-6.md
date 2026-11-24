@@ -86,3 +86,18 @@ Collected from the execution ledger (decisions taken on the user's behalf). Each
 
 - Production devices share fixed IPs (group A: 38 running instances, 15 distinct addresses). The wizard blocks duplicates; deciding how to migrate the rest (renumber in 2.6.4 first, or a wizard option to auto-assign) is the user's call.
 - The production upgrade itself (docs/upgrade-runbook.md) is run by the user, or with the user's explicit consent on the day.
+
+## Follow-up 2026-11-25: auto-selected addresses for shared fixed IPs (branch feat/migration-auto-ip)
+
+User decisions: merge Plan 6 into main (done, fast-forward); add an auto-assign option for devices that share a fixed IP. The user answered "no preference" to the approach and to the design approval; treated as opting out of further questions and built as the written short design (docs/superpowers/specs/2026-11-25-migration-auto-ip-design.md).
+
+- Ruling: the wizard picks the address (lowest host of the subnet not used by any legacy instance of the group, any member — fixed, allocated or runtime — or an earlier pick) and sets it as the member's fixed IP, instead of letting the backend allocate on join — backend allocation only avoids members, so it could hand out an address a device still on its legacy config uses in the same virtual network; the address is shown before the run — cost if wrong: devices get fixed rather than backend-managed addresses (changeable later in the member settings).
+- Ruling: defaults switch all but the first device (by name) of a shared address and every device whose address a member holds; an address outside the subnet is not switched by default (more likely a wrong subnet) — cost: one click per device to switch.
+- Ruling: the stop-wait before joining has no extra pause after the device reports the instance stopped — no evidence a pause is needed, it cost 2 s per device and broke mocked e2e timings; the wait step still rolls back a failed start — cost if wrong: an occasional Address-in-use rollback.
+- Ruling: of several instances of one device in a group, the running one (else the first) is the one that can migrate; the others get the `otherInstance` blocker and stay manual instances — a device joins a network once — cost: none.
+- Ruling: the runner writes the restored config back before re-enabling only when the manual-routes restore changed it; rollbackDevice always writes the recorded config back before enabling an existing legacy instance — disabling stored the core's lossy view — cost: one extra request per rollback.
+- Ruling: e2e 6 counts proxy-rpc show_node_info as a read; e2e 15's per-device sequence now starts with that read and has the stop poll after disabling — cost: none.
+- Finding: `routes = []` (manual mode, no routes) is lost in a 2.6.4 core's config view and stored by v2.7.1 on disable; 17 running production instances use it; fixed in the wizard; runbook warns against disabling/enabling legacy instances on 2.6.4 devices after the upgrade.
+- Finding: Address in use when the central instance started before the legacy one had stopped (1 of 37); fixed by the stop-wait.
+- Finding: one production device has two instances of group A; fixed (single migration per device).
+- Verification: production copy, default choices — 37 migrated and consistent in one run; batches into the existing network migrated the rest; routing modes of all migrated members equal their pre-upgrade TOML; whole rollback in 15 s (testenv/reports/prod-rehearsal-2026-11-25-auto-ip.md).
