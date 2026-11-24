@@ -1,0 +1,4 @@
+// Only needed when the console and the API are on different subdomains of one registered domain
+// (console.example.com + api.example.com): the session cookie is SameSite=Lax and not Secure, so a
+// different site cannot log in at all. Copy to dist/config.js. Without it the API is same-origin.
+window.__ET_CONFIG__ = { apiBase: 'https://api.example.com' }
