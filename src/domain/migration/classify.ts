@@ -235,3 +235,24 @@ export function changeFields(key: ChangeKey): string[] {
 export function unconfirmedChanges(plan: DevicePlan, confirmed: ReadonlySet<ChangeKey>): ChangeKey[] {
   return plan.changes.map((c) => c.key).filter((k) => !confirmed.has(k))
 }
+
+/** The devices that will migrate: chosen (迁移), without blockers, not members already. */
+export function selectedPreviews(previews: DevicePreview[], choices: Record<string, boolean>): DevicePreview[] {
+  return previews.filter((p) => choices[p.device.id] === true && p.blockers.length === 0 && !p.alreadyMember)
+}
+
+/**
+ * Step 3 may proceed: at least one device migrates, every change of those devices is confirmed,
+ * and no device chosen for 迁移 still shares its fixed IP with another chosen one.
+ */
+export function readyToRun(
+  previews: DevicePreview[],
+  choices: Record<string, boolean>,
+  confirmed: Record<string, ChangeKey[]>,
+): boolean {
+  const selected = selectedPreviews(previews, choices)
+  if (selected.length === 0) return false
+  const unresolved = previews.some((p) => choices[p.device.id] === true && !p.alreadyMember && p.blockers.some((b) => b.kind === 'duplicateIp'))
+  if (unresolved) return false
+  return selected.every((p) => unconfirmedChanges(p.plan, new Set(confirmed[p.device.id] ?? [])).length === 0)
+}

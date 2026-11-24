@@ -11,10 +11,12 @@ import type { CentralNetworkMember } from '../../src/api/types'
 import { CENTRAL_OWNED_FIELDS } from '../../src/domain/memberOverride'
 import { LEGACY_VPN_FIELDS } from '../../src/domain/vpnPortal'
 import {
-  changeFields, classifyInstance, isUnset, planGroup, targetFromDetail, unconfirmedChanges, type TargetNetwork,
+  changeFields, classifyInstance, isUnset, planGroup, readyToRun, selectedPreviews, targetFromDetail, unconfirmedChanges,
+  type TargetNetwork,
 } from '../../src/domain/migration/classify'
 import { groupLegacy } from '../../src/domain/migration/inventory'
 import type { DeviceRef, LegacyConfig, LegacyInstance } from '../../src/domain/migration/types'
+import type { ChangeKey } from '../../src/domain/migration/classify'
 
 const target: TargetNetwork = {
   networkName: 'office', secret: 'office-secret', method: 'Manual', publicServerUrl: null,
@@ -169,5 +171,29 @@ describe('changes', () => {
     expect(t.peerUrls).toEqual(['tcp://gw:22020'])
     expect(t.secureMode).toBe(true)
     expect(t.virtualCidr).toBeNull()
+  })
+})
+
+describe('selection', () => {
+  const all = new Set(Object.values(M))
+  const choices = (o: Record<string, boolean>) => Object.fromEntries(Object.entries(o).map(([n, v]) => [M[n]!, v]))
+
+  it('selectedPreviews: chosen, not blocked, not already a member', () => {
+    const ps = planGroup(officeGroup({ core3: { ...cfgCore3, virtual_ipv4: '10.150.9.9' } }), devices, target, [], all)
+    const sel = selectedPreviews(ps, choices({ core1: true, core2: true, core3: true, core4: false }))
+    expect(sel.map((p) => p.device.name)).toEqual(['core1', 'core2'])
+  })
+
+  it('readyToRun: something selected, every change of the selected confirmed, no chosen device with a duplicate IP', () => {
+    const ps = planGroup(officeGroup(), devices, target, [], all)
+    const ch = choices({ core1: true, core2: true, core3: true, core4: false })
+    expect(readyToRun(ps, ch, {})).toBe(false)
+    const conf = { [M.core1!]: ['connectivity', 'vpn_portal'], [M.core3!]: ['acl'] } as Record<string, ChangeKey[]>
+    expect(readyToRun(ps, ch, conf)).toBe(true)
+    expect(readyToRun(ps, choices({ core1: false, core2: false, core3: false, core4: false }), conf)).toBe(false)
+
+    const dupSel = new Set([M.core2!, M.core3!])
+    const dup = planGroup(officeGroup({ core3: { ...cfgCore3, virtual_ipv4: '10.150.0.2' } }), devices, target, [], dupSel)
+    expect(readyToRun(dup, choices({ core1: false, core2: true, core3: true, core4: false }), conf)).toBe(false)
   })
 })

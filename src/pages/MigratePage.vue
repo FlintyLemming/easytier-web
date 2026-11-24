@@ -6,10 +6,11 @@ import { getGatewayInfo, getNetwork } from '../api/client'
 import type { CentralNetworkDetail, GatewayInfo } from '../api/types'
 import InventoryStep from '../components/migrate/InventoryStep.vue'
 import NetworkStep from '../components/migrate/NetworkStep.vue'
+import PreviewStep from '../components/migrate/PreviewStep.vue'
 import WizardSteps from '../components/migrate/WizardSteps.vue'
 import { useLegacyInventory } from '../composables/useLegacyInventory'
 import { useToast } from '../composables/useToast'
-import { targetFromDetail, targetFromDraft, type ChangeKey, type TargetNetwork } from '../domain/migration/classify'
+import { planGroup, targetFromDetail, targetFromDraft, type ChangeKey, type TargetNetwork } from '../domain/migration/classify'
 import { draftFromGroup, groupLegacy } from '../domain/migration/inventory'
 import { loadJournal } from '../domain/migration/journal'
 import type { DraftConflicts, NetworkDraft } from '../domain/migration/types'
@@ -49,6 +50,22 @@ const target = computed<TargetNetwork | null>(() => {
 const choices = ref<Record<string, boolean>>({})
 /** Confirmed changes per device id (step 3). */
 const confirmed = ref<Record<string, ChangeKey[]>>({})
+
+/** Members of the existing target network (none for a network the wizard will create). */
+const targetMembers = computed(() => (existing.value ? (inventory.membersByNetwork[existing.value.network_id] ?? []) : []))
+const previews = computed(() => {
+  if (!group.value || !target.value) return []
+  const selected = new Set(Object.entries(choices.value).filter(([, v]) => v).map(([k]) => k))
+  return planGroup(group.value, legacy.devices.value, target.value, targetMembers.value, selected)
+})
+
+/** Entering step 3 the first time for this group: every device starts at its default choice. */
+function toPreview() {
+  if (Object.keys(choices.value).length === 0) {
+    choices.value = Object.fromEntries(previews.value.map((p) => [p.device.id, p.defaultSelected]))
+  }
+  toStep(3)
+}
 
 const hasJournal = ref(false)
 function readJournal() {
@@ -124,7 +141,16 @@ function toStep(n: number) {
       :server-union="serverUnion"
       :initial="initialDraft"
       @back="toStep(1)"
-      @next="toStep(3)"
+      @next="toPreview"
+    />
+
+    <PreviewStep
+      v-else-if="step === 3 && group && target"
+      v-model:choices="choices"
+      v-model:confirmed="confirmed"
+      :previews="previews"
+      @back="toStep(2)"
+      @next="toStep(4)"
     />
   </div>
 </template>

@@ -128,3 +128,97 @@ test.describe('step 2: network settings', () => {
     expect(writes).toEqual([])
   })
 })
+
+async function toPreview(page: Page) {
+  await toNetworkStep(page)
+  await page.getByTestId('wizard-step-network').getByRole('button', { name: '下一步' }).click()
+  await expect(page.getByTestId('wizard-step-preview')).toBeVisible()
+}
+const card = (page: Page, name: string) => page.getByTestId('device-preview').filter({ has: page.getByRole('heading', { name, exact: true }) })
+const choice = (page: Page, name: string, label: '迁移' | '暂不迁移') => card(page, name).getByRole('radio', { name: label, exact: true })
+/** The radios are visually hidden inside segmented-button labels; users click the label. */
+const pick = (page: Page, name: string, label: '迁移' | '暂不迁移') =>
+  card(page, name).locator('label').filter({ hasText: new RegExp(`^${label}$`) }).click()
+
+test.describe('step 3: preview', () => {
+  test('7: running devices default to 迁移, the disabled one to 暂不迁移', async ({ page }) => {
+    await openWizard(page)
+    await toPreview(page)
+    await expect(page.getByTestId('device-preview')).toHaveCount(4)
+    for (const n of ['core1', 'core2', 'core3']) await expect(choice(page, n, '迁移')).toBeChecked()
+    await expect(choice(page, 'core4', '暂不迁移')).toBeChecked()
+    await expect(card(page, 'core4')).toContainText('这个实例已停用，暂不迁移时原样保留为手动实例')
+  })
+
+  test('8: core2 shows its member fields and override and has no changes', async ({ page }) => {
+    await openWizard(page)
+    await toPreview(page)
+    const c = card(page, 'core2')
+    await expect(c.getByTestId('member-fields')).toContainText('10.150.0.2')
+    await expect(c.getByTestId('member-fields')).toContainText('core2-office')
+    await expect(c.getByTestId('member-fields')).toContainText('192.168.88.0/24')
+    await expect(c.getByTestId('override-fields')).toContainText('port_forwards')
+    await expect(c.getByTestId('changes')).toHaveCount(0)
+  })
+
+  test('9: core3 ACL can be expanded; core1 has connectivity and VPN Portal changes', async ({ page }) => {
+    await openWizard(page)
+    await toPreview(page)
+    const c3 = card(page, 'core3')
+    await c3.getByRole('button', { name: '查看旧 ACL' }).click()
+    await expect(c3.getByTestId('legacy-acl')).toContainText('3389')
+    await expect(c3).toContainText('迁移不会转换 ACL')
+    const c1 = card(page, 'core1')
+    await expect(c1.getByTestId('changes')).toContainText('连接方式')
+    await expect(c1.getByTestId('changes')).toContainText('VPN Portal')
+  })
+
+  test('10: 下一步 needs every change confirmed; the summary confirms a whole kind', async ({ page }) => {
+    await openWizard(page)
+    await toPreview(page)
+    const next = page.getByTestId('wizard-step-preview').getByRole('button', { name: '下一步' })
+    await expect(next).toBeDisabled()
+    for (const box of await page.getByRole('checkbox', { name: '我已了解' }).all()) await box.check()
+    await expect(next).toBeEnabled()
+    await card(page, 'core3').getByRole('checkbox', { name: '我已了解' }).uncheck()
+    await expect(next).toBeDisabled()
+    await card(page, 'core3').getByRole('checkbox', { name: '我已了解' }).check()
+    await card(page, 'core1').getByRole('checkbox', { name: '我已了解' }).first().uncheck()
+    await expect(next).toBeDisabled()
+    const summary = page.getByTestId('change-summary')
+    await expect(summary).toContainText('连接方式 · 1 台')
+    await summary.getByTestId('confirm-kind-connectivity').click()
+    await expect(next).toBeEnabled()
+  })
+
+  test('11: a subnet the fixed IPs are outside of blocks those devices', async ({ page }) => {
+    await openWizard(page)
+    await toNetworkStep(page)
+    await page.getByTestId('wizard-step-network').getByLabel('网段').fill('10.151.0.0/24')
+    await page.getByTestId('wizard-step-network').getByRole('button', { name: '下一步' }).click()
+    for (const n of ['core1', 'core2', 'core3']) {
+      await expect(card(page, n)).toContainText('不在网段 10.151.0.0/24 内')
+      await expect(choice(page, n, '迁移')).toBeDisabled()
+    }
+    await expect(page.getByTestId('change-summary')).toContainText('将迁移 0 台')
+    await expect(page.getByTestId('wizard-step-preview').getByRole('button', { name: '下一步' })).toBeDisabled()
+  })
+
+  test('12: two devices with one fixed IP block each other until one is not migrated', async ({ page }) => {
+    await openWizard(page, { configs: { core3: { virtual_ipv4: '10.150.0.2' } } })
+    await toPreview(page)
+    await expect(card(page, 'core2')).toContainText('固定 IP 10.150.0.2 和 core3 重复')
+    await expect(card(page, 'core3')).toContainText('固定 IP 10.150.0.2 和 core2 重复')
+    await pick(page, 'core3', '暂不迁移')
+    await expect(choice(page, 'core3', '暂不迁移')).toBeChecked()
+    await expect(card(page, 'core2')).not.toContainText('重复')
+  })
+
+  test('13: the preview fits a narrow screen', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 })
+    await openWizard(page)
+    await toPreview(page)
+    const fits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+    expect(fits).toBe(true)
+  })
+})
