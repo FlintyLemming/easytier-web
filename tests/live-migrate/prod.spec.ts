@@ -153,6 +153,26 @@ test('production-copy rehearsal: group A through the wizard, verify, roll back o
     observed.verification = verification.map((v) => ({ label: v.label, status: v.status, diffs: v.diffs }))
     observed.aclNote = (await report.getByText(/这些设备迁移前单独配置了 ACL/).count()) > 0
 
+    // The routing mode (no routes line / routes = [] / a list) of every migrated member equals its
+    // pre-upgrade TOML: routes = [] is lost in a 2.6.4 core's config view (manualRoutes.ts).
+    const nets = (await (await page.request.get('/api/v1/networks')).json()) as { networks: { network_id: string }[] }
+    const netId = nets.networks[0]!.network_id
+    const mode = (t: string) => /^routes = \[\]$/m.test(t) ? 'empty' : /^routes = /m.test(t) ? 'listed' : 'none'
+    const routeModes: Record<string, number> = {}
+    for (const d of meta.devices) {
+      const inst = snap.devices[d.id]!.running[0]
+      if (!inst) continue
+      let member = ''
+      try {
+        member = await nodeToml(page.request, d.id, netId)
+      } catch { continue }
+      if (!member) continue
+      const k = `${mode(snap.toml[inst]!)} → ${mode(member)}`
+      routeModes[k] = (routeModes[k] ?? 0) + 1
+    }
+    observed.routeModes = routeModes
+    expect(Object.keys(routeModes).filter((k) => k.split(' → ')[0] !== k.split(' → ')[1]), JSON.stringify(routeModes)).toEqual([])
+
     // Roll back one consistent device — one that got an auto-selected address, so the rollback must
     // bring its shared legacy address back — and compare its TOML with the pre-upgrade snapshot.
     const auto = new Set(observed.autoSelected as string[])

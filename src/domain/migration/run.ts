@@ -182,6 +182,13 @@ export async function migrateDevice(
     save({ status: 'rolledBack', step, message: failure })
     return { kind: 'rolledBack', step, message: failure }
   }
+  // The core stops the instance asynchronously. The central instance listens on the same ports, so
+  // starting it before the legacy listeners are closed fails with "Address in use" (seen once in 37
+  // devices on the production copy). Wait until the device no longer runs it. A timeout is not an
+  // error: a failed start is caught by the wait step and rolled back.
+  if (wasRunning) {
+    await t.poll(async () => ((await api.listInstances(dev)).running.includes(inst) ? undefined : true), t.timing.goneTimeoutMs)
+  }
 
   /** Set before the join request: a failed request may still have added the member. */
   let joinAttempted = false

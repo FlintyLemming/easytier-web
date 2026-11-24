@@ -305,6 +305,7 @@ test.describe('step 4: execute', () => {
       expect(about(after, d)).toEqual([
         `POST /machines/${d}/proxy-rpc`,
         `PUT /machines/${d}/networks/${i}`,
+        `GET /machines/${d}/networks`,
         `GET /machines/${d}/networks/config/${i}`,
         `POST /networks/${NET_ID}/members`,
         `PATCH /networks/${NET_ID}/members/${d}`,

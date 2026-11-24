@@ -107,14 +107,13 @@ describe('migrateDevice', () => {
     const out = await migrateDevice(api, input(), hooks(records, steps))
     expect(out).toEqual({ kind: 'migrated' })
     expect(steps).toEqual(['disable', 'recheck', 'join', 'settings', 'wait', 'record', 'cleanup'])
-    // The running TOML is read before disabling (the manual-routes mode is only there).
-    expect(api.calls[0]).toBe('nodeInfo')
-    expect(api.calls[1]).toBe(`disable ${INST} true`)
-    expect(api.calls[2]).toBe('getConfig')
-    expect(api.calls[3]).toBe(`add ${DEV}`)
-    expect(api.calls[4]).toBe(`patch ${JSON.stringify({ virtual_ipv4: '10.150.0.2', hostname_override: 'core2-office' })}`)
-    expect(api.calls[5]).toMatch(/^put /)
-    const put = JSON.parse(api.calls[5]!.slice(4))
+    // The running TOML is read before disabling (the manual-routes mode is only there); the stored
+    // config is read once the device has stopped the instance.
+    expect(api.calls.slice(0, 4)).toEqual(['nodeInfo', `disable ${INST} true`, 'list', 'getConfig'])
+    const m = mutating(api.calls)
+    expect(m.slice(0, 3)).toEqual([`disable ${INST} true`, `add ${DEV}`, `patch ${JSON.stringify({ virtual_ipv4: '10.150.0.2', hostname_override: 'core2-office' })}`])
+    expect(m[3]).toMatch(/^put /)
+    const put = JSON.parse(m[3]!.slice(4))
     expect(put.proxy_cidrs).toEqual(['192.168.88.0/24'])
     expect(put.port_forwards).toEqual(storedCore2.port_forwards)
     expect(api.calls.at(-1)).toBe(`delete ${INST}`)
@@ -175,6 +174,8 @@ describe('migrateDevice', () => {
   for (const [name, step] of [['updateMember', 'settings'], ['setMemberConfig', 'settings']] as const) {
     it(`${name} fails: removes the member, waits for the central instance to go, re-enables`, async () => {
       const api = new FakeApi()
+      // stopped after disable; then the central instance runs once, then it is gone
+      api.lists = [{ running: [], disabled: [INST] }, { running: [NET], disabled: [INST] }, { running: [], disabled: [INST] }]
       api.fail[name] = new ApiError(400, {}, 'invalid IPv4 address for member')
       const out = await migrateDevice(api, input(), hooks())
       expect(out).toEqual({ kind: 'rolledBack', step, message: 'invalid IPv4 address for member' })
@@ -268,6 +269,16 @@ describe('migrateDevice', () => {
     const api = new FakeApi()
     const out = await migrateDevice(api, input({ newIp: '10.150.0.20' }), hooks())
     expect(out).toMatchObject({ kind: 'rolledBack', step: 'recheck', changed: ['fixed_ip'] })
+  })
+
+  it('waits until the device has stopped the legacy instance before joining (its listeners hold the ports)', async () => {
+    const api = new FakeApi()
+    api.lists = [{ running: [INST], disabled: [] }, { running: [INST], disabled: [] }, { running: [], disabled: [INST] }]
+    const out = await migrateDevice(api, input(), hooks())
+    expect(out.kind).toBe('migrated')
+    const disableAt = api.calls.indexOf(`disable ${INST} true`)
+    const joinAt = api.calls.indexOf(`add ${DEV}`)
+    expect(api.calls.slice(disableAt + 1, joinAt).filter((c) => c === 'list')).toHaveLength(3)
   })
 
   it('routes = [] in the running TOML: the mode is restored into the record and the override', async () => {
