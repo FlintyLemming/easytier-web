@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { createVpnPortalConfig, LEGACY_VPN_FIELDS, usesLegacyVpn } from '../../domain/vpnPortal'
+import { createVpnPortalConfig, LEGACY_VPN_FIELDS, splitLegacyVpn, usesLegacyVpn } from '../../domain/vpnPortal'
 import type { NetworkConfig, VpnPortalClientConfig } from '../../lib/networkConfig'
 import UiInput from '../ui/UiInput.vue'
 import AddButton from './AddButton.vue'
@@ -25,8 +25,8 @@ import { FIELD_CLASS, LABEL_CLASS, REMOVE_CLASS } from './styles'
 const props = defineProps<{
   draft: NetworkConfig
   coreVersion: string
-  /** The legacy fields the editor opened with (see `splitLegacyVpn`). */
-  openedLegacy: Record<string, unknown>
+  /** The config as the editor read it; turning a portal back off returns to how it was there. */
+  opened: NetworkConfig
 }>()
 const { t } = useI18n()
 const invalid = useInvalidText()
@@ -35,6 +35,7 @@ const groupsId = useId()
 
 // Cores before 2.7 only understand the legacy fields (and drop `vpn_portal_config`).
 const legacy = computed(() => usesLegacyVpn(props.coreVersion, props.draft))
+const openedLegacy = computed(() => splitLegacyVpn(props.opened).legacy)
 
 // --- legacy: one shared WireGuard config for a client network ---
 
@@ -48,7 +49,7 @@ function setLegacyOn(on: boolean) {
     const rec = d as unknown as Record<string, unknown>
     for (const field of LEGACY_VPN_FIELDS) {
       if (field === 'enable_vpn_portal') continue
-      if (field in props.openedLegacy) rec[field] = props.openedLegacy[field]
+      if (field in openedLegacy.value) rec[field] = openedLegacy.value[field]
       else delete rec[field]
     }
     return
@@ -68,13 +69,25 @@ function setLegacyNetwork(text: string) {
 
 // --- 2.7+: named clients ---
 
+// Toggling back returns to the config as read. A portal the config did not have is created on 启用
+// and removed again on 关闭 (rather than left behind disabled, with a fresh key). One it had is
+// disabled with `enabled = false` and keeps the rest; 启用 then puts `enabled` back as read, where
+// leaving it out means enabled.
 function setOn(on: boolean) {
   const d = props.draft
+  const read = props.opened.vpn_portal_config
   if (!d.vpn_portal_config) {
     if (on) d.vpn_portal_config = createVpnPortalConfig()
     return
   }
-  d.vpn_portal_config.enabled = on
+  if (on) {
+    if (read && read.enabled == null) delete d.vpn_portal_config.enabled
+    else d.vpn_portal_config.enabled = true
+  } else if (!read) {
+    delete d.vpn_portal_config
+  } else {
+    d.vpn_portal_config.enabled = false
+  }
 }
 
 function addClient() {

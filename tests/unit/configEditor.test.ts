@@ -6,6 +6,7 @@ import { generateToml, parseToml } from '../../src/api/client'
 import { ApiError } from '../../src/api/http'
 import ConfigEditor from '../../src/components/config-editor/ConfigEditor.vue'
 import ConfigEditorDialog from '../../src/components/config-editor/ConfigEditorDialog.vue'
+import { proxyCidrRule } from '../../src/components/config-editor/rules'
 import { LEGACY_VPN_FIELDS, splitLegacyVpn } from '../../src/domain/vpnPortal'
 import { i18n } from '../../src/i18n'
 import { normalizeNetworkConfig, toBackendNetworkConfig, type NetworkConfig } from '../../src/lib/networkConfig'
@@ -60,6 +61,14 @@ function control(root: VueWrapper | DOMWrapper<Element>, text: string): DOMWrapp
   const el = id ? root.find<HTMLInputElement>(`[id="${id}"]`) : label!.find<HTMLInputElement>('input, select, textarea')
   expect(el.exists(), `control for "${text}"`).toBe(true)
   return el
+}
+
+function flushOf(w: VueWrapper): () => Promise<NetworkConfig | null> {
+  return (w.vm as unknown as { flush(): Promise<NetworkConfig | null> }).flush
+}
+
+function hasLabel(root: VueWrapper | DOMWrapper<Element>, text: string): boolean {
+  return root.findAll('label').some((l) => l.text().trim() === text)
 }
 
 function section(w: VueWrapper, name: string) {
@@ -147,6 +156,86 @@ describe('ConfigEditor form', () => {
     await control(net, '虚拟 IPv4').setValue('')
     expect(lastValid(w)).toBe(true)
     expect(lastDraft(w)).toStrictEqual(value)
+  })
+
+  it('a subnet proxy entry is a CIDR or a mapped <cidr>-><cidr>', () => {
+    for (const ok of ['10.1.0.0/24', '10.1.0.0/24->10.2.0.0/24']) expect(proxyCidrRule(ok), ok).toBeNull()
+    expect(proxyCidrRule('')).toBe('required')
+    // The core does not trim, and web v2.7.1 generate-config rejects a padded entry.
+    for (const bad of ['10.1.0.0/24->bad', '10.1.0.0/24->', '->10.2.0.0/24', '10.1.0.0/24->10.2.0.0/24->10.3.0.0/24', '10.1.0.0/24 -> 10.2.0.0/24', ' 10.1.0.0/24']) {
+      expect(proxyCidrRule(bad), bad).toBe('cidr')
+    }
+  })
+
+  it('an instance with a mapped subnet proxy stays valid and saves it unchanged', async () => {
+    const value = input((raw) => { raw.proxy_cidrs = ['10.1.0.0/24->10.2.0.0/24', '192.168.5.0/24'] })
+    const w = mountEditor({ modelValue: value })
+    const net = section(w, 'network')
+    expect(lastValid(w)).toBe(true)
+    expect(net.text()).not.toContain('请输入 CIDR')
+
+    // An unrelated edit saves, with the mapped entry as read.
+    await control(w, 'MTU').setValue('1300')
+    expect(lastValid(w)).toBe(true)
+    await expect(flushOf(w)()).resolves.toStrictEqual({ ...value, mtu: 1300 })
+
+    const entry = net.find<HTMLInputElement>('input[aria-label="子网代理 第 1 项"]')
+    for (const bad of ['10.1.0.0/24->bad', '10.1.0.0/24->']) {
+      await entry.setValue(bad)
+      expect(lastValid(w), bad).toBe(false)
+      expect(net.text()).toContain('请输入 CIDR，例如 10.0.0.0/24')
+    }
+    await entry.setValue('10.1.0.0/24->10.2.0.0/24')
+    expect(lastValid(w)).toBe(true)
+    expect(lastDraft(w)).toStrictEqual({ ...value, mtu: 1300 })
+  })
+
+  it('with a DHCP range and no dhcp key, 自动分配 IP shows on, as the core runs it', async () => {
+    // Upstream: dhcp.unwrap_or(dhcp_ipv4_cidr.is_some()).
+    const value = input((raw) => { delete raw.dhcp; raw.dhcp_ipv4_cidr = '10.88.0.0/24' })
+    const w = mountEditor({ modelValue: value })
+    const net = section(w, 'network')
+    const box = control(net, '自动分配 IP')
+    expect(box.element.checked).toBe(true)
+    expect(hasLabel(net, '虚拟 IPv4')).toBe(false)
+    await expect(flushOf(w)()).resolves.toStrictEqual(value)
+
+    // Off has to be written out, or the core keeps DHCP on and ignores the static address.
+    await box.setValue(false)
+    expect(lastDraft(w).dhcp).toBe(false)
+    expect(control(net, '虚拟 IPv4').element.value).toBe('10.88.0.3')
+
+    await box.setValue(true)
+    expect('dhcp' in lastDraft(w)).toBe(false)
+    expect(lastDraft(w)).toStrictEqual(value)
+  })
+
+  it('without a DHCP range and no dhcp key, 自动分配 IP shows off', async () => {
+    const value = input((raw) => delete raw.dhcp)
+    const w = mountEditor({ modelValue: value })
+    const net = section(w, 'network')
+    const box = control(net, '自动分配 IP')
+    expect(box.element.checked).toBe(false)
+    expect(control(net, '虚拟 IPv4').element.value).toBe('10.88.0.3')
+    await expect(flushOf(w)()).resolves.toStrictEqual(value)
+
+    await box.setValue(true)
+    expect(lastDraft(w).dhcp).toBe(true)
+    expect(hasLabel(net, '虚拟 IPv4')).toBe(false)
+
+    await box.setValue(false)
+    expect('dhcp' in lastDraft(w)).toBe(false)
+    expect(lastDraft(w)).toStrictEqual(value)
+  })
+
+  it('checks the static address only while DHCP is effectively off', async () => {
+    const w = mountEditor({ modelValue: input((raw) => { delete raw.dhcp; raw.dhcp_ipv4_cidr = '10.88.0.0/24'; raw.network_length = 40 }) })
+    expect(lastValid(w)).toBe(true)
+
+    const net = section(w, 'network')
+    await control(net, '自动分配 IP').setValue(false)
+    expect(lastValid(w)).toBe(false)
+    expect(net.text()).toContain('前缀长度范围 1–32')
   })
 
   it('a port outside 1–65535 makes the draft invalid', async () => {
@@ -358,7 +447,8 @@ describe('ConfigEditor VPN portal (legacy cores)', () => {
   })
 
   it('a 2.7 core without legacy fields gets the named-client portal', async () => {
-    const w = mountEditor({ modelValue: input(withoutLegacy), coreVersion: '2.7.1' })
+    const value = input(withoutLegacy)
+    const w = mountEditor({ modelValue: value, coreVersion: '2.7.1' })
     const vpn = section(w, 'vpnPortal')
     expect(vpn.text()).not.toContain('这台设备的 core 早于 2.7')
     expect(vpn.findAll('label').some((l) => l.text().trim() === '监听端口')).toBe(false)
@@ -380,9 +470,76 @@ describe('ConfigEditor VPN portal (legacy cores)', () => {
     expect(lastValid(w)).toBe(true)
     expect(lastDraft(w).vpn_portal_config!.clients).toEqual([{ name: 'phone', virtual_ip: '10.88.0.20/24', groups: ['a', 'b'] }])
 
+    // This used to leave `{ enabled: false, … }` with a fresh key behind. R10: the config had no
+    // portal when the editor opened and 启用 created this one, so 关闭 returns to no portal at all.
     await control(vpn, '启用').setValue(false)
-    expect(lastDraft(w).vpn_portal_config).toMatchObject({ enabled: false, wireguard_listen: '0.0.0.0:22022' })
-    expect(lastDraft(w).vpn_portal_config!.clients).toHaveLength(1)
+    expect('vpn_portal_config' in lastDraft(w)).toBe(false)
+    expect(lastDraft(w)).toStrictEqual(value)
+  })
+})
+
+describe('ConfigEditor VPN portal (2.7+ cores): 启用 toggled back returns to the config as read', () => {
+  const PORTAL = {
+    wireguard_listen: '0.0.0.0:22022',
+    wireguard_private_key: 'cHJpdmF0ZS1rZXktZml4dHVyZS0wMDAwMDAwMDAwMDA=',
+    clients: [{ name: 'phone', virtual_ip: '10.88.0.20/24', groups: ['a'] }],
+  }
+
+  it('a portal created by 启用 is removed again by 关闭', async () => {
+    const value = input(withoutLegacy)
+    expect('vpn_portal_config' in value).toBe(false)
+    const w = mountEditor({ modelValue: value, coreVersion: '2.7.1' })
+    const vpn = section(w, 'vpnPortal')
+    await control(vpn, '启用').setValue(true)
+    expect(lastDraft(w).vpn_portal_config).toBeTruthy()
+
+    await control(vpn, '启用').setValue(false)
+    const off = lastDraft(w)
+    expect('vpn_portal_config' in off).toBe(false)
+    expect(off).toStrictEqual(value)
+    expect(toBackendNetworkConfig(off)).toStrictEqual(toBackendNetworkConfig(value))
+    expect(control(vpn, '启用').element.checked).toBe(false)
+    expect(lastValid(w)).toBe(true)
+  })
+
+  it('a portal read without `enabled` (= enabled) is disabled explicitly and comes back as read', async () => {
+    const value = input((raw) => { withoutLegacy(raw); raw.vpn_portal_config = structuredClone(PORTAL) })
+    expect('enabled' in value.vpn_portal_config!).toBe(false)
+    const w = mountEditor({ modelValue: value, coreVersion: '2.7.1' })
+    const vpn = section(w, 'vpnPortal')
+    expect(control(vpn, '启用').element.checked).toBe(true)
+
+    // Off keeps everything else, so the clients and key are there when it is turned on again.
+    await control(vpn, '启用').setValue(false)
+    expect(lastDraft(w).vpn_portal_config).toStrictEqual({ ...value.vpn_portal_config, enabled: false })
+
+    await control(vpn, '启用').setValue(true)
+    const on = lastDraft(w)
+    expect('enabled' in on.vpn_portal_config!).toBe(false)
+    expect(on).toStrictEqual(value)
+    expect(toBackendNetworkConfig(on)).toStrictEqual(toBackendNetworkConfig(value))
+  })
+
+  it('a portal read as disabled is enabled explicitly and goes back to disabled', async () => {
+    const value = input((raw) => { withoutLegacy(raw); raw.vpn_portal_config = { ...structuredClone(PORTAL), enabled: false } })
+    const w = mountEditor({ modelValue: value, coreVersion: '2.7.1' })
+    const vpn = section(w, 'vpnPortal')
+    expect(control(vpn, '启用').element.checked).toBe(false)
+
+    await control(vpn, '启用').setValue(true)
+    expect(lastDraft(w).vpn_portal_config).toStrictEqual({ ...value.vpn_portal_config, enabled: true })
+
+    await control(vpn, '启用').setValue(false)
+    expect(lastDraft(w)).toStrictEqual(value)
+  })
+
+  it('a new config from the parent becomes what 关闭 goes back to', async () => {
+    const w = mountEditor({ modelValue: input(withoutLegacy), coreVersion: '2.7.1' })
+    const next = input((raw) => { withoutLegacy(raw); raw.vpn_portal_config = structuredClone(PORTAL) })
+    await w.setProps({ modelValue: next })
+    await control(section(w, 'vpnPortal'), '启用').setValue(false)
+
+    expect(lastDraft(w).vpn_portal_config).toStrictEqual({ ...next.vpn_portal_config, enabled: false })
   })
 })
 

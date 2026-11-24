@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, toRaw, useId, watch } from 'vue'
+import { computed, nextTick, ref, shallowRef, toRaw, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { splitLegacyVpn, usesLegacyVpn } from '../../domain/vpnPortal'
+import { usesLegacyVpn } from '../../domain/vpnPortal'
 import type { NetworkConfig } from '../../lib/networkConfig'
 import { cloneConfig, draftValid } from './rules'
 import SectionConnection from './SectionConnection.vue'
@@ -26,8 +26,8 @@ const emit = defineEmits<{ 'update:modelValue': [value: NetworkConfig]; 'update:
 const { t } = useI18n()
 
 const draft = ref<NetworkConfig>(cloneConfig(props.modelValue))
-/** The legacy VPN portal fields as read; turning that portal off puts back the ones it hides. */
-const openedLegacy = ref(splitLegacyVpn(cloneConfig(props.modelValue)).legacy)
+/** The config as read, never edited: switching a VPN portal back off returns to it. */
+const opened = shallowRef<NetworkConfig>(cloneConfig(props.modelValue))
 let emitted: NetworkConfig | null = null
 // A parent handing back what was emitted (v-model) is not a new config to start over from.
 watch(
@@ -35,7 +35,7 @@ watch(
   (v) => {
     if (toRaw(v) === emitted) return
     draft.value = cloneConfig(v)
-    openedLegacy.value = splitLegacyVpn(cloneConfig(v)).legacy
+    opened.value = cloneConfig(v)
   },
 )
 watch(
@@ -148,7 +148,7 @@ defineExpose({ flush })
       <SectionProxy :draft="draft" />
       <SectionPortForwards :draft="draft" />
       <SectionDns :draft="draft" />
-      <SectionVpnPortal :draft="draft" :core-version="coreVersion" :opened-legacy="openedLegacy" />
+      <SectionVpnPortal :draft="draft" :core-version="coreVersion" :opened="opened" />
       <SectionFlags :draft="draft" />
     </div>
 

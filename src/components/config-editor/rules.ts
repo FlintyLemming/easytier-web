@@ -32,6 +32,23 @@ export function setFlag(draft: NetworkConfig, field: string, on: boolean): void 
   else rec[field] = on
 }
 
+// 自动分配 IP is not a plain switch: a config without `dhcp` runs DHCP exactly when it has a DHCP range
+// (upstream api_input.rs: `dhcp.unwrap_or(dhcp_ipv4_cidr.is_some())`), so that is its default.
+function dhcpDefault(draft: NetworkConfig): boolean {
+  return draft.dhcp_ipv4_cidr != null
+}
+
+/** Whether the node gets its address by DHCP, as the core reads the draft. */
+export function dhcpOn(draft: NetworkConfig): boolean {
+  return draft.dhcp ?? dhcpDefault(draft)
+}
+
+/** Like `setFlag`, against the effective default: that value leaves `dhcp` out, any other is written. */
+export function setDhcp(draft: NetworkConfig, on: boolean): void {
+  if (on === dhcpDefault(draft)) delete draft.dhcp
+  else draft.dhcp = on
+}
+
 export const PROXY_FLAGS = ['enable_kcp_proxy', 'disable_kcp_input', 'enable_quic_proxy', 'disable_quic_input']
 
 /** Switches with a place in their own section, which the 其他开关 list leaves out. */
@@ -45,6 +62,15 @@ type Rule<T> = (value: T) => Invalid | null
 
 export const requiredRule: Rule<string | undefined> = (v) => (v ? null : 'required')
 export const cidrRule: Rule<string> = (v) => (!v ? 'required' : isIpv4Cidr(v) ? null : 'cidr')
+/**
+ * A subnet-proxy entry: a CIDR, or a real CIDR mapped to another as `<real>-><mapped>` (EasyTier's
+ * mapped subnet proxy). No whitespace anywhere: the core does not trim and rejects it.
+ */
+export const proxyCidrRule: Rule<string> = (v) => {
+  if (!v) return 'required'
+  const parts = v.split('->')
+  return parts.length <= 2 && parts.every(isIpv4Cidr) ? null : 'cidr'
+}
 export const ipv4Rule: Rule<string> = (v) => (!v ? 'required' : isIpv4(v) ? null : 'ipv4')
 export const listenerRule: Rule<string> = (v) =>
   !v ? 'required' : /^[a-z][a-z0-9+.-]*:\/\/\S+:\d{1,5}(\/\S*)?$/i.test(v) ? null : 'url'
@@ -108,8 +134,8 @@ export function draftValid(d: NetworkConfig, opts: { mode: 'member' | 'instance'
   if (opts.mode === 'instance') {
     checks.push(requiredRule(d.network_name))
     each(d.peer_urls, requiredRule)
-    if (!flagOn(d, 'dhcp')) checks.push(virtualIpv4Rule(d.virtual_ipv4), networkLengthRule(d.network_length))
-    each(d.proxy_cidrs, cidrRule)
+    if (!dhcpOn(d)) checks.push(virtualIpv4Rule(d.virtual_ipv4), networkLengthRule(d.network_length))
+    each(d.proxy_cidrs, proxyCidrRule)
   }
   each(d.listener_urls, listenerRule)
   checks.push(mtuRule(d.mtu))

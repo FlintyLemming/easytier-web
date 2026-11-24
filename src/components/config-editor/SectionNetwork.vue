@@ -6,7 +6,7 @@ import CheckboxField from './CheckboxField.vue'
 import EditorSection from './EditorSection.vue'
 import ListField from './ListField.vue'
 import NumberField from './NumberField.vue'
-import { cidrRule, flagOn, networkLengthRule, requiredRule, setFlag, useInvalidText, virtualIpv4Rule } from './rules'
+import { dhcpOn, networkLengthRule, proxyCidrRule, requiredRule, setDhcp, useInvalidText, virtualIpv4Rule } from './rules'
 
 // Instance mode only: in a central network these fields belong to the network.
 const props = defineProps<{ draft: NetworkConfig }>()
@@ -56,8 +56,8 @@ function setNetworkLength(value: number | null | undefined) {
       mono
       :validate="(v: string) => invalid(requiredRule(v))"
     />
-    <CheckboxField :model-value="flagOn(draft, 'dhcp')" :label="t('config.field.dhcp')" @update:model-value="(v) => setFlag(draft, 'dhcp', v)" />
-    <div v-if="!flagOn(draft, 'dhcp')" class="grid gap-4 sm:grid-cols-[1fr_140px]">
+    <CheckboxField :model-value="dhcpOn(draft)" :label="t('config.field.dhcp')" @update:model-value="(v) => setDhcp(draft, v)" />
+    <div v-if="!dhcpOn(draft)" class="grid gap-4 sm:grid-cols-[1fr_140px]">
       <UiInput
         :model-value="draft.virtual_ipv4 ?? ''"
         :label="t('config.field.virtualIpv4')"
@@ -82,7 +82,7 @@ function setNetworkLength(value: number | null | undefined) {
       :label="t('config.field.proxyCidrs')"
       placeholder="192.168.1.0/24"
       mono
-      :validate="(v: string) => invalid(cidrRule(v))"
+      :validate="(v: string) => invalid(proxyCidrRule(v))"
     />
   </EditorSection>
 </template>
