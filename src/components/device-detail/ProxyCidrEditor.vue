@@ -13,7 +13,10 @@ const props = defineProps<{
   online: boolean
   cidrs: string[]
   virtualCidr: string | null
+  /** Some row of the card (this one included) is saving: actions are disabled. */
+  busy: boolean
 }>()
+const emit = defineEmits<{ busy: [on: boolean] }>()
 const { t } = useI18n()
 const inputId = useId()
 
@@ -86,15 +89,22 @@ function remove(cidr: string) {
 }
 
 async function save() {
-  if (saving.value) return
+  if (saving.value || props.busy) return
   if (!changed.value) {
     editing.value = false
     return
   }
+  // The card stays busy until the inventory refresh brings the new list: the advanced config row
+  // writes the member's proxy_cidrs into its override, so it must not save from the old list.
   saving.value = true
-  const ok = await patchMember(props.networkId, props.deviceId, { proxy_cidrs: [...draft.value] }, t('detail.proxy.saved'))
-  saving.value = false
-  if (ok) editing.value = false
+  emit('busy', true)
+  try {
+    const ok = await patchMember(props.networkId, props.deviceId, { proxy_cidrs: [...draft.value] }, t('detail.proxy.saved'))
+    if (ok) editing.value = false
+  } finally {
+    saving.value = false
+    emit('busy', false)
+  }
 }
 </script>
 
@@ -108,7 +118,7 @@ async function save() {
           <span v-else>{{ t('detail.settings.notSet') }}</span>
         </div>
       </div>
-      <LinkButton v-if="!editing" class="mt-0.5 shrink-0" @click="start">{{ t('detail.settings.edit') }}</LinkButton>
+      <LinkButton v-if="!editing" class="mt-0.5 shrink-0" :disabled="busy" @click="start">{{ t('detail.settings.edit') }}</LinkButton>
     </div>
 
     <div v-if="editing" class="mt-3 flex flex-col gap-3">
@@ -173,7 +183,7 @@ async function save() {
       </div>
 
       <div class="flex gap-2">
-        <UiButton size="sm" :loading="saving" :disabled="!changed" @click="save">{{ t('common.save') }}</UiButton>
+        <UiButton size="sm" :loading="saving" :disabled="!changed || busy" @click="save">{{ t('common.save') }}</UiButton>
         <UiButton size="sm" variant="text" :disabled="saving" @click="cancel">{{ t('common.cancel') }}</UiButton>
       </div>
     </div>

@@ -605,6 +605,63 @@ describe('ConfigEditorDialog', () => {
     expect(w.emitted('action')).toEqual([['save', value]])
   })
 
+  const pressEscape = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  const closes = (w: VueWrapper) => ((w.emitted('update:open') as [boolean][] | undefined) ?? []).filter(([v]) => v === false)
+
+  it('refuses to close while busy: 取消 is disabled and Escape is ignored', async () => {
+    const w = mountDialog({ busy: true })
+    await flushPromises()
+    expect(button('取消')!.disabled).toBe(true)
+    button('取消')!.click()
+    pressEscape()
+    await flushPromises()
+    expect(closes(w)).toEqual([])
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
+
+    await w.setProps({ busy: false })
+    expect(button('取消')!.disabled).toBe(false)
+    pressEscape()
+    await flushPromises()
+    expect(closes(w)).toEqual([[false]])
+  })
+
+  it('取消 closes when not busy', async () => {
+    const w = mountDialog()
+    await flushPromises()
+    button('取消')!.click()
+    await flushPromises()
+    expect(closes(w)).toEqual([[false]])
+  })
+
+  it('refuses to close while the TOML is being parsed for an action', async () => {
+    let finish!: (v: { config: Record<string, unknown> }) => void
+    parse.mockReturnValue(new Promise((r) => { finish = r }))
+    const w = mountDialog()
+    await flushPromises()
+    ;(Array.from(document.body.querySelectorAll('[role="tab"]')).find((b) => b.textContent?.trim() === 'TOML') as HTMLElement).click()
+    await flushPromises()
+    const area = document.body.querySelector('textarea')!
+    area.value = 'network_name = "x"\n'
+    area.dispatchEvent(new Event('input'))
+    await flushPromises()
+    button('保存')!.click()
+    await flushPromises()
+    expect(parse).toHaveBeenCalled()
+
+    expect(button('取消')!.disabled).toBe(true)
+    pressEscape()
+    await flushPromises()
+    expect(closes(w)).toEqual([])
+
+    finish({ config: parseOk.config })
+    await flushPromises()
+    expect(w.emitted('action')).toHaveLength(1)
+    expect(button('取消')!.disabled).toBe(false)
+    pressEscape()
+    await flushPromises()
+    expect(closes(w)).toEqual([[false]])
+  })
+
   it('does not emit when the TOML does not parse', async () => {
     parse.mockResolvedValue({ error: 'bad' })
     const w = mountDialog()

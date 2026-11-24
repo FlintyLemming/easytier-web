@@ -283,6 +283,13 @@ const memberCfg = (id: string) => `/networks/${NET}/members/${id}/config`
 const configWrites = (reqs: RecordedRequest[], id: string) =>
   reqs.filter((r) => (r.method === 'PUT' || r.method === 'DELETE') && r.path === memberCfg(id))
 
+/** A promise a test opens when it chooses, to hold a mocked response pending. */
+function gate() {
+  let release!: () => void
+  const held = new Promise<void>((r) => { release = r })
+  return { wait: () => held, release }
+}
+
 /** Opens the advanced config editor from the settings row; resolves to the dialog. */
 async function openEditor(page: Page, name: string) {
   await page.getByTestId('setting-advanced').getByRole('button', { name: '编辑', exact: true }).click()
@@ -313,6 +320,11 @@ test('6d: 编辑 shows the override; 保存 PUTs it with the subnet proxies and 
   }
   await expect(page.getByText('已保存高级配置')).toBeVisible()
   await expect(dlg).toHaveCount(0)
+  // Then the override is read again.
+  const putAt = requests.indexOf(write)
+  await expect
+    .poll(() => requests.slice(putAt + 1).some((r) => r.method === 'GET' && r.path === memberCfg(CORE3)))
+    .toBe(true)
 })
 
 test('6e: 编辑 then 保存 unchanged in the 默认 state PUTs exactly the subnet proxies', async ({ page }) => {
@@ -347,17 +359,32 @@ test('6g: TOML that does not parse shows the error and disables 保存', async (
   expect(configWrites(requests, CORE3)).toEqual([])
 })
 
-test('6h: a failed save toasts the backend message and keeps the dialog and its draft', async ({ page }) => {
-  await open(page, CORE3, {
-    'PUT /networks/*/members/*/config': () => status(500, { message: 'override store unavailable' }),
+test('6h: a failed save toasts the backend message and keeps the dialog and its draft, even if dismissed mid-save', async ({ page }) => {
+  const put = gate()
+  const { requests } = await open(page, CORE3, {
+    'PUT /networks/*/members/*/config': async () => {
+      await put.wait()
+      return status(500, { message: 'override store unavailable' })
+    },
   })
   const dlg = await openEditor(page, 'core3')
   await dlg.getByLabel('MTU', { exact: true }).fill('1280')
   await dlg.getByRole('button', { name: '保存', exact: true }).click()
+  await expect.poll(() => configWrites(requests, CORE3).length).toBe(1)
+  // The PUT is pending: 取消 is disabled, and Escape and the overlay do not close the dialog.
+  await expect(dlg.getByRole('button', { name: '取消', exact: true })).toBeDisabled()
+  await page.keyboard.press('Escape')
+  await page.mouse.click(5, 5)
+  await expect(dlg).toBeVisible()
+  put.release()
   await expect(page.getByText('保存失败：override store unavailable')).toBeVisible()
   await expect(dlg).toBeVisible()
   await expect(dlg.getByLabel('MTU', { exact: true })).toHaveValue('1280')
   await expect(dlg.getByRole('button', { name: '保存', exact: true })).toBeEnabled()
+  // Once the save has settled, Escape closes it again.
+  await expect(dlg.getByRole('button', { name: '取消', exact: true })).toBeEnabled()
+  await page.keyboard.press('Escape')
+  await expect(dlg).toHaveCount(0)
 })
 
 test('6i: saving back to all defaults DELETEs an override, and sends nothing when there was none', async ({ page }) => {
@@ -375,6 +402,114 @@ test('6i: saving back to all defaults DELETEs an override, and sends nothing whe
   await dlg.getByRole('button', { name: '保存', exact: true }).click()
   await expect(dlg).toHaveCount(0)
   expect(configWrites(requests, CORE2)).toEqual([])
+})
+
+test('6j: after a save the override is read again, so the row shows what was stored', async ({ page }) => {
+  let stored: Record<string, unknown> = fixture('member-config-core3.json')
+  await open(page, CORE3, {
+    'GET /networks/*/members/*/config': () => stored,
+    'PUT /networks/*/members/*/config': (req: Request) => {
+      stored = (req.postDataJSON() as { config: Record<string, unknown> }).config
+      return {}
+    },
+  })
+  const state = page.getByTestId('advanced-state')
+  await expect(state).toHaveText('默认')
+  const dlg = await openEditor(page, 'core3')
+  await dlg.getByLabel('MTU', { exact: true }).fill('1280')
+  await dlg.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(dlg).toHaveCount(0)
+  // The member list does not change (same has_override and proxy_cidrs), so only the re-read flips the row.
+  await expect(state).toHaveText('已覆盖')
+  await expect(page.getByTestId('setting-advanced').getByRole('button', { name: '恢复默认' })).toBeVisible()
+})
+
+test('6k: while the advanced config saves, the other rows of the card are disabled', async ({ page }) => {
+  const put = gate()
+  const { requests } = await open(page, CORE3, {
+    'PUT /networks/*/members/*/config': async () => {
+      await put.wait()
+      return {}
+    },
+  })
+  const card = page.getByTestId('settings-card')
+  // The open editor is modal and hides the page from role queries, hence includeHidden.
+  const others = [
+    card.getByTestId('setting-ip').getByRole('button', { name: '设为固定', includeHidden: true }),
+    card.getByTestId('setting-proxy').getByRole('button', { name: '编辑', exact: true, includeHidden: true }),
+    card.getByTestId('setting-hostname').getByRole('button', { name: '编辑', exact: true, includeHidden: true }),
+    card.getByTestId('setting-hostname').getByRole('button', { name: '清除', exact: true, includeHidden: true }),
+  ]
+  for (const b of others) await expect(b).toBeEnabled()
+  const dlg = await openEditor(page, 'core3')
+  await dlg.getByLabel('MTU', { exact: true }).fill('1280')
+  await dlg.getByRole('button', { name: '保存', exact: true }).click()
+  await expect.poll(() => configWrites(requests, CORE3).length).toBe(1)
+  for (const b of others) await expect(b).toBeDisabled()
+  put.release()
+  await expect(dlg).toHaveCount(0)
+  for (const b of others) await expect(b).toBeEnabled()
+})
+
+test('6l: while the subnet proxies save, through the inventory refresh, the rest of the card is disabled', async ({ page }) => {
+  const patch = gate()
+  const refresh = gate()
+  let patched = false
+  const { requests } = await open(page, CORE3, {
+    'PATCH /networks/*/members/*': async () => {
+      await patch.wait()
+      patched = true
+      return {}
+    },
+    'GET /networks/*/members': async () => {
+      if (!patched) return fixture('members.json')
+      await refresh.wait()
+      return members((m) => {
+        if (m.device_id === CORE3) m.proxy_cidrs = ['192.168.77.0/24', '10.9.0.0/16']
+      })
+    },
+  })
+  const card = page.getByTestId('settings-card')
+  const others = [
+    card.getByTestId('setting-ip').getByRole('button', { name: '设为固定' }),
+    card.getByTestId('setting-hostname').getByRole('button', { name: '编辑', exact: true }),
+    card.getByTestId('setting-advanced').getByRole('button', { name: '编辑', exact: true }),
+  ]
+  for (const b of others) await expect(b).toBeEnabled()
+  const row = card.getByTestId('setting-proxy')
+  await row.getByRole('button', { name: '编辑' }).click()
+  await row.getByRole('textbox').fill('10.9.0.0/16')
+  await row.getByRole('button', { name: '添加', exact: true }).click()
+  await row.getByRole('button', { name: '保存' }).click()
+  await expect.poll(() => requests.filter((r) => r.method === 'PATCH').length).toBe(1)
+  for (const b of others) await expect(b).toBeDisabled()
+  // The PATCH has succeeded; the card stays busy until the refreshed member list arrives.
+  patch.release()
+  await expect(page.getByText('子网代理已更新')).toBeVisible()
+  for (const b of others) await expect(b).toBeDisabled()
+  refresh.release()
+  await expect(row).toContainText('192.168.77.0/24, 10.9.0.0/16')
+  for (const b of others) await expect(b).toBeEnabled()
+})
+
+test('6m: a member listed without proxy_cidrs keeps the subnet proxies of the override it read', async ({ page }) => {
+  const { requests } = await open(page, CORE3, {
+    'GET /networks/*/members': () =>
+      members((m) => {
+        if (m.device_id === CORE3) delete m.proxy_cidrs
+      }),
+    'GET /networks/*/members/*/config': () => ({ proxy_cidrs: ['192.168.77.0/24'], mtu: 1300 }),
+  })
+  await expect(page.getByTestId('advanced-state')).toHaveText('已覆盖')
+  const dlg = await openEditor(page, 'core3')
+  await dlg.getByLabel('MTU', { exact: true }).fill('1280')
+  await dlg.getByRole('button', { name: '保存', exact: true }).click()
+  await expect.poll(() => configWrites(requests, CORE3).length).toBe(1)
+  const write = configWrites(requests, CORE3)[0]!
+  expect(write.method).toBe('PUT')
+  const config = (write.body as { config: Record<string, unknown> }).config
+  expect(config.mtu).toBe(1280)
+  expect(config.proxy_cidrs).toEqual(['192.168.77.0/24'])
 })
 
 test('7: diagnostics: collapsed, logger level, ACL stats, copyable TOML', async ({ page, context }) => {

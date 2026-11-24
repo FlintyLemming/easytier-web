@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, shallowRef, watch } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { NetworkConfig } from '../../lib/networkConfig'
 import UiButton from '../ui/UiButton.vue'
@@ -36,13 +36,23 @@ watch(open, (v) => {
   session.value++
 })
 
+/** A save is under way (the parent's write, or this dialog parsing the TOML for it). */
+const locked = computed(() => props.busy || flushing.value)
+
+// Closing mid-save would drop the draft a failed save must keep, so 取消, Escape and the overlay
+// do nothing until the save settles. The parent can still close the dialog through `open`.
+function requestOpen(v: boolean) {
+  if (!v && locked.value) return
+  open.value = v
+}
+
 async function run(key: string) {
   if (!editor.value || flushing.value || props.busy || !valid.value) return
   lastKey.value = key
   flushing.value = true
   try {
     const config = await editor.value.flush()
-    // Closed while the TOML was being parsed: the user walked away from this save.
+    // The parent closed the dialog while the TOML was being parsed: drop this save.
     if (config && open.value) emit('action', key, config)
   } finally {
     flushing.value = false
@@ -51,7 +61,7 @@ async function run(key: string) {
 </script>
 
 <template>
-  <UiDialog v-model:open="open" :title="title" size="lg">
+  <UiDialog :open="open" :title="title" size="lg" @update:open="requestOpen">
     <p v-if="note" class="mb-5 text-[13px] text-muted">{{ note }}</p>
     <ConfigEditor
       :key="session"
@@ -62,13 +72,13 @@ async function run(key: string) {
       @update:valid="valid = $event"
     />
     <template #footer>
-      <UiButton variant="text" @click="open = false">{{ t('common.cancel') }}</UiButton>
+      <UiButton variant="text" :disabled="locked" @click="requestOpen(false)">{{ t('common.cancel') }}</UiButton>
       <UiButton
         v-for="a in actions"
         :key="a.key"
         variant="secondary"
         :loading="(busy || flushing) && lastKey === a.key"
-        :disabled="!valid || busy || flushing"
+        :disabled="!valid || locked"
         @click="run(a.key)"
       >
         {{ a.label }}

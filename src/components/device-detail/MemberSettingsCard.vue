@@ -26,7 +26,7 @@ defineProps<{
 const { t } = useI18n()
 
 /** One row writes at a time; the others are disabled meanwhile. */
-type Row = 'ip' | 'hostname' | 'advanced'
+type Row = 'ip' | 'proxy' | 'hostname' | 'advanced'
 const busy = ref<Row | null>(null)
 function setBusy(row: Row, on: boolean) {
   if (on) busy.value = row
@@ -52,6 +52,8 @@ function setBusy(row: Row, on: boolean) {
         :online="online"
         :cidrs="member.proxy_cidrs ?? []"
         :virtual-cidr="virtualCidr"
+        :busy="busy !== null"
+        @busy="(on) => setBusy('proxy', on)"
       />
       <HostnameOverrideRow
         :device-id="deviceId"

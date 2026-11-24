@@ -113,6 +113,12 @@ const editorActions = computed(() => [{ key: 'save', label: t('detail.settings.s
 /** The member the open editor writes to, captured when it opens (the route can change meanwhile). */
 let target = { networkId: '', deviceId: '' }
 
+/** The subnet proxies in the override as this row last read it. */
+function overrideProxyCidrs(): string[] {
+  const raw = config.value?.proxy_cidrs
+  return Array.isArray(raw) ? raw.filter((c): c is string => typeof c === 'string') : []
+}
+
 function openEditor() {
   if (props.busy) return
   target = { networkId: props.networkId, deviceId: props.deviceId }
@@ -122,8 +128,10 @@ function openEditor() {
 async function save(draft: NetworkConfig) {
   if (saving.value) return
   const { networkId, deviceId } = target
-  // Always carry the member's current subnet proxies; they are edited in their own row.
-  const plan = memberOverridePayload(draft, props.member.proxy_cidrs ?? [])
+  // Always carry the member's current subnet proxies; they are edited in their own row. A member
+  // without the list (proto3 JSON omits an empty one, or the inventory lags) keeps what the override
+  // held when this row last read it, so the write cannot drop them.
+  const plan = memberOverridePayload(draft, props.member.proxy_cidrs ?? overrideProxyCidrs())
   // Nothing to clear: the member never had an override.
   if (plan.kind === 'delete' && props.member.has_override === false) {
     editorOpen.value = false
