@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watchEffect } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { getGatewayInfo, getNetwork } from '../api/client'
 import type { CentralNetworkDetail, GatewayInfo } from '../api/types'
+import ExecuteStep from '../components/migrate/ExecuteStep.vue'
 import InventoryStep from '../components/migrate/InventoryStep.vue'
 import NetworkStep from '../components/migrate/NetworkStep.vue'
 import PreviewStep from '../components/migrate/PreviewStep.vue'
+import ReportStep from '../components/migrate/ReportStep.vue'
 import WizardSteps from '../components/migrate/WizardSteps.vue'
 import { useLegacyInventory } from '../composables/useLegacyInventory'
+import { useConfirm } from '../composables/useConfirm'
 import { useToast } from '../composables/useToast'
-import { planGroup, targetFromDetail, targetFromDraft, type ChangeKey, type TargetNetwork } from '../domain/migration/classify'
+import { planGroup, selectedPreviews, targetFromDetail, targetFromDraft, type ChangeKey, type TargetNetwork } from '../domain/migration/classify'
 import { draftFromGroup, groupLegacy } from '../domain/migration/inventory'
 import { loadJournal } from '../domain/migration/journal'
 import type { DraftConflicts, NetworkDraft } from '../domain/migration/types'
@@ -23,6 +26,7 @@ const session = useSession()
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
+const { confirm } = useConfirm()
 const legacy = useLegacyInventory()
 
 watchEffect(() => {
@@ -58,6 +62,31 @@ const previews = computed(() => {
   const selected = new Set(Object.entries(choices.value).filter(([, v]) => v).map(([k]) => k))
   return planGroup(group.value, legacy.devices.value, target.value, targetMembers.value, selected)
 })
+
+/** The devices step 4 migrates. */
+const selected = computed(() => selectedPreviews(previews.value, choices.value))
+
+/** True while step 4 runs: leaving asks first and stops after the current device. */
+const running = ref(false)
+const executeStep = ref<{ stop(): void } | null>(null)
+
+onBeforeRouteLeave(async () => {
+  if (!running.value) return true
+  const ok = await confirm({
+    title: t('migrate.execute.leaveTitle'),
+    body: t('migrate.execute.leaveBody'),
+    confirmLabel: t('migrate.execute.leave'),
+  })
+  if (ok) executeStep.value?.stop()
+  return ok
+})
+function onBeforeUnload(e: BeforeUnloadEvent) {
+  if (!running.value) return
+  e.preventDefault()
+  e.returnValue = ''
+}
+onMounted(() => window.addEventListener('beforeunload', onBeforeUnload))
+onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload))
 
 /** Entering step 3 the first time for this group: every device starts at its default choice. */
 function toPreview() {
@@ -107,6 +136,22 @@ function toStep(n: number) {
   step.value = n
   window.scrollTo?.({ top: 0 })
 }
+
+function toReport() {
+  readJournal()
+  toStep(5)
+}
+
+/** From the report back to step 1: forget the chosen group and read the devices again. */
+function toInventory() {
+  readJournal()
+  groupName.value = null
+  choices.value = {}
+  confirmed.value = {}
+  if (route.query.report) void router.replace({ query: {} })
+  toStep(1)
+  void legacy.load()
+}
 </script>
 
 <template>
@@ -152,5 +197,20 @@ function toStep(n: number) {
       @back="toStep(2)"
       @next="toStep(4)"
     />
+
+    <ExecuteStep
+      v-else-if="step === 4 && group && target"
+      ref="executeStep"
+      v-model:running="running"
+      :previews="selected"
+      :target="target"
+      :existing="existing"
+      :draft="draft"
+      :confirmed="confirmed"
+      @back="toStep(3)"
+      @report="toReport"
+    />
+
+    <ReportStep v-else-if="step === 5" @back="toInventory" @cleared="readJournal" />
   </div>
 </template>

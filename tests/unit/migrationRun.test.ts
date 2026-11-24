@@ -146,6 +146,7 @@ describe('migrateDevice', () => {
     expect(out.kind).toBe('rolledBack')
     expect(out.kind === 'rolledBack' && out.step).toBe('recheck')
     expect(out.kind === 'rolledBack' && out.message).toContain('connectivity')
+    expect(out.kind === 'rolledBack' && out.changed).toEqual(['connectivity'])
     expect(mutating(api.calls)).toEqual([`disable ${INST} true`, `disable ${INST} false`])
   })
 

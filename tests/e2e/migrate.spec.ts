@@ -1,6 +1,7 @@
+import { readFile } from 'node:fs/promises'
 import { expect, test, type Page } from '@playwright/test'
-import { migrateFixture, mockApi } from './mockApi'
-import { migrateMock, NET_ID, type MigrateMockOpts } from './migrateMock'
+import { migrateFixture, mockApi, type RecordedRequest } from './mockApi'
+import { DEV, MIG, migrateMock, NET_ID, type MigrateMockOpts } from './migrateMock'
 
 async function openWizard(page: Page, opts: MigrateMockOpts = {}) {
   const mock = migrateMock(opts)
@@ -220,5 +221,210 @@ test.describe('step 3: preview', () => {
     await toPreview(page)
     const fits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
     expect(fits).toBe(true)
+  })
+})
+
+async function toExecute(page: Page) {
+  await toPreview(page)
+  for (const box of await page.getByRole('checkbox', { name: '我已了解' }).all()) await box.check()
+  await page.getByTestId('wizard-step-preview').getByRole('button', { name: '下一步' }).click()
+  await expect(page.getByTestId('wizard-step-execute')).toBeVisible()
+}
+const execStep = (page: Page) => page.getByTestId('wizard-step-execute')
+const execRow = (page: Page, name: string) => page.getByTestId('execute-device').filter({ hasText: name })
+const reportRow = (page: Page, name: string) => page.getByTestId('report-device').filter({ hasText: name })
+const reportStatus = (page: Page, name: string) => reportRow(page, name).getByTestId('report-status')
+async function start(page: Page) {
+  await execStep(page).getByLabel('我已经按升级手册备份了 et.db').check()
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    execStep(page).getByRole('button', { name: '下载备份并开始迁移' }).click(),
+  ])
+  return download
+}
+const NAMES = ['core1', 'core2', 'core3'] as const
+const inst = (n: (typeof NAMES)[number]) => MIG.instances[n]!.office!
+/** Requests about one device: its id in the path or in the body. */
+const about = (requests: RecordedRequest[], id: string) =>
+  requests.filter((r) => r.path.includes(id) || JSON.stringify(r.body ?? '').includes(id)).map((r) => `${r.method} ${r.path}`)
+function deferred() {
+  let release!: () => void
+  const until = new Promise<void>((r) => (release = r))
+  return { until, release }
+}
+
+test.describe('step 4: execute', () => {
+  test('14: the start button needs the backup box; starting downloads the export first', async ({ page }) => {
+    await openWizard(page)
+    await toExecute(page)
+    const step = execStep(page)
+    await expect(step).toContainText('将把 3 台设备迁移到中央网络 office。')
+    await expect(step).toContainText('文件里有网络密钥，请妥善保存')
+    await expect(step.getByRole('button', { name: '下载备份并开始迁移' })).toBeDisabled()
+    const download = await start(page)
+    expect(download.suggestedFilename()).toMatch(/^easytier-migration-office-\d{8}-\d{6}\.json$/)
+    const data = JSON.parse(await readFile((await download.path())!, 'utf8'))
+    expect(data.format).toBe('easytier-console-migration/1')
+    expect(data.devices.map((d: { device_name: string }) => d.device_name)).toEqual(['core1', 'core2', 'core3'])
+  })
+
+  test('15: creates the network from the draft, then runs every device in order', async ({ page }) => {
+    const { requests } = await openWizard(page)
+    await toExecute(page)
+    const from = requests.length
+    await start(page)
+    for (const n of NAMES) await expect(execRow(page, n)).toContainText('已迁移')
+    const after = requests.slice(from)
+    const created = after.findIndex((r) => r.method === 'POST' && r.path === '/networks')
+    expect(created).toBeGreaterThanOrEqual(0)
+    expect(after[created]!.body).toEqual({
+      settings: {
+        display_name: 'office', network_name: 'office', networking_method: 'Manual', public_server_url: null,
+        peer_urls: ['tcp://core1:11010'], virtual_cidr: '10.150.0.0/24', secure_mode: false,
+      },
+      network_secret: 'office-secret',
+    })
+    expect(after.findIndex((r) => r.method !== 'GET' && r.path.startsWith('/machines/'))).toBeGreaterThan(created)
+    for (const n of NAMES) {
+      const d = DEV[n]
+      const i = inst(n)
+      expect(about(after, d)).toEqual([
+        `PUT /machines/${d}/networks/${i}`,
+        `GET /machines/${d}/networks/config/${i}`,
+        `POST /networks/${NET_ID}/members`,
+        `PATCH /networks/${NET_ID}/members/${d}`,
+        `PUT /networks/${NET_ID}/members/${d}/config`,
+        `DELETE /machines/${d}/networks/${i}`,
+      ])
+    }
+    const journal = await page.evaluate(() => JSON.parse(localStorage.getItem('et.migrate.admin') ?? '[]'))
+    expect(journal.map((r: { deviceName: string; status: string }) => [r.deviceName, r.status])).toEqual([
+      ['core1', 'migrated'], ['core2', 'migrated'], ['core3', 'migrated'],
+    ])
+    await expect(execStep(page).getByRole('button', { name: '查看校验报告' })).toBeVisible()
+  })
+
+  test('16: a failed join rolls that device back and the others go on', async ({ page }) => {
+    const { requests, state } = await openWizard(page)
+    state.failures.push({ method: 'POST', path: `/networks/${NET_ID}/members`, device: DEV.core3, status: 500, body: { message: 'boom' } })
+    await toExecute(page)
+    const from = requests.length
+    await start(page)
+    await expect(execRow(page, 'core3')).toContainText('已回滚（加入网络：boom）')
+    await expect(execRow(page, 'core1')).toContainText('已迁移')
+    await expect(execRow(page, 'core2')).toContainText('已迁移')
+    const mine = requests.slice(from).filter((r) => r.path.includes(DEV.core3) || JSON.stringify(r.body ?? '').includes(DEV.core3))
+    const last = mine[mine.length - 1]!
+    expect(`${last.method} ${last.path}`).toBe(`PUT /machines/${DEV.core3}/networks/${inst('core3')}`)
+    expect(last.body).toEqual({ disabled: false })
+  })
+
+  test('17: 停止 lets the current device finish and starts no other', async ({ page }) => {
+    const { requests, state } = await openWizard(page)
+    const hold = deferred()
+    state.holds.push({ method: 'PUT', path: `/networks/${NET_ID}/members/${DEV.core1}/config`, until: hold.until })
+    await toExecute(page)
+    const from = requests.length
+    await start(page)
+    await expect(execRow(page, 'core1')).toContainText('写入设置')
+    await execStep(page).getByRole('button', { name: '停止' }).click()
+    hold.release()
+    await expect(execRow(page, 'core1')).toContainText('已迁移')
+    await expect(execRow(page, 'core2')).toContainText('等待中')
+    await expect(execRow(page, 'core3')).toContainText('等待中')
+    await expect(execStep(page).getByRole('button', { name: '查看校验报告' })).toBeVisible()
+    expect(about(requests.slice(from), DEV.core2)).toEqual([])
+  })
+
+  test('18: leaving while it runs asks first; the current device still finishes', async ({ page }) => {
+    const { requests, state } = await openWizard(page)
+    const hold = deferred()
+    state.holds.push({ method: 'PUT', path: `/networks/${NET_ID}/members/${DEV.core1}/config`, until: hold.until })
+    await toExecute(page)
+    const from = requests.length
+    await start(page)
+    await expect(execRow(page, 'core1')).toContainText('写入设置')
+    const nav = page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '设备' })
+    await nav.click()
+    const dialog = page.getByRole('alertdialog').or(page.getByRole('dialog'))
+    await expect(dialog).toContainText('迁移正在进行。离开后，当前这台设备会做完（或回滚完），其余设备不再开始。')
+    await dialog.getByRole('button', { name: '取消' }).click()
+    await expect(page).toHaveURL(/#\/migrate/)
+    await nav.click()
+    await page.getByRole('alertdialog').or(page.getByRole('dialog')).getByRole('button', { name: '离开' }).click()
+    await expect(page).toHaveURL(/#\/devices/)
+    hold.release()
+    await expect.poll(() => about(requests, DEV.core1)).toContain(`DELETE /machines/${DEV.core1}/networks/${inst('core1')}`)
+    expect(about(requests.slice(from), DEV.core2)).toEqual([])
+  })
+})
+
+async function runAll(page: Page) {
+  await toExecute(page)
+  await start(page)
+  await expect(execStep(page).getByRole('button', { name: '查看校验报告' })).toBeVisible()
+}
+
+test.describe('step 5: report', () => {
+  test('19: verifies each device; a mismatch can be rolled back and recreates the deleted legacy instance', async ({ page }) => {
+    const { requests, state } = await openWizard(page)
+    state.nodeToml.core1 = 'mtu = 1200'
+    state.rpcDown = ['core3']
+    await runAll(page)
+    await execStep(page).getByRole('button', { name: '查看校验报告' }).click()
+    const report = page.getByTestId('wizard-step-report')
+    await expect(reportStatus(page, 'core2')).toHaveText('一致')
+    await expect(reportStatus(page, 'core3')).toHaveText('等待上线后校验')
+    await expect(reportStatus(page, 'core1')).toHaveText('不一致')
+    await expect(reportRow(page, 'core1')).toContainText('mtu：期望 1380，实际 1200')
+    await expect(report).toContainText('这些设备迁移前单独配置了 ACL：core3')
+    await expect(report.getByRole('link', { name: '去写 ACL 规则' })).toHaveAttribute('href', `#/networks/${NET_ID}?tab=acl`)
+
+    const from = requests.length
+    await reportRow(page, 'core1').getByRole('button', { name: '回滚这台…' }).click()
+    const dialog = page.getByRole('alertdialog').or(page.getByRole('dialog'))
+    await dialog.getByRole('button', { name: '回滚' }).click()
+    await expect(reportStatus(page, 'core1')).toHaveText('已回滚')
+    const writes = requests.slice(from).filter((r) => r.method !== 'GET')
+    expect(writes.map((r) => `${r.method} ${r.path}`)).toEqual([
+      `DELETE /networks/${NET_ID}/members/${DEV.core1}`,
+      `POST /machines/${DEV.core1}/networks`,
+    ])
+    expect(writes[1]!.body).toEqual({ config: migrateFixture('stored-core1-office.json'), save: true })
+    const journal = await page.evaluate(() => JSON.parse(localStorage.getItem('et.migrate.admin') ?? '[]'))
+    expect(journal.find((r: { deviceName: string }) => r.deviceName === 'core1').status).toBe('rolledBack')
+  })
+
+  test('20: reopening the wizard offers the report; migrated devices are members and skipped', async ({ page }) => {
+    const { state } = await openWizard(page)
+    state.failures.push({ method: 'DELETE', path: '/machines/', status: 500, body: { message: 'boom' } })
+    await runAll(page)
+    await expect(execRow(page, 'core1')).toContainText('已迁移（旧实例没删掉：boom）')
+    await page.goto('/#/')
+    await page.goto('/#/migrate')
+    await page.reload()
+    await expect(page.getByRole('button', { name: '校验报告' })).toBeVisible()
+    await expect(groupRow(page, 'office')).toContainText('已有网络 office')
+    await toNetworkStep(page)
+    await page.getByTestId('wizard-step-network').getByRole('button', { name: '下一步' }).click()
+    for (const n of NAMES) await expect(card(page, n)).toContainText('已是成员，跳过')
+  })
+
+  test('21: 清除迁移记录… needs every device consistent or rolled back', async ({ page }) => {
+    const { state } = await openWizard(page)
+    state.rpcDown = ['core1', 'core2', 'core3']
+    await runAll(page)
+    await execStep(page).getByRole('button', { name: '查看校验报告' }).click()
+    const report = page.getByTestId('wizard-step-report')
+    for (const n of NAMES) await expect(reportStatus(page, n)).toHaveText('等待上线后校验')
+    await expect(report).toContainText('文件里有网络密钥，请妥善保存')
+    await expect(report.getByRole('button', { name: '清除迁移记录…' })).toBeDisabled()
+    state.rpcDown = []
+    await report.getByRole('button', { name: '重新校验' }).click()
+    for (const n of NAMES) await expect(reportStatus(page, n)).toHaveText('一致')
+    await report.getByRole('button', { name: '清除迁移记录…' }).click()
+    await page.getByRole('alertdialog').or(page.getByRole('dialog')).getByRole('button', { name: '清除' }).click()
+    await expect(report.getByTestId('report-device')).toHaveCount(0)
+    expect(await page.evaluate(() => localStorage.getItem('et.migrate.admin'))).toBeNull()
   })
 })

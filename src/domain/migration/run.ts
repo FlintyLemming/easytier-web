@@ -28,7 +28,8 @@ export type DeviceOutcome =
   | { kind: 'migrated' }
   /** Migrated, but deleting the (disabled) legacy instance failed. */
   | { kind: 'migratedKeptLegacy'; message: string }
-  | { kind: 'rolledBack'; step: StepName; message: string }
+  /** `changed`: the recheck found these unconfirmed changes (spec: 「预览之后配置有变化」). */
+  | { kind: 'rolledBack'; step: StepName; message: string; changed?: ChangeKey[] }
   /** The step failed and so did the rollback. */
   | { kind: 'needsAttention'; step: StepName; message: string }
 
@@ -156,7 +157,9 @@ export async function migrateDevice(
     } catch (r) {
       return { kind: 'needsAttention', step, message: `${failure}; rollback: ${message(r)}` }
     }
-    return { kind: 'rolledBack', step, message: failure }
+    return e instanceof ChangedSincePreview
+      ? { kind: 'rolledBack', step, message: failure, changed: e.keys }
+      : { kind: 'rolledBack', step, message: failure }
   }
 
   hooks.onStep('record')
