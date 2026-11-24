@@ -3,6 +3,7 @@ import type { CentralNetworkMember, InstanceList, MemberPatch } from '../../api/
 import { splitLegacyVpn } from '../vpnPortal'
 import { classifyInstance, unconfirmedChanges, type ChangeKey, type DevicePreview, type TargetNetwork } from './classify'
 import { diffConfigs, stripSourceTable, verifyIgnore, type FieldDiff } from './compare'
+import { manualRoutesFromToml, manualRoutesOf, restoreManualRoutes } from './manualRoutes'
 import type { MigrationRecord } from './journal'
 
 /** The client functions the runner uses (a subset of `src/api/client.ts`), injected for tests. */
@@ -151,6 +152,14 @@ export async function migrateDevice(
   let step: StepName = 'disable'
   hooks.onStep(step)
   save({})
+  // The manual-routes mode is only in the running TOML (see manualRoutes.ts): read it before
+  // disabling; without an answer, keep what the inventory restored.
+  let observedRoutes = manualRoutesOf(preview.instance.config)
+  if (wasRunning) {
+    try {
+      observedRoutes = manualRoutesFromToml((await api.nodeInfo(dev, inst)).config)
+    } catch { /* keep the inventory's */ }
+  }
   try {
     await api.setInstanceDisabled(dev, inst, true)
   } catch (e) {
@@ -176,13 +185,17 @@ export async function migrateDevice(
 
   /** Set before the join request: a failed request may still have added the member. */
   let joinAttempted = false
+  /** Disabling stored the core's lossy view: the restored config must be written back before enabling. */
+  let writeBack = false
   let stored = preview.instance.config
   let plan = preview.plan
   try {
     step = 'recheck'
     hooks.onStep(step)
     save({ step })
-    stored = await api.getInstanceConfig(dev, inst)
+    const read = await api.getInstanceConfig(dev, inst)
+    stored = restoreManualRoutes(read, observedRoutes)
+    writeBack = stored !== read
     plan = classifyInstance(stored, preview.device.hostname, target, { newIp: input.newIp ?? null })
     save({ config: stored, member: plan.member })
     const extra = unconfirmedChanges(plan, confirmed)
@@ -229,7 +242,10 @@ export async function migrateDevice(
         await waitGone(api, dev, networkId, t)
       }
       rollbackStep = 'enable'
-      if (wasRunning) await api.setInstanceDisabled(dev, inst, false)
+      if (wasRunning) {
+        if (writeBack) await api.saveInstanceConfig(dev, inst, stored)
+        await api.setInstanceDisabled(dev, inst, false)
+      }
     } catch (r) {
       return attention(step, `${failure}; ${message(r)}`, rollbackStep)
     }
@@ -283,8 +299,11 @@ export async function rollbackDevice(api: MigrationApi, rec: MigrationRecord, ho
     const list = await waitGone(api, rec.deviceId, rec.networkId, t)
     const exists = !!list && (list.running.includes(rec.instanceId) || list.disabled.includes(rec.instanceId))
     if (wasRunning) {
-      if (exists) await api.setInstanceDisabled(rec.deviceId, rec.instanceId, false)
-      else await api.runInstance(rec.deviceId, rec.config, true)
+      if (exists) {
+        // Disabling stored the core's lossy view of the config; enable the recorded one.
+        await api.saveInstanceConfig(rec.deviceId, rec.instanceId, rec.config)
+        await api.setInstanceDisabled(rec.deviceId, rec.instanceId, false)
+      } else await api.runInstance(rec.deviceId, rec.config, true)
       const running = await t.poll(async () => {
         const l = await api.listInstances(rec.deviceId)
         return l.running.includes(rec.instanceId) ? true : undefined

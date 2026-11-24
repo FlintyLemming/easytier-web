@@ -125,7 +125,8 @@ test.describe('step 2: network settings', () => {
     const { requests } = await openWizard(page)
     await toNetworkStep(page)
     await page.getByTestId('wizard-step-network').getByRole('button', { name: '使用全部服务器地址（2 个）' }).click()
-    const writes = requests.filter((r) => r.method !== 'GET' && !(r.method === 'POST' && r.path.endsWith('/networks/metas')))
+    // metas and proxy-rpc show_node_info are POSTs that only read.
+    const writes = requests.filter((r) => r.method !== 'GET' && !(r.method === 'POST' && (r.path.endsWith('/networks/metas') || r.path.endsWith('/proxy-rpc'))))
     expect(writes).toEqual([])
   })
 })
@@ -302,6 +303,7 @@ test.describe('step 4: execute', () => {
       const d = DEV[n]
       const i = inst(n)
       expect(about(after, d)).toEqual([
+        `POST /machines/${d}/proxy-rpc`,
         `PUT /machines/${d}/networks/${i}`,
         `GET /machines/${d}/networks/config/${i}`,
         `POST /networks/${NET_ID}/members`,
@@ -529,5 +531,24 @@ test.describe('auto-selected addresses', () => {
     await expect(execRow(page, 'core3')).toContainText('已迁移')
     const patch = requests.slice(from).find((r) => r.method === 'PATCH' && r.path === `/networks/${NET_ID}/members/${DEV.core3}`)
     expect(patch?.body).toMatchObject({ virtual_ipv4: '10.150.0.3' })
+  })
+})
+
+test.describe('manual routes (routes = [] on a 2.6.4 core)', () => {
+  test('28: the mode read from the running TOML shows in the override and is sent to the member', async ({ page }) => {
+    const mock = migrateMock()
+    mock.state.nodeToml.core1 = 'hostname = "core1"\ninstance_id = "x"\nroutes = []\n\n[network_identity]\nnetwork_name = "office"\n'
+    const { requests } = await mockApi(page, mock.overrides)
+    await page.goto('/#/migrate')
+    await toPreview(page)
+    await expect(card(page, 'core1').getByTestId('override-fields')).toContainText('enable_manual_routes = true')
+    await expect(card(page, 'core2').getByTestId('override-fields')).not.toContainText('enable_manual_routes')
+    for (const box of await page.getByRole('checkbox', { name: '我已了解' }).all()) await box.check()
+    await page.getByTestId('wizard-step-preview').getByRole('button', { name: '下一步' }).click()
+    const from = requests.length
+    await start(page)
+    await expect(execRow(page, 'core1')).toContainText('已迁移')
+    const put = requests.slice(from).find((r) => r.method === 'PUT' && r.path === `/networks/${NET_ID}/members/${DEV.core1}/config`)
+    expect((put?.body as { config: Record<string, unknown> }).config).toMatchObject({ enable_manual_routes: true })
   })
 })

@@ -103,21 +103,9 @@ test('production-copy rehearsal: group A through the wizard, verify, roll back o
       })
     }
     observed.preview = perDevice
-    // Production devices share fixed IPs (several devices per address). The central network allows
-    // each address once, so the wizard blocks them; do what a user has to: keep the first device
-    // (by name) of every shared address and set the others to 暂不迁移.
-    const kept = new Set<string>()
-    const skippedForDuplicates: string[] = []
-    for (let i = 0; i < (await cards.count()); i++) {
-      const c = cards.nth(i)
-      const dup = (await c.locator('li.text-error').allInnerTexts()).map((b) => /^固定 IP (\S+) 和 .* 重复$/.exec(b.trim())).find(Boolean)
-      if (!dup) continue
-      if (kept.has(dup[1]!)) {
-        await c.locator('label').filter({ hasText: /^暂不迁移$/ }).click()
-        skippedForDuplicates.push(labelOf(await c.locator('h3').innerText()))
-      } else kept.add(dup[1]!)
-    }
-    observed.duplicates = { keptAddresses: kept.size, skipped: skippedForDuplicates }
+    // Production devices share fixed IPs; the wizard switches all but the first device of each
+    // shared address to an auto-selected free one by default (a change confirmed below).
+    observed.autoSelected = perDevice.filter((d) => d.member.includes('（自动选择）')).map((d) => d.label)
     observed.summary = await page.getByTestId('change-summary').innerText()
     for (const b of await page.locator('[data-testid^="confirm-kind-"]').all()) if (await b.isEnabled()) await b.click()
     const next3 = preview.getByRole('button', { name: '下一步' })
@@ -165,8 +153,13 @@ test('production-copy rehearsal: group A through the wizard, verify, roll back o
     observed.verification = verification.map((v) => ({ label: v.label, status: v.status, diffs: v.diffs }))
     observed.aclNote = (await report.getByText(/这些设备迁移前单独配置了 ACL/).count()) > 0
 
-    // Roll back one consistent device and compare its TOML with the pre-upgrade snapshot.
-    const pick = verification.find((v) => v.status === '一致')
+    // Roll back one consistent device — one that got an auto-selected address, so the rollback must
+    // bring its shared legacy address back — and compare its TOML with the pre-upgrade snapshot.
+    const auto = new Set(observed.autoSelected as string[])
+    // Only a uniquely named device maps back to its machine id (a few rehearsal devices share a hostname).
+    const unique = (v: { name: string }) => meta.devices.filter((d) => d.hostname === v.name.trim()).length === 1
+    const pick =
+      verification.find((v) => v.status === '一致' && auto.has(v.label) && unique(v)) ?? verification.find((v) => v.status === '一致' && unique(v))
     expect(pick, 'a consistent device to roll back').toBeTruthy()
     const dev = meta.devices.find((d) => d.label === pick!.label)!
     const rbStart = Date.now()

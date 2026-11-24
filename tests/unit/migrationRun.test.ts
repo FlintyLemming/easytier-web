@@ -97,7 +97,7 @@ const input = (over: { confirmed?: ChangeKey[]; config?: LegacyConfig; running?:
   networkId: NET, networkName: 'office', preview: preview(over.config, over.running ?? true), target, confirmed: new Set(over.confirmed ?? []),
   newIp: over.newIp ?? null,
 })
-const mutating = (calls: string[]) => calls.filter((c) => !/^(list|members|getConfig)$/.test(c))
+const mutating = (calls: string[]) => calls.filter((c) => !/^(list|members|getConfig|nodeInfo)$/.test(c))
 
 describe('migrateDevice', () => {
   it('runs disable → recheck → join → settings → wait → record → cleanup', async () => {
@@ -107,12 +107,14 @@ describe('migrateDevice', () => {
     const out = await migrateDevice(api, input(), hooks(records, steps))
     expect(out).toEqual({ kind: 'migrated' })
     expect(steps).toEqual(['disable', 'recheck', 'join', 'settings', 'wait', 'record', 'cleanup'])
-    expect(api.calls[0]).toBe(`disable ${INST} true`)
-    expect(api.calls[1]).toBe('getConfig')
-    expect(api.calls[2]).toBe(`add ${DEV}`)
-    expect(api.calls[3]).toBe(`patch ${JSON.stringify({ virtual_ipv4: '10.150.0.2', hostname_override: 'core2-office' })}`)
-    expect(api.calls[4]).toMatch(/^put /)
-    const put = JSON.parse(api.calls[4]!.slice(4))
+    // The running TOML is read before disabling (the manual-routes mode is only there).
+    expect(api.calls[0]).toBe('nodeInfo')
+    expect(api.calls[1]).toBe(`disable ${INST} true`)
+    expect(api.calls[2]).toBe('getConfig')
+    expect(api.calls[3]).toBe(`add ${DEV}`)
+    expect(api.calls[4]).toBe(`patch ${JSON.stringify({ virtual_ipv4: '10.150.0.2', hostname_override: 'core2-office' })}`)
+    expect(api.calls[5]).toMatch(/^put /)
+    const put = JSON.parse(api.calls[5]!.slice(4))
     expect(put.proxy_cidrs).toEqual(['192.168.88.0/24'])
     expect(put.port_forwards).toEqual(storedCore2.port_forwards)
     expect(api.calls.at(-1)).toBe(`delete ${INST}`)
@@ -224,6 +226,7 @@ describe('migrateDevice', () => {
     }
     await migrateDevice(api, input(), h)
     expect(seen[0]).toEqual({ status: 'inProgress', calls: 0 })
+    expect(seen.length).toBeGreaterThan(1)
     expect(seen.at(-1)!.status).toBe('migrated')
   })
 
@@ -265,6 +268,24 @@ describe('migrateDevice', () => {
     const api = new FakeApi()
     const out = await migrateDevice(api, input({ newIp: '10.150.0.20' }), hooks())
     expect(out).toMatchObject({ kind: 'rolledBack', step: 'recheck', changed: ['fixed_ip'] })
+  })
+
+  it('routes = [] in the running TOML: the mode is restored into the record and the override', async () => {
+    const api = new FakeApi()
+    api.toml = (flow.centralToml as string).replace(/^instance_id = .*$/m, (l) => `${l}\nroutes = []`)
+    const records: MigrationRecord[] = []
+    await migrateDevice(api, input(), hooks(records))
+    expect(records.at(-1)!.config).toMatchObject({ enable_manual_routes: true, routes: [] })
+    const put = JSON.parse(api.calls.find((c) => c.startsWith('put '))!.slice(4))
+    expect(put.enable_manual_routes).toBe(true)
+  })
+
+  it('a rollback writes the restored config back before enabling (disabling stored the lossy one)', async () => {
+    const api = new FakeApi()
+    api.toml = (flow.centralToml as string).replace(/^instance_id = .*$/m, (l) => `${l}\nroutes = []`)
+    api.fail.updateMember = new ApiError(400, {}, 'bad')
+    await migrateDevice(api, input(), hooks())
+    expect(mutating(api.calls).slice(-3)).toEqual(['remove', `save ${INST}`, `disable ${INST} false`])
   })
 
   it('a legacy instance that was disabled before is not enabled by a rollback', async () => {
@@ -311,11 +332,11 @@ describe('rollbackDevice', () => {
     status: 'mismatch', migratedAt: 1,
   })
 
-  it('legacy instance still there: remove, wait, enable', async () => {
+  it('legacy instance still there: remove, wait, write the recorded config back, enable', async () => {
     const api = new FakeApi()
     api.lists = [{ running: [NET], disabled: [INST] }, { running: [], disabled: [INST] }, { running: [INST], disabled: [] }]
     expect(await rollbackDevice(api, record(), hooks())).toEqual({ ok: true })
-    expect(mutating(api.calls)).toEqual(['remove', `disable ${INST} false`])
+    expect(mutating(api.calls)).toEqual(['remove', `save ${INST}`, `disable ${INST} false`])
   })
 
   it('legacy instance deleted: remove, wait, recreate from the record', async () => {
