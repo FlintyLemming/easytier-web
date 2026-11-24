@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { listBlockedDevices, listMachines, listMembers, listNetworks } from '../api/client'
 import type { BlockedDevice, CentralNetworkMember, CentralNetworkSummary, RawMachine, TemporaryPeer } from '../api/types'
 import { buildDeviceViews, primaryNetworkId } from '../domain/devices'
+import { loadLocationCache, mergeLiveLocations, saveLocationCache, type LocationCache } from '../lib/locationCache'
 import { useSession } from './session'
 
 export const useInventory = defineStore('inventory', () => {
@@ -18,7 +19,11 @@ export const useInventory = defineStore('inventory', () => {
   /** Epoch ms of the last successful refresh; failures leave it unchanged. */
   const lastUpdatedAt = ref<number | null>(null)
 
-  const devices = computed(() => buildDeviceViews(machines.value, networks.value, membersByNetwork.value))
+  /** Last live location per machine id, persisted in localStorage per console user. */
+  const cachedLocations = ref<LocationCache>({})
+  let cacheUser: string | null = null
+
+  const devices = computed(() => buildDeviceViews(machines.value, networks.value, membersByNetwork.value, cachedLocations.value))
   const primaryNetwork = computed<CentralNetworkSummary | null>(() => {
     const id = primaryNetworkId(networks.value)
     return networks.value.find((n) => n.network_id === id) ?? null
@@ -58,6 +63,18 @@ export const useInventory = defineStore('inventory', () => {
       loaded.value = true
       error.value = null
       lastUpdatedAt.value = Date.now()
+      const user = session.username
+      if (user) {
+        if (cacheUser !== user) {
+          cachedLocations.value = loadLocationCache(user)
+          cacheUser = user
+        }
+        const r = mergeLiveLocations(cachedLocations.value, m, Date.now())
+        if (r.changed) {
+          saveLocationCache(user, r.cache)
+          cachedLocations.value = r.cache
+        }
+      }
     } catch (e) {
       if (gen !== generation) return
       error.value = e instanceof Error ? e.message : String(e)
@@ -85,6 +102,8 @@ export const useInventory = defineStore('inventory', () => {
     loaded.value = false
     error.value = null
     lastUpdatedAt.value = null
+    cachedLocations.value = {}
+    cacheUser = null
   }
 
   return {
@@ -96,6 +115,7 @@ export const useInventory = defineStore('inventory', () => {
     loaded,
     error,
     lastUpdatedAt,
+    cachedLocations,
     devices,
     primaryNetwork,
     deviceById,

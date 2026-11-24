@@ -9,16 +9,17 @@ const ZH = 'zh-CN'
 
 export function filterDevices(
   ds: DeviceView[],
-  f: { query: string; status: StatusFilter; city?: string | null },
+  f: { query: string; status: StatusFilter; city?: string | string[] | null },
 ): DeviceView[] {
+  const cities = f.city ? (Array.isArray(f.city) ? f.city : [f.city]).filter(Boolean) : []
   const q = f.query.trim().toLowerCase()
   return ds.filter((d) => {
     if (f.status === 'online' && !d.online) return false
     if (f.status === 'offline' && d.online) return false
     if (f.status === 'unjoined' && d.defaultNetworkId !== null) return false
-    if (f.city && locationText(d.location) !== f.city) return false
+    if (cities.length && !cities.includes(locationText(d.knownLocation) ?? '')) return false
     if (!q) return true
-    return [d.name, d.hostname, d.ip, d.publicIp, locationText(d.location)].some(
+    return [d.name, d.hostname, d.ip, d.publicIp, locationText(d.knownLocation)].some(
       (s) => !!s && s.toLowerCase().includes(q),
     )
   })

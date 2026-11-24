@@ -64,7 +64,11 @@ function onEnter(e: KeyboardEvent) {
       <DeviceStatus :device="device" :now="now" class="shrink-0" />
     </div>
     <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-muted">
-      <span class="truncate">{{ locationText(device.location) ?? '—' }}</span>
+      <span
+        class="truncate"
+        :class="device.locationCached ? 'text-muted-soft' : ''"
+        :title="device.locationCached ? t('devices.cachedLocation') : undefined"
+      >{{ locationText(device.knownLocation) ?? '—' }}</span>
       <span class="font-mono">{{ device.version || '—' }}</span>
       <UiBadge v-if="device.outdated" tone="outline">{{ t('devices.outdated') }}</UiBadge>
     </div>

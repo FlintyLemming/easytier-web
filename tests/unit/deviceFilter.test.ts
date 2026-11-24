@@ -13,7 +13,7 @@ const devices = buildDeviceViews(machines, networks, { [networks[0]!.network_id]
 
 const dev = (o: Partial<DeviceView>): DeviceView => ({
   id: 'x', name: 'x', hostname: 'x', alias: null, os: '', online: true, lastSeen: null, version: '2.7.1',
-  outdated: false, publicIp: null, location: null, networks: [], defaultNetworkId: null, member: null, ip: null, pending: false, ...o,
+  outdated: false, publicIp: null, location: null, knownLocation: o.location ?? null, locationCached: false, networks: [], defaultNetworkId: null, member: null, ip: null, pending: false, ...o,
 })
 
 describe('filterDevices', () => {
@@ -44,6 +44,23 @@ describe('filterDevices', () => {
     expect(filterDevices(ds, { query: '', status: 'all', city: '上海' }).map((d) => d.id)).toEqual(['a', 'b'])
     expect(filterDevices(ds, { query: '', status: 'offline', city: '上海' }).map((d) => d.id)).toEqual(['b'])
     expect(filterDevices(ds, { query: '', status: 'online' }).map((d) => d.id)).toEqual(['a', 'c'])
+  })
+})
+
+describe('filterDevices city array / knownLocation', () => {
+  const geo = (city: string) => ({ city, region: null, country: '中国' })
+  const ds = [
+    dev({ id: 'a', knownLocation: geo('杭州') }),
+    dev({ id: 'b', knownLocation: geo('上海') }),
+    dev({ id: 'c', knownLocation: geo('北京') }),
+    dev({ id: 'd', online: false, knownLocation: geo('杭州'), locationCached: true }),
+  ]
+  it('matches any of several cities', () => {
+    expect(filterDevices(ds, { query: '', status: 'all', city: ['杭州', '上海'] }).map((d) => d.id)).toEqual(['a', 'b', 'd'])
+  })
+  it('matches offline devices through knownLocation, also in search', () => {
+    expect(filterDevices(ds, { query: '', status: 'offline', city: '杭州' }).map((d) => d.id)).toEqual(['d'])
+    expect(filterDevices(ds, { query: '杭州', status: 'offline' }).map((d) => d.id)).toEqual(['d'])
   })
 })
 

@@ -178,6 +178,30 @@ test('?city= adds a removable location chip', async ({ page }) => {
   await expect(page).not.toHaveURL(/city=/)
 })
 
+test('offline device shows its cached location and matches a multi-value ?city= filter', async ({ page }) => {
+  const CORE2 = '22222222-2222-4222-8222-222222222222'
+  await page.addInitScript(
+    ([id]) => {
+      localStorage.setItem('et.locations.admin', JSON.stringify({ [id!]: { geo: { country: '中国', region: '浙江', city: '杭州' }, at: Date.now() } }))
+    },
+    [CORE2],
+  )
+  await mockApi(page, {
+    'GET /machines': () =>
+      machines([], (m) => {
+        if (m.info.hostname === 'core2') { m.online = false; delete m.location }
+      }),
+  })
+  await page.goto('/#/devices?city=%E6%9D%AD%E5%B7%9E&city=%E4%B8%8A%E6%B5%B7')
+  const rows = page.getByRole('row').filter({ hasText: /core\d/ })
+  await expect(rows).toHaveCount(1)
+  await expect(rows.first()).toContainText('core2')
+  await expect(page.getByRole('button', { name: /位置：杭州 等 2 地/ })).toBeVisible()
+  const cell = rows.first().getByTestId('location-text')
+  await expect(cell).toHaveText('杭州')
+  await expect(cell).toHaveAttribute('title', '最后在线时的位置')
+})
+
 test('empty inventory explains how to add a device', async ({ page }) => {
   await open(page, { 'GET /machines': () => ({ machines: [] }) })
   await expect(page.getByText('还没有设备')).toBeVisible()

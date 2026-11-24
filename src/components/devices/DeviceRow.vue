@@ -70,7 +70,12 @@ function onEnter(e: KeyboardEvent) {
       <span v-else data-testid="ip-none" class="font-mono text-[13px] text-muted-soft">—</span>
     </td>
     <td class="min-w-0 px-4 py-3 align-middle">
-      <div data-testid="location-text" class="truncate text-[14px] text-ink">{{ locationText(device.location) ?? '—' }}</div>
+      <div
+        data-testid="location-text"
+        class="truncate text-[14px]"
+        :class="device.locationCached ? 'text-muted-soft' : 'text-ink'"
+        :title="device.locationCached ? t('devices.cachedLocation') : undefined"
+      >{{ locationText(device.knownLocation) ?? '—' }}</div>
       <div class="truncate font-mono text-[12px] text-muted">{{ device.publicIp ?? '—' }}</div>
     </td>
     <td class="px-4 py-3 align-middle">

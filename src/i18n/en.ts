@@ -70,6 +70,8 @@ export default {
     filters: { all: 'All', online: 'Online', offline: 'Offline', unjoined: 'Not in a network' },
     filterLabel: 'Status filter',
     cityChip: 'Location: {city}',
+    cityChipMany: 'Location: {city} and {n} places',
+    cachedLocation: 'Location when last online',
     removeFilter: 'Remove filter',
     cols: { device: 'Device', ip: 'Private IP', location: 'Location · Public IP', version: 'Version', lastSeen: 'Last seen' },
     online: 'Online',

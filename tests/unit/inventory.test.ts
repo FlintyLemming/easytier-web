@@ -25,6 +25,7 @@ beforeEach(() => {
   m.listNetworks.mockResolvedValue(networksFx.networks as never)
   m.listBlockedDevices.mockResolvedValue([])
   m.listMembers.mockResolvedValue(membersFx as never)
+  localStorage.clear()
 })
 
 describe('inventory', () => {
@@ -206,5 +207,24 @@ describe('session', () => {
     expect(s.info).toBeNull()
     m.getConsoleInfo.mockRejectedValue(new Error('401'))
     await expect(s.load()).rejects.toThrow('401')
+  })
+
+  it('caches live locations per user and reset() keeps storage', async () => {
+    m.getConsoleInfo.mockResolvedValue({ username: 'admin' } as never)
+    await useSession().load()
+    const inv = useInventory()
+    await inv.refresh()
+    const stored = JSON.parse(localStorage.getItem('et.locations.admin')!)
+    expect(stored['11111111-1111-4111-8111-111111111111'].geo.country).toBeTruthy()
+    expect(Object.keys(inv.cachedLocations).length).toBeGreaterThan(0)
+    inv.reset()
+    expect(inv.cachedLocations).toEqual({})
+    expect(localStorage.getItem('et.locations.admin')).not.toBeNull()
+  })
+
+  it('does not touch storage without a username', async () => {
+    const inv = useInventory()
+    await inv.refresh()
+    expect(localStorage.length).toBe(0)
   })
 })

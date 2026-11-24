@@ -1,12 +1,19 @@
 import type { CentralNetworkMember, CentralNetworkSummary, GeoText, RawMachine } from '../api/types'
 import { osLabel, publicIpFromClientUrl } from './format'
+import type { LocationCache } from '../lib/locationCache'
 import { uuidToStr } from '../lib/uuid'
 import { isOutdated, latestVersion } from './version'
 
 export interface DeviceView {
   id: string; name: string; hostname: string; alias: string | null; os: string
   online: boolean; lastSeen: string | null; version: string; outdated: boolean
-  publicIp: string | null; location: GeoText | null
+  publicIp: string | null
+  /** Live location only (the backend reports it for online machines). */
+  location: GeoText | null
+  /** Live location, else the cached last-known one. */
+  knownLocation: GeoText | null
+  /** `knownLocation` comes from the cache. */
+  locationCached: boolean
   networks: { id: string; name: string }[]
   defaultNetworkId: string | null
   member: CentralNetworkMember | null
@@ -41,6 +48,7 @@ export function buildDeviceViews(
   machines: RawMachine[],
   networks: CentralNetworkSummary[],
   membersByNetwork: Record<string, CentralNetworkMember[]>,
+  cached: LocationCache = {},
 ): DeviceView[] {
   const primary = primaryNetworkId(networks)
   const latest = latestVersion(machines.map((m) => m.info?.easytier_version ?? ''))
@@ -59,6 +67,7 @@ export function buildDeviceViews(
     const nets = (m.networks ?? []).map((n) => ({ id: n.network_id, name: n.display_name }))
     const defId = defaultNetworkId(nets.map((n) => n.id), primary)
     const member = defId ? (membersByNetwork[defId] ?? []).find((x) => x.device_id === id) ?? null : null
+    const cachedGeo = machineId ? cached[machineId]?.geo : undefined
     const version = m.info?.easytier_version ?? ''
     views.push({
       id,
@@ -72,6 +81,8 @@ export function buildDeviceViews(
       outdated: isOutdated(version, latest),
       publicIp: publicIpFromClientUrl(m.client_url),
       location: m.location ?? null,
+      knownLocation: m.location ?? cachedGeo ?? null,
+      locationCached: !m.location && !!cachedGeo,
       networks: nets,
       defaultNetworkId: defId,
       member,

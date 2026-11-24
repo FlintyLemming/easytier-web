@@ -70,6 +70,8 @@ export default {
     filters: { all: '全部', online: '在线', offline: '离线', unjoined: '未加入网络' },
     filterLabel: '状态筛选',
     cityChip: '位置：{city}',
+    cityChipMany: '位置：{city} 等 {n} 地',
+    cachedLocation: '最后在线时的位置',
     removeFilter: '移除筛选',
     cols: { device: '设备', ip: '内网 IP', location: '位置 · 公网 IP', version: '版本', lastSeen: '最后在线' },
     online: '在线',

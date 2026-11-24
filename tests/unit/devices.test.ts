@@ -112,3 +112,24 @@ describe('buildDeviceViews', () => {
     }
   })
 })
+
+describe('buildDeviceViews known location', () => {
+  const id = (m: RawMachine) => uuidToStr(m.info?.machine_id)
+  const geo = { country: '中国', region: '浙江', city: '杭州' }
+  it('uses the cache for an offline device', () => {
+    const ms = clone(machines)
+    ms[0]!.online = false
+    ms[0]!.location = null
+    const v = buildDeviceViews(ms, networks, byNet, { [id(ms[0]!)]: { geo, at: 1 } })[0]!
+    expect(v.knownLocation).toEqual(geo)
+    expect(v.locationCached).toBe(true)
+    expect(v.location).toBeNull()
+  })
+  it('prefers the live location over the cache', () => {
+    const ms = clone(machines)
+    ms[0]!.location = { country: '中国', region: '上海', city: '上海' }
+    const v = buildDeviceViews(ms, networks, byNet, { [id(ms[0]!)]: { geo, at: 1 } })[0]!
+    expect(v.knownLocation).toEqual(ms[0]!.location)
+    expect(v.locationCached).toBe(false)
+  })
+})

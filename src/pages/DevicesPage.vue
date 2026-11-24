@@ -40,10 +40,9 @@ const status = ref<StatusFilter>('all')
 const sortKey = ref<SortKey | null>(null)
 const sortDir = ref<SortDir>('asc')
 
-const city = computed(() => {
+const cities = computed(() => {
   const c = route.query.city
-  const v = Array.isArray(c) ? c[0] : c
-  return v ? String(v) : null
+  return (Array.isArray(c) ? c : [c]).filter((v): v is string => !!v)
 })
 function clearCity() {
   const { city: _drop, ...rest } = route.query
@@ -53,7 +52,7 @@ function clearCity() {
 const all = computed(() => inventory.devices)
 const counts = computed(() => statusCounts(all.value))
 const visible = computed(() =>
-  sortDevices(filterDevices(all.value, { query: query.value, status: status.value, city: city.value }), sortKey.value ?? undefined, sortDir.value),
+  sortDevices(filterDevices(all.value, { query: query.value, status: status.value, city: cities.value }), sortKey.value ?? undefined, sortDir.value),
 )
 const primaryName = computed(() => inventory.primaryNetwork?.display_name ?? null)
 
@@ -64,7 +63,7 @@ function setSort(k: SortKey) {
 function clearFilters() {
   query.value = ''
   status.value = 'all'
-  if (city.value) clearCity()
+  if (cities.value.length) clearCity()
 }
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -149,7 +148,7 @@ async function confirmDelete(block: boolean) {
     <EmptyState v-else-if="all.length === 0" :title="t('devices.emptyTitle')" :body="t('devices.emptyBody')" />
 
     <template v-else>
-      <DeviceFilters v-model:query="query" v-model:status="status" :counts="counts" :city="city" :statuses="statuses" @clear-city="clearCity" />
+      <DeviceFilters v-model:query="query" v-model:status="status" :counts="counts" :cities="cities" :statuses="statuses" @clear-city="clearCity" />
 
       <EmptyState v-if="visible.length === 0" :title="t('devices.noMatch')" :body="t('devices.noMatchBody')">
         <template #action><UiButton @click="clearFilters">{{ t('devices.clearFilters') }}</UiButton></template>
