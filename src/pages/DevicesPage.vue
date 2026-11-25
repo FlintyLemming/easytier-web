@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { addMembers, deleteMachine, setMachineAlias } from '../api/client'
 import DeleteDeviceDialog from '../components/devices/DeleteDeviceDialog.vue'
 import DeviceCard from '../components/devices/DeviceCard.vue'
 import DeviceFilters from '../components/devices/DeviceFilters.vue'
+import DeviceSortControl from '../components/devices/DeviceSortControl.vue'
 import DeviceTable from '../components/devices/DeviceTable.vue'
 import RenameDialog from '../components/devices/RenameDialog.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
@@ -13,8 +14,9 @@ import SkeletonRows from '../components/ui/SkeletonRows.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import { useNarrow } from '../composables/useNarrow'
 import { useToast } from '../composables/useToast'
-import { filterDevices, sortDevices, statusCounts, type SortDir, type SortKey, type StatusFilter } from '../domain/deviceFilter'
+import { filterDevices, nextSort, sortDevices, statusCounts, type DeviceSort, type SortKey, type StatusFilter } from '../domain/deviceFilter'
 import type { DeviceView } from '../domain/devices'
+import { loadDeviceSort, saveDeviceSort } from '../lib/deviceSort'
 import { useInventory } from '../stores/inventory'
 import { useSession } from '../stores/session'
 
@@ -37,8 +39,9 @@ onMounted(() => { if (!inventory.loaded) void inventory.refresh() })
 
 const query = ref('')
 const status = ref<StatusFilter>('all')
-const sortKey = ref<SortKey | null>(null)
-const sortDir = ref<SortDir>('asc')
+/** Remembered across visits; `null` is the default order (online first, then name). */
+const sort = ref<DeviceSort | null>(loadDeviceSort())
+watch(sort, saveDeviceSort)
 
 const cities = computed(() => {
   const c = route.query.city
@@ -52,13 +55,12 @@ function clearCity() {
 const all = computed(() => inventory.devices)
 const counts = computed(() => statusCounts(all.value))
 const visible = computed(() =>
-  sortDevices(filterDevices(all.value, { query: query.value, status: status.value, city: cities.value }), sortKey.value ?? undefined, sortDir.value),
+  sortDevices(filterDevices(all.value, { query: query.value, status: status.value, city: cities.value }), sort.value?.key, sort.value?.dir),
 )
 const primaryName = computed(() => inventory.primaryNetwork?.display_name ?? null)
 
 function setSort(k: SortKey) {
-  if (sortKey.value === k) sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
-  else { sortKey.value = k; sortDir.value = 'asc' }
+  sort.value = nextSort(sort.value, k)
 }
 function clearFilters() {
   query.value = ''
@@ -148,7 +150,11 @@ async function confirmDelete(block: boolean) {
     <EmptyState v-else-if="all.length === 0" :title="t('devices.emptyTitle')" :body="t('devices.emptyBody')" />
 
     <template v-else>
-      <DeviceFilters v-model:query="query" v-model:status="status" :counts="counts" :cities="cities" :statuses="statuses" @clear-city="clearCity" />
+      <div class="flex flex-col gap-3">
+        <DeviceFilters v-model:query="query" v-model:status="status" :counts="counts" :cities="cities" :statuses="statuses" @clear-city="clearCity" />
+        <!-- The table sorts from its headers; the card list has none, so it gets this instead. -->
+        <DeviceSortControl v-if="narrow" v-model="sort" />
+      </div>
 
       <EmptyState v-if="visible.length === 0" :title="t('devices.noMatch')" :body="t('devices.noMatchBody')">
         <template #action><UiButton @click="clearFilters">{{ t('devices.clearFilters') }}</UiButton></template>
@@ -174,8 +180,8 @@ async function confirmDelete(block: boolean) {
         :now="now"
         :primary-name="primaryName"
         :joining-ids="joiningIds"
-        :sort-key="sortKey"
-        :sort-dir="sortDir"
+        :sort-key="sort?.key ?? null"
+        :sort-dir="sort?.dir ?? 'asc'"
         :central="central"
         @sort="setSort"
         @join="join"

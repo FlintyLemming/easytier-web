@@ -4,6 +4,16 @@ import { locationText } from './format'
 export type StatusFilter = 'all' | 'online' | 'offline' | 'unjoined'
 export type SortKey = 'name' | 'ip' | 'version' | 'lastSeen'
 export type SortDir = 'asc' | 'desc'
+/** `null` is the default order: online first, then name. */
+export interface DeviceSort { key: SortKey; dir: SortDir }
+
+export const SORT_KEYS: readonly SortKey[] = ['name', 'ip', 'version', 'lastSeen']
+
+/** A header click: a new column starts ascending, then descending, then back to the default order. */
+export function nextSort(cur: DeviceSort | null, key: SortKey): DeviceSort | null {
+  if (!cur || cur.key !== key) return { key, dir: 'asc' }
+  return cur.dir === 'asc' ? { key, dir: 'desc' } : null
+}
 
 const ZH = 'zh-CN'
 

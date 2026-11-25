@@ -44,11 +44,20 @@ const cols: { key: SortKey | null; label: string; width: string }[] = [
             <button
               v-if="c.key"
               type="button"
-              class="inline-flex cursor-pointer items-center gap-1 uppercase hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+              data-testid="sort-header"
+              class="group/sort inline-flex cursor-pointer items-center gap-1 uppercase hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+              :class="sortKey === c.key ? 'text-ink' : ''"
               @click="$emit('sort', c.key)"
             >
               {{ t(c.label) }}
-              <span v-if="sortKey === c.key" aria-hidden="true">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
+              <!-- Active column: its direction. Others: a faint up-down mark so every sortable header reads as clickable. -->
+              <svg v-if="sortKey === c.key" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path v-if="sortDir === 'asc'" d="M12 19V5M6 11l6-6 6 6" />
+                <path v-else d="M12 5v14M6 13l6 6 6-6" />
+              </svg>
+              <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="opacity-40 group-hover/sort:opacity-100" aria-hidden="true">
+                <path d="M8 9l4-4 4 4M8 15l4 4 4-4" />
+              </svg>
             </button>
             <template v-else>{{ t(c.label) }}</template>
           </th>

@@ -4,7 +4,7 @@ import networksFx from '../fixtures/v2.7.1/networks.json'
 import membersFx from '../fixtures/v2.7.1/members.json'
 import type { CentralNetworkMember, CentralNetworkSummary, RawMachine } from '../../src/api/types'
 import { buildDeviceViews, type DeviceView } from '../../src/domain/devices'
-import { filterDevices, sortDevices, statusCounts } from '../../src/domain/deviceFilter'
+import { filterDevices, nextSort, sortDevices, statusCounts } from '../../src/domain/deviceFilter'
 
 const machines = machinesFx.machines as unknown as RawMachine[]
 const networks = networksFx.networks as unknown as CentralNetworkSummary[]
@@ -78,6 +78,17 @@ describe('sortDevices', () => {
     const ds = [dev({ id: '1', name: 'b' }), dev({ id: '2', name: 'a' })]
     sortDevices(ds, 'name', 'asc')
     expect(ds[0]!.id).toBe('1')
+  })
+})
+
+describe('nextSort', () => {
+  it('a header click cycles ascending → descending → default order', () => {
+    expect(nextSort(null, 'ip')).toEqual({ key: 'ip', dir: 'asc' })
+    expect(nextSort({ key: 'ip', dir: 'asc' }, 'ip')).toEqual({ key: 'ip', dir: 'desc' })
+    expect(nextSort({ key: 'ip', dir: 'desc' }, 'ip')).toBeNull()
+  })
+  it('another column starts ascending', () => {
+    expect(nextSort({ key: 'ip', dir: 'desc' }, 'name')).toEqual({ key: 'name', dir: 'asc' })
   })
 })
 

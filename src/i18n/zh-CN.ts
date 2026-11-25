@@ -151,6 +151,7 @@ export default {
     cachedLocation: '最后在线时的位置',
     removeFilter: '移除筛选',
     cols: { device: '设备', ip: '内网 IP', location: '位置 · 公网 IP', version: '版本', lastSeen: '最后在线' },
+    sort: { label: '排序', default: '默认（在线优先）', keys: { name: '名称', ip: '内网 IP', version: '版本', lastSeen: '最后在线' }, asc: '当前升序，点击改为降序', desc: '当前降序，点击改为升序' },
     online: '在线',
     notJoined: '未加入网络',
     join: '加入 {network}',

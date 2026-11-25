@@ -151,6 +151,7 @@ export default {
     cachedLocation: 'Location when last online',
     removeFilter: 'Remove filter',
     cols: { device: 'Device', ip: 'Private IP', location: 'Location · Public IP', version: 'Version', lastSeen: 'Last seen' },
+    sort: { label: 'Sort', default: 'Default (online first)', keys: { name: 'Name', ip: 'Private IP', version: 'Version', lastSeen: 'Last seen' }, asc: 'Ascending, click for descending', desc: 'Descending, click for ascending' },
     online: 'Online',
     notJoined: 'Not in a network',
     join: 'Join {network}',
