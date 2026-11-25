@@ -139,3 +139,15 @@ The user left the next step open ("no preference"); production was not touched (
 - Runbook (doc, no test): do not start deploy/docker-compose.yml on the production host; migrate a node others connect to last; the few seconds on an allocated address between join and settings; DHCP devices last.
 
 Still open: rollbackDevice's write-back for a legacy instance that still exists has unit and mocked e2e coverage but has not run against a real backend.
+
+## Production upgrade 2026-11-25 (user: 「现在升级生产」)
+
+Backend only, per docs/upgrade-runbook.md; the optional step 2 (two disabled instances with `rpc_port`) was skipped, as the runbook recommends.
+
+- Pulled `mirror-hub.flinty.moe/easytier/easytier:v2.7.1` first (digest sha256:24248ca2…, `2.7.1-0d9c52b1-20261115`) to keep the downtime short.
+- Backup: `/home/flintylemming/appdata/11211,22020-easytier-web/backups/20261125-100306` (data dir, compose.yaml, container.json, image digests; path in `backups/LATEST`); a second copy on the Mac in `testenv/backups/prod-backup-20261125-100306/` (git-ignored). `PRAGMA integrity_check` = ok; 46 instances on 42 devices, 8 disabled.
+- compose.yaml: only line 3 (easytier-web image) `:latest` → `:v2.7.1`; `docker compose up -d easytier-web`. Web stopped 10:03:06, v2.7.1 up 10:03:34 (~28 s). The host easytier-core was not touched.
+- Checks: no panic; API answers (401); 10 distinct devices established sessions within minutes, each with `managed config revision applied`; 0 ERROR; WARN only RPC timeouts from slow devices. The number of devices online before the upgrade was not recorded (the old container's log went with it) — compare in the console.
+- `(unhealthy)` is cosmetic: the v2.7.1 image's healthcheck runs `easytier-cli … node info` against port 15888, which only easytier-core serves (the testenv web shows the same).
+- The host's own easytier-core runs no instance — before the upgrade too: it registers as machine `acc9783a…`, which had no instances; the `sh-ucloud` legacy instance belongs to device `bc1460d3…`, which has not connected.
+- Not yet done: deploying the new console; running the migration wizard. Rollback: runbook step 9 (reads `backups/LATEST`).
