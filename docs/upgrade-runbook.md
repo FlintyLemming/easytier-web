@@ -12,6 +12,7 @@
 | 新镜像 | `mirror-hub.flinty.moe/easytier/easytier:v2.7.1`（或 `easytier/easytier:v2.7.1`），上游 digest `sha256:24248ca25f55f97fde509af450124b31decd44421403518350c6f4109fb139ef` |
 | 主机上的工具 | 没有 `sqlite3`（2026-11-24 只读查看） |
 | 城市级定位（2026-11-25 起） | `easytier-web` 的 `command` 加了 `--geoip-db /geoip/GeoLite2-City.mmdb`，并挂载 `./geoip:/geoip:ro`；数据库文件在 `$APP/geoip/GeoLite2-City.mmdb`（来自 github.com/P3TERX/GeoLite.mmdb，release 2026.11.22）。第 9 步用升级前备份的 compose.yaml 回滚时不带这一项，2.6.4 用内置的国家级数据库 |
+| 心跳回复等待（2026-11-25 起） | `easytier-web` 的 `command` 加了 `--heartbeat-min-response-ms 1000`（默认 3500）。v2.7.1 给 2.7 以前的 core 回复心跳前要等满这个时间，而这些 core 一次心跳最多等 5 秒、超时就断开重连；默认 3.5 秒时，香港、法国这类远距离设备每 10–60 秒重连一次，向导对它们的操作会中途失败。改前的 compose 备份在 `$APP/backups/20261125-105814-heartbeat/`。第 9 步回滚用的 compose.yaml 不带这一项，2.6.4 也不认识这个参数 |
 
 > **不要**在这台主机上执行 `docker compose pull` 或不带服务名的 `docker compose up`：两个服务都用 `:latest`，拉取后 `easytier-core` 也会被换成新版本。下面只操作 `easytier-web` 这一个服务。
 
@@ -144,6 +145,9 @@ docker ps --filter name=easytier-web      # 状态 Up
 7. 被其他设备当作节点地址连接的设备（例如自建的服务器）：它的监听地址会进配置覆盖，迁移后其他设备照常能连上它；但建议放在最后迁移，先确认其余设备都正常。
 8. 每台设备从「加入网络」到「写入设置」之间有几秒，成员先用网络自动分配的地址运行，写入固定 IP 后再换过来；这几秒里它可能和还没迁移的设备撞地址，影响很短。
 9. 用 DHCP 的旧实例迁移后由网络分配地址，网络只避开成员的地址，可能和还没迁移的设备的固定 IP 撞车：先迁移固定 IP 的设备，DHCP 设备最后迁移（生产组 A 没有 DHCP 设备）。
+10. **2.5.0 以前的 core（生产上有 2.3.2、2.4.5）web 管不了**：它们的 RPC 服务还叫 `web.*` / `cli.*`，web 从 2.5 起调用 `api.manage.*` / `api.instance.*`，core 一律拒绝（InvalidServiceKey）。向导读不到这些设备，要先把它们的 core 升级。
+11. **升级任何 core 到 v2.7.x 之前，先固定设备 ID**：v2.7.x 先读 `--machine-id`，再读 `$HOME/.local/share/easytier/machine_id`。旧 core 的 ID 要么由 `/etc/machine-id` 算出（v2.7.x 换了算法），要么存在二进制旁边的 `et_machine_id`（Docker 里在容器层，重建就丢）。ID 一变，web 就当成新设备，不再下发它的网络。做法：从 web 的设备列表（或容器里的 `et_machine_id`）记下当前 ID，启动参数加 `--machine-id <ID>`，再把 ID 写进状态文件。SSH 要经过 EasyTier 才能到的主机，用 `systemd-run` 在后台换版本，并让脚本在网络没恢复时自动换回旧版本。2026-11-25 aliyun-sh（2.4.5 → 2.7.1，Docker）和 NanoPi-NEO3（2.3.2 → 2.7.1，systemd）就是这样升级的，设备 ID 都没变。
+12. 向导里名为 `easytier` 的一组是原版控制台「新建网络」留下的默认配置实例（停用、没有密钥、DHCP），从来没用过，不用迁移，可以删掉。
 
 **升级后、迁移前，不要在手动实例页对 2.6.4 设备的旧实例「停用」再「启用」。**2.6.4 的 core 上报配置时会丢掉「手动路由、列表为空」（TOML 里的 `routes = []`，意思是不安装其他设备代理的子网路由）这个模式；v2.7.1 停用实例时用这份上报覆盖存储的配置，再启用时这台设备就变成自动安装路由。生产副本里 17 个运行中的实例是这种配置。迁移向导已经处理了这个问题：它从运行中的 TOML 读回这个模式，迁移和回滚都会保留。
 
