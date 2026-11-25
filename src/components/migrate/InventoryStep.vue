@@ -11,6 +11,8 @@ const props = defineProps<{
   groups: LegacyGroup[]
   offline: DeviceRef[]
   failed: { device: DeviceRef; message: string }[]
+  /** Devices being read again. */
+  retrying?: string[]
   loading: boolean
   progress: { done: number; total: number }
   networks: CentralNetworkSummary[]
@@ -95,7 +97,7 @@ function targetText(g: LegacyGroup): string {
       <ul class="mt-2 flex flex-col gap-2">
         <li v-for="f in failed" :key="f.device.id" class="flex flex-wrap items-center justify-between gap-2 text-[14px]">
           <span><span class="text-ink">{{ f.device.name }}</span> <span class="text-muted">· {{ f.message }}</span></span>
-          <UiButton size="sm" @click="emit('retry', f.device.id)">{{ t('migrate.inventory.retry') }}</UiButton>
+          <UiButton size="sm" :loading="retrying?.includes(f.device.id)" @click="emit('retry', f.device.id)">{{ t('migrate.inventory.retry') }}</UiButton>
         </li>
       </ul>
     </section>

@@ -637,3 +637,14 @@ test.describe('report minors', () => {
     expect((await journalOf(page)).map((r) => r.deviceName)).toEqual(['core2', 'core3'])
   })
 })
+
+test.describe('inventory minors', () => {
+  test('37: a failed metas read does not hide the device; names come from the configs', async ({ page }) => {
+    const mock = migrateMock()
+    mock.state.failures.push({ method: 'POST', path: `/machines/${DEV.core2}/networks/metas`, status: 500, body: { message: 'DB Error: Json Error: unknown field `rpc_port`' } })
+    await mockApi(page, mock.overrides)
+    await page.goto('/#/migrate')
+    await expect(groupRow(page, 'office').getByTestId('count-instances')).toHaveText('4')
+    await expect(page.getByTestId('failed-devices')).toHaveCount(0)
+  })
+})

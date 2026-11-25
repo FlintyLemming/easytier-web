@@ -202,10 +202,10 @@ export function migrateMock(opts: MigrateMockOpts = {}): { overrides: Overrides;
       if (name && typeof inst === 'string') move(name, inst, 'running')
       return {}
     }),
-    'POST /machines/*/networks/metas': (req) => {
+    'POST /machines/*/networks/metas': write((req) => {
       const name = nameOf(pathOf(req).split('/')[2]!)
       return migrateFixture(`metas-${name}.json`)
-    },
+    }),
     'GET /machines/*/networks/config/*': (req) => {
       const parts = pathOf(req).split('/')
       const name = nameOf(parts[2]!)

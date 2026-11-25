@@ -54,7 +54,7 @@ const show = (v: unknown) => (typeof v === 'string' ? v : JSON.stringify(v))
         class="inline-flex overflow-hidden rounded-control border border-hairline-strong text-[13px]"
       >
         <label
-          class="flex cursor-pointer items-center px-3 py-1.5"
+          class="flex cursor-pointer items-center px-3 py-1.5 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-[-2px] has-[:focus-visible]:outline-ink"
           :class="[shownChoice ? 'bg-ink text-white' : 'text-ink', locked ? 'cursor-not-allowed opacity-50' : '']"
         >
           <input
@@ -66,7 +66,7 @@ const show = (v: unknown) => (typeof v === 'string' ? v : JSON.stringify(v))
             @change="emit('update:choice', true)"
           />{{ t('migrate.preview.migrate') }}
         </label>
-        <label class="flex cursor-pointer items-center border-l border-hairline-strong px-3 py-1.5" :class="!shownChoice ? 'bg-ink text-white' : 'text-ink'">
+        <label class="flex cursor-pointer items-center border-l border-hairline-strong px-3 py-1.5 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-[-2px] has-[:focus-visible]:outline-ink" :class="!shownChoice ? 'bg-ink text-white' : 'text-ink'">
           <input type="radio" class="sr-only" :name="radioName" :checked="!shownChoice" @change="emit('update:choice', false)" />{{
             t('migrate.preview.skip')
           }}
@@ -98,12 +98,12 @@ const show = (v: unknown) => (typeof v === 'string' ? v : JSON.stringify(v))
               :aria-label="t('migrate.preview.ipChoiceLabel', { name: preview.device.name })"
               class="inline-flex overflow-hidden rounded-control border border-hairline-strong text-[12px]"
             >
-              <label class="flex cursor-pointer items-center px-2.5 py-1" :class="!auto ? 'bg-ink text-white' : 'text-ink'">
+              <label class="flex cursor-pointer items-center px-2.5 py-1 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-[-2px] has-[:focus-visible]:outline-ink" :class="!auto ? 'bg-ink text-white' : 'text-ink'">
                 <input type="radio" class="sr-only" :name="ipRadioName" :checked="!auto" @change="emit('update:auto', false)" />{{
                   t('migrate.preview.ipKeep')
                 }}
               </label>
-              <label class="flex cursor-pointer items-center border-l border-hairline-strong px-2.5 py-1" :class="auto ? 'bg-ink text-white' : 'text-ink'">
+              <label class="flex cursor-pointer items-center border-l border-hairline-strong px-2.5 py-1 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-[-2px] has-[:focus-visible]:outline-ink" :class="auto ? 'bg-ink text-white' : 'text-ink'">
                 <input type="radio" class="sr-only" :name="ipRadioName" :checked="auto" @change="emit('update:auto', true)" />{{
                   t('migrate.preview.ipAuto')
                 }}

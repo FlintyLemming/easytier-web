@@ -49,7 +49,7 @@ const gateway = ref<GatewayInfo | null>(null)
 /** The network the devices migrate into: the existing one, else the draft. */
 const target = computed<TargetNetwork | null>(() => {
   if (existing.value) return targetFromDetail(existing.value, gateway.value)
-  return draft.value ? targetFromDraft(draft.value) : null
+  return draft.value ? targetFromDraft(draft.value, gateway.value) : null
 })
 /** The user's 迁移 / 暂不迁移 choice per device id (step 3). */
 const choices = ref<Record<string, boolean>>({})
@@ -206,6 +206,7 @@ function toInventory() {
       :networks="inventory.networks"
       :has-journal="hasJournal"
       @select="selectGroup"
+      :retrying="legacy.retrying.value"
       @retry="legacy.retry"
       @reload="legacy.load"
       @report="toStep(5)"

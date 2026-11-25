@@ -12,7 +12,7 @@ import { CENTRAL_OWNED_FIELDS } from '../../src/domain/memberOverride'
 import { LEGACY_VPN_FIELDS } from '../../src/domain/vpnPortal'
 import {
   changeFields, classifyInstance, deviceCounts, initialAutoIp, initialChoices, isUnset, planGroup, readyToRun, reconcileIpConfirmations, selectedPreviews,
-  targetFromDetail, unconfirmedChanges,
+  targetFromDetail, targetFromDraft, unconfirmedChanges,
   type TargetNetwork,
 } from '../../src/domain/migration/classify'
 import { groupLegacy } from '../../src/domain/migration/inventory'
@@ -299,6 +299,12 @@ describe('changes', () => {
     expect(t.peerUrls).toEqual(['tcp://gw:22020'])
     expect(t.secureMode).toBe(true)
     expect(t.virtualCidr).toBeNull()
+  })
+
+  it('a Gateway draft targets the gateway address, so the connectivity change names it', () => {
+    const form = { displayName: 'o', networkName: 'office', method: 'Gateway', publicServerUrl: '', peerUrls: [], virtualCidr: '10.150.0.0/24', secureMode: true }
+    const t = targetFromDraft({ form, secret: 's' } as never, { enabled: true, peer_url: 'tcp://gw:22020' })
+    expect(t.peerUrls).toEqual(['tcp://gw:22020'])
   })
 })
 

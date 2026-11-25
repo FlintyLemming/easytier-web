@@ -73,14 +73,16 @@ export interface DevicePreview {
   ipSwitchable: boolean
 }
 
-export function targetFromDraft(draft: NetworkDraft): TargetNetwork {
+export function targetFromDraft(draft: NetworkDraft, gateway: GatewayInfo | null = null): TargetNetwork {
   const f = draft.form
   return {
     networkName: f.networkName.trim(),
     secret: draft.secret,
     method: f.method,
     publicServerUrl: f.method === 'PublicServer' ? f.publicServerUrl.trim() : null,
-    peerUrls: f.method === 'Manual' ? f.peerUrls.map((u) => u.trim()) : [],
+    // A Gateway network connects to the gateway address (as targetFromDetail).
+    peerUrls:
+      f.method === 'Manual' ? f.peerUrls.map((u) => u.trim()) : f.method === 'Gateway' && gateway?.peer_url ? [gateway.peer_url] : [],
     virtualCidr: normalizeVirtualCidr(f.virtualCidr),
     secureMode: f.secureMode,
   }
