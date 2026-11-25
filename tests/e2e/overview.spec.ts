@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { fleetLocationCache, fleetMock } from './fleet'
-import { fixture, mockApi } from './mockApi'
+import { fixture, mockApi, type Overrides } from './mockApi'
 import { strToUuid } from '../../src/lib/uuid'
 
 test('overview heading, nav state and logo navigation', async ({ page }) => {
@@ -180,9 +180,13 @@ test('webhook mode has no connection quality and no unjoined rows', async ({ pag
 test.describe('node map', () => {
   test.use({ viewport: { width: 1280, height: 800 } })
 
-  /** The fleet with the two offline devices' cached locations (上海, 法兰克福) seeded. */
-  async function openFleet(page: Page) {
+  /**
+   * The fleet with the two offline devices' cached locations (上海, 法兰克福) seeded. `tweak` edits the
+   * mock before the page loads (it gets the fleet's device ids).
+   */
+  async function openFleet(page: Page, tweak?: (overrides: Overrides, ids: Record<string, string>) => void) {
     const { overrides, ids } = fleetMock()
+    tweak?.(overrides, ids)
     const cache = JSON.stringify(fleetLocationCache(ids))
     await page.addInitScript((c) => localStorage.setItem('et.locations.admin', c), cache)
     const api = await mockApi(page, overrides)
@@ -312,6 +316,22 @@ test.describe('node map', () => {
     await expect(lines).toHaveAttribute('aria-pressed', 'false')
     await expect(map.locator('[data-arc]')).toHaveCount(0)
     await expect(legend).toHaveCount(0)
+  })
+
+  // Like a device on a flaky long-haul link: its proxy-rpc calls hang until the client's 8-second
+  // timeout. The other 16 online members still report their links to it, so every pair is known.
+  test('a device that never answers holds back neither the direct rate nor the connection lines', async ({ page }) => {
+    const { map } = await openFleet(page, (overrides, ids) => {
+      const rpc = overrides['POST /machines/*/proxy-rpc']!
+      overrides['POST /machines/*/proxy-rpc'] = (req) =>
+        new URL(req.url()).pathname.split('/').at(-2) === ids['hk-mini'] ? new Promise(() => {}) : rpc(req)
+    })
+    const direct = page.getByTestId('stat-direct')
+    await expect(direct.getByText('98%')).toBeVisible()
+    await expect(direct.getByText('136 条连接中 3 条走中继')).toBeVisible()
+    await expect(page.getByRole('button', { name: '连接线' })).toHaveAttribute('aria-pressed', 'true')
+    await expect.poll(() => map.locator('[data-arc]').count()).toBeGreaterThan(0)
+    await expect(page.getByTestId('connection-quality')).toContainText('中继 3 · 直连 133')
   })
 
   test('location ranking rows link to the filtered device list', async ({ page }) => {

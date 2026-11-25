@@ -151,6 +151,46 @@ describe('runtime store', () => {
     expect(rt.fleetLoaded).toBe(true)
   })
 
+  it('fleetReady once one target has answered: a device still pending holds back nothing', async () => {
+    await loadInventory()
+    const release = deferred()
+    const rt = useRuntime()
+    const p = rt.refreshFleet()
+    expect(rt.fleetReady).toBe(false)
+    release(CORE1)
+    await vi.waitFor(() => expect(rt.fleetReady).toBe(true))
+    expect(rt.fleetLoaded).toBe(false)
+    // core1 alone reports both of its links: two pairs, both direct.
+    expect(rt.stats).toEqual({ direct: 2, relayed: 0, rate: 1 })
+    release()
+    await p
+    expect(rt.fleetReady).toBe(true)
+    expect(rt.stats).toEqual({ direct: 3, relayed: 0, rate: 1 })
+  })
+
+  it('fleetReady keeps what a cancelled pass already fetched (leaving the overview mid-pass)', async () => {
+    tenMembers()
+    await loadInventory()
+    const h = held()
+    const rt = useRuntime()
+    const p = rt.refreshFleet()
+    await flush()
+    rt.cancelFleet()
+    h.releaseAll()
+    await p
+    expect(rt.fleetLoaded).toBe(false)
+    expect(rt.fleetReady).toBe(true)
+  })
+
+  it('fleetReady after a finished pass even when every target failed', async () => {
+    m.nodeRoutes.mockRejectedValue(new Error('timeout'))
+    await loadInventory()
+    const rt = useRuntime()
+    await rt.refreshFleet()
+    expect(rt.fleetReady).toBe(true)
+    expect(rt.stats).toEqual({ direct: 0, relayed: 0, rate: null })
+  })
+
   // Pinia wraps every promise an action returns (`ret.then(...)`), so the two calls cannot hand back the
   // identical object; what matters is that the second call joins the refresh in flight.
   it('refreshFleet is single-flight: a call during a refresh joins it', async () => {

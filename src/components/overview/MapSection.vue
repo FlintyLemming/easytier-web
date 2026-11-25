@@ -14,7 +14,8 @@ const props = defineProps<{
   pairs: DevicePair[]
   /** Webhook mode has no connections, so no 连接线 toggle. */
   central: boolean
-  fleetLoaded: boolean
+  /** Some connection data is in (runtime.fleetReady). */
+  fleetReady: boolean
 }>()
 const { t } = useI18n()
 
@@ -28,7 +29,7 @@ const view = computed<MapView>({
 
 const linesOn = ref(true)
 /** Lines join two places, so with fewer there is nothing to toggle. */
-const linesToggle = computed(() => props.central && props.fleetLoaded && props.summary.groups.length >= 2)
+const linesToggle = computed(() => props.central && props.fleetReady && props.summary.groups.length >= 2)
 
 const meta = computed(() => {
   const located = props.summary.groups.reduce((s, g) => s + g.total, 0)

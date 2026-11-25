@@ -26,8 +26,8 @@ const nameOf = (id: string) => inventory.deviceById(id)?.name ?? id
 </script>
 
 <template>
-  <SectionCard data-testid="connection-quality" :title="t('overview.quality.title')" :meta="runtime.fleetLoaded ? meta : undefined">
-    <SkeletonRows v-if="!runtime.fleetLoaded" :rows="5" />
+  <SectionCard data-testid="connection-quality" :title="t('overview.quality.title')" :meta="runtime.fleetReady ? meta : undefined">
+    <SkeletonRows v-if="!runtime.fleetReady" :rows="5" />
     <EmptyState v-else-if="runtime.pairs.length === 0" :title="t('overview.quality.empty')" />
     <ul v-else class="-my-3 flex flex-col">
       <li

@@ -162,6 +162,12 @@ export const useRuntime = defineStore('runtime', () => {
     }
     return byNetwork
   })
+  /**
+   * The overview has something to show: a fleet pass has finished, or some target's latest answer is
+   * in (also one a cancelled pass fetched). A device that is slow or never answers holds back nothing;
+   * the others report their links to it too.
+   */
+  const fleetReady = computed(() => fleetLoaded.value || Object.keys(fleetLinks.value).length > 0)
   const pairs = computed(() => buildPairs(fleetLinks.value))
   const stats = computed(() => summarizePairs(pairs.value))
 
@@ -187,6 +193,7 @@ export const useRuntime = defineStore('runtime', () => {
     refreshFleet,
     cancelFleet,
     fleetLinks,
+    fleetReady,
     pairs,
     stats,
     reset,

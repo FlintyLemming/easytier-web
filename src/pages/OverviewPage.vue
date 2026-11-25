@@ -58,8 +58,8 @@ const focus = computed(() => computeFocus(locations.value.groups))
     </EmptyState>
 
     <template v-else>
-      <StatCards :stats="stats" :central="central" :fleet-loaded="runtime.fleetLoaded" :direct="runtime.stats" />
-      <MapSection :summary="locations" :focus="focus" :pairs="runtime.pairs" :central="central" :fleet-loaded="runtime.fleetLoaded" />
+      <StatCards :stats="stats" :central="central" :fleet-ready="runtime.fleetReady" :direct="runtime.stats" />
+      <MapSection :summary="locations" :focus="focus" :pairs="runtime.pairs" :central="central" :fleet-ready="runtime.fleetReady" />
       <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <AttentionList :central="central" :class="central ? '' : 'lg:col-span-2'" />
         <ConnectionQuality v-if="central" />

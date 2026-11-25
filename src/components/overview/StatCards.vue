@@ -7,17 +7,18 @@ const props = defineProps<{
   stats: OverviewStats
   /** Webhook mode has no networks or connections: only the online and updatable cells. */
   central: boolean
-  fleetLoaded: boolean
+  /** Some connection data is in (runtime.fleetReady). */
+  fleetReady: boolean
   direct: { direct: number; relayed: number; rate: number | null }
 }>()
 const { t } = useI18n()
 
 const rateText = computed(() => {
-  if (!props.fleetLoaded || props.direct.rate === null) return '—'
+  if (!props.fleetReady || props.direct.rate === null) return '—'
   return `${Math.round(props.direct.rate * 100)}%`
 })
 const rateSub = computed(() => {
-  if (!props.fleetLoaded) return t('overview.stats.directLoading')
+  if (!props.fleetReady) return t('overview.stats.directLoading')
   if (props.direct.rate === null) return t('overview.stats.directNone')
   const total = props.direct.direct + props.direct.relayed
   return t('overview.stats.directSub', { total, relayed: props.direct.relayed }, total)
