@@ -648,3 +648,22 @@ test.describe('inventory minors', () => {
     await expect(page.getByTestId('failed-devices')).toHaveCount(0)
   })
 })
+
+test.describe('write-back', () => {
+  test('38: a rollback writes the manual routing mode back before re-enabling', async ({ page }) => {
+    const mock = migrateMock()
+    mock.state.nodeToml.core1 = 'hostname = "core1"\ninstance_id = "x"\nroutes = []\n\n[network_identity]\nnetwork_name = "office"\n'
+    mock.state.failures.push({ method: 'PATCH', path: `/networks/${NET_ID}/members/${DEV.core1}`, status: 400, body: { message: 'bad' } })
+    const { requests } = await mockApi(page, mock.overrides)
+    await page.goto('/#/migrate')
+    await toPreview(page)
+    for (const box of await page.getByRole('checkbox', { name: '我已了解' }).all()) await box.check()
+    await page.getByTestId('wizard-step-preview').getByRole('button', { name: '下一步' }).click()
+    const from = requests.length
+    await start(page)
+    await expect(execRow(page, 'core1')).toContainText('已回滚（写入设置：bad）')
+    const mine = requests.slice(from).filter((r) => r.method === 'PUT' && r.path.startsWith(`/machines/${DEV.core1}/networks/`))
+    expect(mine.map((r) => r.path.includes('/config/') ? 'save' : JSON.stringify(r.body))).toEqual(['{"disabled":true}', 'save', '{"disabled":false}'])
+    expect((mine[1]!.body as { config: Record<string, unknown> }).config).toMatchObject({ enable_manual_routes: true, routes: [] })
+  })
+})

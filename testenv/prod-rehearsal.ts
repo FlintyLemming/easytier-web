@@ -15,6 +15,7 @@
 //       line by line (also printing the result with the `[source]` table stripped).
 //
 // Output never contains secrets, IPs, machine ids or device names: devices are "设备 N".
+import { execSync } from 'node:child_process'
 import { DatabaseSync } from 'node:sqlite'
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -72,6 +73,9 @@ function adminHash(): string | undefined {
 }
 
 function generate() {
+  // Never open a database a running web has open (testenv/README.md).
+  const running = execSync('docker ps --filter name=et-prod-rehearsal-web --format "{{.Names}}"', { encoding: 'utf8' }).trim()
+  if (running) throw new Error('the rehearsal web is running; stop it first (docker compose -p et-prod-rehearsal stop web)')
   const db = new DatabaseSync(join(dir, 'et.db'))
   const owners = db.prepare('select distinct user_id as uid from user_running_network_configs').all() as { uid: number }[]
   if (owners.length !== 1) throw new Error(`expected exactly one user with instances, found ${owners.length}`)
@@ -126,6 +130,7 @@ networks:
     internal: true
   egress: {}
 `
+  db.close()
   writeFileSync(join(dir, 'docker-compose.yml'), compose)
   writeFileSync(metaFile, JSON.stringify({ user, devices } satisfies Meta, null, 2) + '\n')
   console.log(`user: ${user} (id ${uid}); password in the copy set to "${PASSWORD}"`)

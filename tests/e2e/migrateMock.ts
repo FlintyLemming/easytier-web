@@ -212,6 +212,16 @@ export function migrateMock(opts: MigrateMockOpts = {}): { overrides: Overrides;
       const cfg = name ? configFor(name, parts[5]!) : null
       return cfg ?? status(404, { message: 'No such network instance' })
     },
+    // Before the enable/disable handler: its `*` would also match this path.
+    'PUT /machines/*/networks/config/*': write((req) => {
+      const parts = pathOf(req).split('/')
+      const name = nameOf(parts[2]!)
+      const instId = parts[5]!
+      const s = name ? state.instances[name] : undefined
+      // Saving a config the device does not have creates it disabled (upstream 仅保存).
+      if (s && !s.running.includes(instId) && !s.disabled.includes(instId)) s.disabled.push(instId)
+      return {}
+    }),
     'PUT /machines/*/networks/*': write((req) => {
       const parts = pathOf(req).split('/')
       const name = nameOf(parts[2]!)

@@ -119,3 +119,23 @@ Critical: none. Important 1–4 fixed, each test-first:
 - Final: minor (deferred): defaults are not recomputed when going back to step 2 and changing the subnet.
 - Final: minor (deferred): test gaps — mock glob `*` crosses `/`; no e2e for a write-back; rollbackDevice's write-back for an existing instance not exercised live.
 - Final: minor (deferred): the new radios have no visible focus ring (same as the existing 迁移 / 暂不迁移 radios).
+
+### Deferred minors worked through (2026-11-25, branch fix/migration-minors)
+
+The user left the next step open ("no preference"); production was not touched (it needs an explicit go-ahead on the day). Fixed, each with a test unless noted:
+
+- `ipTaken` also counts a member's allocated and runtime address (classify test).
+- 暂不迁移 counts devices, not instances (`deviceCounts`, classify test).
+- A device that fails at the disable step reads 「未迁移（…）」 — nothing was changed (e2e 31); the intro says a failed final cleanup is the one step without a rollback.
+- Cards that cannot migrate have no 我已了解 boxes, so a secondary instance cannot confirm the primary's changes (e2e 32).
+- Step 3 defaults (choices, auto-select, confirmations) are recomputed when the target changes in step 2 (e2e 33).
+- Copy: `otherInstance` no longer says the other instance will migrate; English "Keep own address".
+- The report shows why a device waits (e2e 34), lists devices whose address changed, old → new (e2e 35), and can remove one record (journal test, e2e 36).
+- A failed metas read falls back to the configs; an unreadable instance no longer hides the device's others (e2e 37); the inventory store is refreshed on every load; 重试 has a loading state.
+- A Gateway draft targets the gateway address (classify test).
+- Visible focus rings on the segmented radios (checked in the built CSS).
+- Test gaps: the e2e mock answers PUT …/networks/config/* itself (its glob crossed `/`); e2e 38 covers the routing-mode write-back on rollback.
+- `prod-rehearsal.ts generate` refuses while the rehearsal web runs and closes its database.
+- Runbook (doc, no test): do not start deploy/docker-compose.yml on the production host; migrate a node others connect to last; the few seconds on an allocated address between join and settings; DHCP devices last.
+
+Still open: rollbackDevice's write-back for a legacy instance that still exists has unit and mocked e2e coverage but has not run against a real backend.
