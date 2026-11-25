@@ -128,7 +128,11 @@ function statusText(s: RowState): string {
         : o.message === ROUTES_UNKNOWN
           ? t('migrate.execute.routesUnknown')
           : o.message
-      return t('migrate.execute.status.rolledBack', { step: t(`migrate.execute.status.${o.step}`), message: msg })
+      // Failing at the disable step changed nothing on the device.
+      return t(o.step === 'disable' ? 'migrate.execute.status.notMigrated' : 'migrate.execute.status.rolledBack', {
+        step: t(`migrate.execute.status.${o.step}`),
+        message: msg,
+      })
     }
     case 'needsAttention':
       return t('migrate.execute.status.needsAttention', {

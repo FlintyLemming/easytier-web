@@ -130,7 +130,7 @@ const show = (v: unknown) => (typeof v === 'string' ? v : JSON.stringify(v))
         <ul class="mt-2 flex flex-col gap-2">
           <li v-for="c in changes" :key="c.key" class="flex flex-col gap-1">
             <span class="break-all text-ink">{{ changeText(t, c) }}</span>
-            <label class="inline-flex items-center gap-2 text-[13px] text-body">
+            <label v-if="!locked" class="inline-flex items-center gap-2 text-[13px] text-body">
               <input
                 type="checkbox"
                 class="h-4 w-4 accent-ink"

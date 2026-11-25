@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { ChangeKey, DevicePreview } from '../../domain/migration/classify'
+import { deviceCounts, type ChangeKey, type DevicePreview } from '../../domain/migration/classify'
 import UiButton from '../ui/UiButton.vue'
 import { changeLabel } from './changeText'
 
@@ -31,7 +31,7 @@ const kinds = computed(() => {
 <template>
   <section data-testid="change-summary" class="rounded-card border border-hairline bg-surface-card px-5 py-4">
     <p class="text-[14px] text-ink">
-      {{ t('migrate.preview.summary', { n: selected.length, m: previews.length - selected.length }) }}
+      {{ t('migrate.preview.summary', { n: deviceCounts(previews, selected).migrate, m: deviceCounts(previews, selected).skip }) }}
     </p>
     <ul v-if="kinds.length" class="mt-3 flex flex-col gap-2">
       <li v-for="k in kinds" :key="k.key" class="flex flex-wrap items-center justify-between gap-2 text-[14px]">

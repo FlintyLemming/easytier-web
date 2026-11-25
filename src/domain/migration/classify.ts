@@ -276,7 +276,10 @@ export function planGroup(
       const ip = plan.member.virtualIpv4
       if (!alreadyMember && ip) {
         if (!hostInCidr(ip, target.virtualCidr)) blockers.push({ kind: 'ipOutsideCidr', ip, cidr: target.virtualCidr! })
-        const taken = members.find((m) => m.device_id !== device.id && m.virtual_ipv4?.split('/')[0] === ip)
+        // A member holds an address fixed, allocated or at runtime (a fixed one would silently re-address it).
+        const taken = members.find(
+          (m) => m.device_id !== device.id && [m.virtual_ipv4, m.allocated_ipv4, m.runtime_virtual_ipv4].some((a) => a?.split('/')[0] === ip),
+        )
         if (taken) blockers.push({ kind: 'ipTaken', ip, other: memberLabel(taken) })
         const dup = base.find(
           (o) => o.device.id !== device.id && !o.alreadyMember && !o.auto && !o.secondary && selected.has(o.device.id) && o.plan.member.virtualIpv4 === ip,
@@ -334,6 +337,12 @@ export function reconcileIpConfirmations(
     } else if (recorded === undefined) setIp(id, p.newIp)
   }
   return { confirmed: nextConfirmed, confirmedIps: nextIps }
+}
+
+/** Devices (not instances) that will migrate and that will not. */
+export function deviceCounts(previews: DevicePreview[], selected: DevicePreview[]): { migrate: number; skip: number } {
+  const migrate = new Set(selected.map((p) => p.device.id)).size
+  return { migrate, skip: new Set(previews.map((p) => p.device.id)).size - migrate }
 }
 
 /** The 迁移 / 暂不迁移 defaults per device: chosen when the instance that can migrate is selected by default. */

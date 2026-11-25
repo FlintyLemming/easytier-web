@@ -11,7 +11,7 @@ import type { CentralNetworkMember } from '../../src/api/types'
 import { CENTRAL_OWNED_FIELDS } from '../../src/domain/memberOverride'
 import { LEGACY_VPN_FIELDS } from '../../src/domain/vpnPortal'
 import {
-  changeFields, classifyInstance, initialAutoIp, initialChoices, isUnset, planGroup, readyToRun, reconcileIpConfirmations, selectedPreviews,
+  changeFields, classifyInstance, deviceCounts, initialAutoIp, initialChoices, isUnset, planGroup, readyToRun, reconcileIpConfirmations, selectedPreviews,
   targetFromDetail, unconfirmedChanges,
   type TargetNetwork,
 } from '../../src/domain/migration/classify'
@@ -140,6 +140,16 @@ describe('planGroup', () => {
     expect([core2.alreadyMember, core2.defaultSelected, core2.blockers.length]).toEqual([true, false, 0])
   })
 
+  it('an address a member holds by allocation or at runtime is taken too', () => {
+    const members = [
+      { device_id: 'x', member_id: 'm1', virtual_ipv4: null, allocated_ipv4: '10.150.0.3', runtime_virtual_ipv4: null, alias: null, hostname: 'printer' },
+      { device_id: 'y', member_id: 'm2', virtual_ipv4: null, allocated_ipv4: null, runtime_virtual_ipv4: '10.150.0.2/24', alias: null, hostname: 'nas' },
+    ] as unknown as CentralNetworkMember[]
+    const ps = planGroup(officeGroup(), devices, target, members, all)
+    expect(ps.find((x) => x.device.name === 'core3')!.blockers).toEqual([{ kind: 'ipTaken', ip: '10.150.0.3', other: 'printer' }])
+    expect(ps.find((x) => x.device.name === 'core2')!.blockers).toEqual([{ kind: 'ipTaken', ip: '10.150.0.2', other: 'nas' }])
+  })
+
   it('disabled instances are not selected by default; running ones without blockers are', () => {
     const ps = planGroup(officeGroup(), devices, target, [], all)
     expect(ps.map((p) => [p.device.name, p.defaultSelected])).toEqual([
@@ -250,6 +260,12 @@ describe('a device with two instances in one group (seen once in production)', (
     expect(second.blockers).toEqual([{ kind: 'otherInstance', instance: first.instance.instanceId }])
     expect([second.defaultSelected, second.newIp, second.ipSwitchable]).toEqual([false, null, false])
     expect(first.blockers.some((b) => b.kind === 'otherInstance')).toBe(false)
+  })
+
+  it('deviceCounts counts devices, not instances', () => {
+    const ps = planGroup(twice(), devices, target, [], all)
+    const sel = selectedPreviews(ps, initialChoices(ps))
+    expect(deviceCounts(ps, sel)).toEqual({ migrate: 3, skip: 0 })
   })
 
   it('initialChoices: the device is chosen when its migrating instance is, whatever the order', () => {

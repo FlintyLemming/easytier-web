@@ -575,3 +575,33 @@ test.describe('manual routes (routes = [] on a 2.6.4 core)', () => {
     expect((put?.body as { config: Record<string, unknown> }).config).toMatchObject({ enable_manual_routes: true })
   })
 })
+
+test.describe('minor fixes', () => {
+  test('31: a device that is offline at the run is 未迁移, not 已回滚', async ({ page }) => {
+    const { state } = await openWizard(page)
+    state.failures.push({ method: 'PUT', path: `/machines/${DEV.core1}/networks/${inst('core1')}`, bodyIncludes: '"disabled":true', status: 404, body: { message: 'Client not found' } })
+    await runAll(page)
+    await expect(execRow(page, 'core1')).toContainText('未迁移（停用旧实例：Client not found）')
+  })
+
+  test('32: a card that cannot migrate has no 我已了解 boxes', async ({ page }) => {
+    await openWizard(page)
+    await toNetworkStep(page)
+    await page.getByTestId('wizard-step-network').getByLabel('网段').fill('10.151.0.0/24')
+    await page.getByTestId('wizard-step-network').getByRole('button', { name: '下一步' }).click()
+    await expect(card(page, 'core1').getByTestId('changes')).toBeVisible()
+    await expect(card(page, 'core1').getByRole('checkbox', { name: '我已了解' })).toHaveCount(0)
+  })
+
+  test('33: going back and changing the subnet recomputes the defaults', async ({ page }) => {
+    await openWizard(page, { configs: { core3: { virtual_ipv4: '10.150.0.2' } } })
+    await toPreview(page)
+    await expect(card(page, 'core3').getByTestId('member-fields')).toContainText('（自动选择）')
+    await page.getByTestId('wizard-step-preview').getByRole('button', { name: '上一步' }).click()
+    await page.getByTestId('wizard-step-network').getByLabel('网段').fill('10.151.0.0/24')
+    await page.getByTestId('wizard-step-network').getByRole('button', { name: '下一步' }).click()
+    // every fixed IP is now outside the subnet: nothing switches by default
+    await expect(card(page, 'core3').getByTestId('member-fields')).not.toContainText('（自动选择）')
+    await expect(page.getByTestId('change-summary')).toContainText('将迁移 0 台')
+  })
+})

@@ -106,10 +106,16 @@ onBeforeRouteLeave(async () => {
 })
 
 /** Entering step 3 the first time for this group: every device starts at its default choice. */
+/** The target the step 3 defaults were computed for: changing it in step 2 recomputes them. */
+const defaultsFor = ref<string | null>(null)
 function toPreview() {
-  if (Object.keys(choices.value).length === 0 && group.value && target.value) {
+  const key = JSON.stringify(target.value)
+  if (defaultsFor.value !== key && group.value && target.value) {
     autoIp.value = [...initialAutoIp(group.value, legacy.devices.value, target.value, targetMembers.value)]
     choices.value = initialChoices(previews.value)
+    confirmed.value = {}
+    confirmedIps.value = {}
+    defaultsFor.value = key
   }
   toStep(3)
 }
@@ -145,6 +151,7 @@ async function selectGroup(name: string) {
   confirmed.value = {}
   autoIp.value = []
   confirmedIps.value = {}
+  defaultsFor.value = null
   void readSeenAddresses(g)
   if (g.targetNetworkId) {
     try {
@@ -175,6 +182,7 @@ function toInventory() {
   confirmed.value = {}
   autoIp.value = []
   confirmedIps.value = {}
+  defaultsFor.value = null
   if (route.query.report) void router.replace({ query: {} })
   toStep(1)
   void legacy.load()
