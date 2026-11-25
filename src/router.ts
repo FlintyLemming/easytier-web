@@ -46,6 +46,9 @@ export const router = createRouter({
         { path: 'migrate', name: 'migrate', component: () => import('./pages/MigratePage.vue') },
       ],
     },
+    // Any other address (e.g. a bookmark of the original UI such as /#/auth) goes to the overview
+    // instead of rendering nothing.
+    { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })
 

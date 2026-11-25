@@ -114,3 +114,27 @@ test('register page shows a refreshable captcha', async ({ page }) => {
   await page.getByRole('button', { name: /刷新/ }).click()
   expect(await img.getAttribute('src')).not.toBe(first)
 })
+
+test('an address the console does not have (the old UI\'s /#/auth) lands on the overview after login, not a blank page', async ({ page }) => {
+  let authed = false
+  await mockApi(page, {
+    'GET /console-info': () => (authed ? fixture('console-info.json') : status(401, { message: 'unauthorized' })),
+    'POST /auth/login': () => {
+      authed = true
+      return {}
+    },
+  })
+  await page.goto('/#/auth')
+  await page.getByLabel('用户名').fill('admin')
+  await page.getByLabel('密码').fill('admin')
+  await page.getByRole('button', { name: '登录' }).click()
+  await expect(page.getByRole('heading', { name: '概览' })).toBeVisible()
+  await expect(page).toHaveURL(/#\/$/)
+})
+
+test('an unknown address while logged in redirects to the overview', async ({ page }) => {
+  await mockApi(page)
+  await page.goto('/#/some/old/page')
+  await expect(page.getByRole('heading', { name: '概览' })).toBeVisible()
+  await expect(page).toHaveURL(/#\/$/)
+})
