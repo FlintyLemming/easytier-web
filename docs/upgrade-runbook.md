@@ -11,6 +11,7 @@
 | 旧镜像 | compose 里写的是 `mirror-hub.flinty.moe/easytier/easytier:latest`，本机这个 `latest` 是 **2.6.4**：digest `sha256:91d6732ea5ff71542fdb99333d2ee7b168e973443114db84db061e452427d91e`（和上游 `easytier/easytier:v2.6.4` 相同；2026-11-24 只读查看） |
 | 新镜像 | `mirror-hub.flinty.moe/easytier/easytier:v2.7.1`（或 `easytier/easytier:v2.7.1`），上游 digest `sha256:24248ca25f55f97fde509af450124b31decd44421403518350c6f4109fb139ef` |
 | 主机上的工具 | 没有 `sqlite3`（2026-11-24 只读查看） |
+| 城市级定位（2026-11-25 起） | `easytier-web` 的 `command` 加了 `--geoip-db /geoip/GeoLite2-City.mmdb`，并挂载 `./geoip:/geoip:ro`；数据库文件在 `$APP/geoip/GeoLite2-City.mmdb`（来自 github.com/P3TERX/GeoLite.mmdb，release 2026.11.22）。第 9 步用升级前备份的 compose.yaml 回滚时不带这一项，2.6.4 用内置的国家级数据库 |
 
 > **不要**在这台主机上执行 `docker compose pull` 或不带服务名的 `docker compose up`：两个服务都用 `:latest`，拉取后 `easytier-core` 也会被换成新版本。下面只操作 `easytier-web` 这一个服务。
 
