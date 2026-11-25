@@ -1,6 +1,9 @@
 # EasyTier Web Console
 
-[EasyTier](https://github.com/EasyTier/EasyTier) 的新 Web 控制台。直接对接原版 `easytier-web` v2.7.1 的 API，用原来的账号登录，数据库不用改；纯静态文件，部署时把 `/api/` 反代到 easytier-web 即可。
+> [!NOTE]
+> **非官方项目**，与 EasyTier 官方团队无关，也不是官方发布的前端。
+
+[EasyTier](https://github.com/EasyTier/EasyTier) 的第三方 Web 控制台。直接对接原版 `easytier-web` v2.7.1 的 API，用原来的账号登录，数据库不用改；纯静态文件，部署时把 `/api/` 反代到 easytier-web 即可。
 
 ![概览](docs/screenshots/overview.png)
 
