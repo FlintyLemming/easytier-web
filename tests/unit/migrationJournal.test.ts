@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import storedCore2 from '../fixtures/v2.7.1/migrate/stored-core2-office.json'
-import { clearJournal, exportFile, journalKey, loadJournal, upsertRecord, type MigrationRecord } from '../../src/domain/migration/journal'
+import { clearJournal, exportFile, journalKey, loadJournal, removeRecord, upsertRecord, type MigrationRecord } from '../../src/domain/migration/journal'
 import type { DevicePreview } from '../../src/domain/migration/classify'
 
 const rec = (over: Partial<MigrationRecord> = {}): MigrationRecord => ({
@@ -38,6 +38,13 @@ describe('journal', () => {
     upsertRecord('admin', rec({ status: 'inProgress', step: 'join', wasRunning: true }))
     upsertRecord('admin', rec({ deviceId: 'd3', status: 'needsAttention', step: 'settings', message: 'bad', rollbackStep: 'removeMember' }))
     expect(loadJournal('admin').map((r) => [r.status, r.step])).toEqual([['inProgress', 'join'], ['needsAttention', 'settings']])
+  })
+
+  it('removeRecord drops one device of one network', () => {
+    upsertRecord('admin', rec())
+    upsertRecord('admin', rec({ deviceId: 'd3' }))
+    expect(removeRecord('admin', 'd2', 'n1').map((r) => r.deviceId)).toEqual(['d3'])
+    expect(loadJournal('admin').map((r) => r.deviceId)).toEqual(['d3'])
   })
 
   it('clearJournal empties it', () => {

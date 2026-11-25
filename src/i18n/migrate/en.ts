@@ -126,6 +126,12 @@ export default {
       leave: 'Leave',
     },
     report: {
+      waitingReason: 'Reason: {message}',
+      addressChanges: 'Devices whose address changed (update whatever reaches them by IP)',
+      removeRecord: 'Remove record…',
+      removeTitle: 'Remove the migration record of {name}?',
+      removeBody: 'It can then no longer verify or roll back this device. The device itself is not affected.',
+      removeConfirm: 'Remove',
       rollbackStep: 'rollback',
       inProgress: 'Unfinished (stopped at “{step}”)',
       needsAttention: 'Needs attention ({step}: {message})',

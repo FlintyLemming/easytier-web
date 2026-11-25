@@ -86,6 +86,13 @@ export function saveRecord(user: string, rec: MigrationRecord): { list: Migratio
   return { list, saved: save(user, list) }
 }
 
+/** Drops the record of one device in one network; returns the new list. */
+export function removeRecord(user: string, deviceId: string, networkId: string): MigrationRecord[] {
+  const list = loadJournal(user).filter((r) => !(r.deviceId === deviceId && r.networkId === networkId))
+  save(user, list)
+  return list
+}
+
 export function clearJournal(user: string): void {
   try {
     localStorage.removeItem(journalKey(user))

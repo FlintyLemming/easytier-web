@@ -126,6 +126,12 @@ export default {
       leave: '离开',
     },
     report: {
+      waitingReason: '原因：{message}',
+      addressChanges: '迁移后换了地址的设备（按 IP 访问它们的地方要改过去）',
+      removeRecord: '删除记录…',
+      removeTitle: '删除 {name} 的迁移记录？',
+      removeBody: '删除后不能再用它校验或回滚这台设备。设备本身不受影响。',
+      removeConfirm: '删除',
       rollbackStep: '回滚',
       inProgress: '未完成（停在「{step}」）',
       needsAttention: '需要处理（{step}：{message}）',

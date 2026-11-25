@@ -5,7 +5,8 @@ import { RouterLink } from 'vue-router'
 import { getAclPolicy } from '../../api/client'
 import { useConfirm } from '../../composables/useConfirm'
 import { useToast } from '../../composables/useToast'
-import { clearJournal, loadJournal, upsertRecord, type MigrationRecord } from '../../domain/migration/journal'
+import { fixedIp } from '../../domain/migration/inventory'
+import { clearJournal, loadJournal, removeRecord, upsertRecord, type MigrationRecord } from '../../domain/migration/journal'
 import { rollbackDevice, verifyDevice } from '../../domain/migration/run'
 import { downloadText } from '../../lib/download'
 import { useSession } from '../../stores/session'
@@ -28,6 +29,16 @@ const keyOf = (r: MigrationRecord) => `${r.networkId}/${r.deviceId}`
 const checking = ref(new Set<string>())
 /** The record being rolled back (one at a time). */
 const rollingBack = ref<string | null>(null)
+/** Why the last verification could not run (shown under 等待上线后校验). */
+const reasons = ref<Record<string, string>>({})
+
+/** Devices whose address changed (an auto-selected one): whatever reaches them by IP must change too. */
+const addressChanges = computed(() =>
+  sorted.value
+    .filter((r) => r.status !== 'rolledBack')
+    .map((r) => ({ key: keyOf(r), name: r.deviceName, from: fixedIp(r.config), to: r.member.virtualIpv4 }))
+    .filter((c) => c.from && c.to && c.from !== c.to),
+)
 
 const sorted = computed(() =>
   [...records.value].sort((a, b) => a.networkName.localeCompare(b.networkName) || a.deviceName.localeCompare(b.deviceName)),
@@ -50,7 +61,12 @@ async function verify(rec: MigrationRecord) {
   try {
     const r = await verifyDevice(migrationApi, rec)
     // Unreachable keeps the last known status: a migrated device stays 「等待上线后校验」.
-    if (r.status === 'unreachable') return
+    if (r.status === 'unreachable') {
+      reasons.value = { ...reasons.value, [key]: r.message }
+      return
+    }
+    const { [key]: _gone, ...rest } = reasons.value
+    reasons.value = rest
     const current = records.value.find((x) => keyOf(x) === key)
     if (!current || !VERIFIABLE.has(current.status)) return
     records.value = upsertRecord(session.username, {
@@ -156,6 +172,18 @@ function download() {
   downloadText(`easytier-migration-record-${fileStamp(new Date())}.json`, JSON.stringify(records.value, null, 2) + '\n', 'application/json')
 }
 
+async function remove(rec: MigrationRecord) {
+  const ok = await confirm({
+    title: t('migrate.report.removeTitle', { name: rec.deviceName }),
+    body: t('migrate.report.removeBody'),
+    confirmLabel: t('migrate.report.removeConfirm'),
+    danger: true,
+  })
+  if (!ok) return
+  records.value = removeRecord(session.username, rec.deviceId, rec.networkId)
+  if (records.value.length === 0) emit('cleared')
+}
+
 async function clear() {
   if (!canClear.value) return
   const ok = await confirm({
@@ -187,6 +215,16 @@ const anyChecking = computed(() => checking.value.size > 0)
       >{{ t('migrate.report.aclLink') }}</RouterLink>
     </section>
 
+    <section v-if="addressChanges.length" data-testid="address-changes" class="rounded-card border border-hairline bg-surface-card px-5 py-4 text-[14px]">
+      <h2 class="text-ink">{{ t('migrate.report.addressChanges') }}</h2>
+      <ul class="mt-2 flex flex-col gap-1">
+        <li v-for="c in addressChanges" :key="c.key" class="flex flex-wrap gap-x-3">
+          <span class="text-ink">{{ c.name }}</span>
+          <span class="font-mono text-[13px] text-body">{{ c.from }} → {{ c.to }}</span>
+        </li>
+      </ul>
+    </section>
+
     <section class="rounded-card border border-hairline bg-surface-card">
       <EmptyState v-if="records.length === 0" :title="t('migrate.report.empty')" :body="t('migrate.report.emptyBody')" />
       <template v-else>
@@ -216,8 +254,12 @@ const anyChecking = computed(() => checking.value.size > 0)
                   :disabled="rollingBack !== null && rollingBack !== keyOf(r)"
                   @click="rollback(r)"
                 >{{ t('migrate.report.rollback') }}</UiButton>
+                <UiButton size="sm" variant="text" :disabled="rollingBack !== null" @click="remove(r)">{{ t('migrate.report.removeRecord') }}</UiButton>
               </div>
             </div>
+            <p v-if="reasons[keyOf(r)] && !checking.has(keyOf(r))" class="break-all text-[12px] text-muted">
+              {{ t('migrate.report.waitingReason', { message: reasons[keyOf(r)] }) }}
+            </p>
             <ul v-if="r.status === 'mismatch' && r.diffs?.length" class="flex flex-col gap-1 font-mono text-[12px] text-ink">
               <li v-for="d in r.diffs" :key="d.field" class="break-all">
                 {{ t('migrate.report.diff', { field: d.field, expected: show(d.expected), actual: show(d.actual) }) }}

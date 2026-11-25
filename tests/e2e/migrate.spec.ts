@@ -605,3 +605,35 @@ test.describe('minor fixes', () => {
     await expect(page.getByTestId('change-summary')).toContainText('将迁移 0 台')
   })
 })
+
+test.describe('report minors', () => {
+  test('34: a device waiting to be verified shows why', async ({ page }) => {
+    const { state } = await openWizard(page)
+    await runAll(page)
+    state.rpcDown = ['core1']
+    await execStep(page).getByRole('button', { name: '查看校验报告' }).click()
+    await expect(reportStatus(page, 'core1')).toHaveText('等待上线后校验')
+    await expect(reportRow(page, 'core1')).toContainText('Bad Gateway')
+  })
+
+  test('35: the report lists the devices whose address changed, old → new', async ({ page }) => {
+    await openWizard(page, { configs: { core3: { virtual_ipv4: '10.150.0.2' } } })
+    await runAll(page)
+    await execStep(page).getByRole('button', { name: '查看校验报告' }).click()
+    const list = page.getByTestId('address-changes')
+    await expect(list).toContainText('迁移后换了地址的设备')
+    await expect(list).toContainText('core3')
+    await expect(list).toContainText('10.150.0.2 → 10.150.0.254')
+    await expect(list).not.toContainText('core1')
+  })
+
+  test('36: one record can be removed', async ({ page }) => {
+    await openWizard(page)
+    await runAll(page)
+    await execStep(page).getByRole('button', { name: '查看校验报告' }).click()
+    await reportRow(page, 'core1').getByRole('button', { name: '删除记录…' }).click()
+    await page.getByRole('alertdialog').or(page.getByRole('dialog')).getByRole('button', { name: '删除' }).click()
+    await expect(page.getByTestId('report-device')).toHaveCount(2)
+    expect((await journalOf(page)).map((r) => r.deviceName)).toEqual(['core2', 'core3'])
+  })
+})
