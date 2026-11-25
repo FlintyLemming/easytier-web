@@ -12,7 +12,7 @@
 | 新镜像 | `mirror-hub.flinty.moe/easytier/easytier:v2.7.1`（或 `easytier/easytier:v2.7.1`），上游 digest `sha256:24248ca25f55f97fde509af450124b31decd44421403518350c6f4109fb139ef` |
 | 主机上的工具 | 没有 `sqlite3`（2026-11-24 只读查看） |
 | 城市级定位（2026-11-25 起） | `easytier-web` 的 `command` 加了 `--geoip-db /geoip/GeoLite2-City.mmdb`，并挂载 `./geoip:/geoip:ro`；数据库文件在 `$APP/geoip/GeoLite2-City.mmdb`（来自 github.com/P3TERX/GeoLite.mmdb，release 2026.11.22）。第 9 步用升级前备份的 compose.yaml 回滚时不带这一项，2.6.4 用内置的国家级数据库 |
-| 心跳回复等待（2026-11-25 起） | `easytier-web` 的 `command` 加了 `--heartbeat-min-response-ms 1000`（默认 3500）。v2.7.1 给 2.7 以前的 core 回复心跳前要等满这个时间，而这些 core 一次心跳最多等 5 秒、超时就断开重连；默认 3.5 秒时，香港、法国这类远距离设备每 10–60 秒重连一次，向导对它们的操作会中途失败。改前的 compose 备份在 `$APP/backups/20261125-105814-heartbeat/`。第 9 步回滚用的 compose.yaml 不带这一项，2.6.4 也不认识这个参数 |
+| 心跳回复等待（2026-11-25 起） | `easytier-web` 的 `command` 加了 `--heartbeat-min-response-ms 1000`（默认 3500）。v2.7.1 给 2.7 以前的 core 回复心跳前要等满这个时间，而这些 core 一次心跳最多等 5 秒。**这一项没能解决远距离设备的重连**：eu-ovh-ks2（法国）的 core 日志显示，升级前它就在每小时重连 200–350 次（白天多、北京时间凌晨少），国内设备大约每天一次。断开时没有心跳超时，是跨境 UDP 链路本身的问题，和 web 版本无关。留着无害（2.7 以前的 core 每秒心跳一次，和 web 2.6.4 时一样），也可以改回默认。改前的 compose 备份在 `$APP/backups/20261125-105814-heartbeat/`。第 9 步回滚用的 compose.yaml 不带这一项，2.6.4 也不认识这个参数 |
 
 > **不要**在这台主机上执行 `docker compose pull` 或不带服务名的 `docker compose up`：两个服务都用 `:latest`，拉取后 `easytier-core` 也会被换成新版本。下面只操作 `easytier-web` 这一个服务。
 
