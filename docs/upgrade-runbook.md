@@ -130,7 +130,7 @@ docker ps --filter name=easytier-web      # 状态 Up
 
 ## 7. 部署新前端
 
-按 README「部署」：本机 `npm run build`，把 `dist/` 复制到服务器，用 Caddy（`deploy/`）或现有的反向代理把 `/api/*` 转发到 easytier-web 的 11211 端口、其余路径托管 `dist/`。用原来的账号登录新前端。原版前端可以继续保留在 11211 端口，作为对照。**不要在生产主机上启动 `deploy/docker-compose.yml`**：它会再起一个 easytier-web（空数据目录）；生产上只需要在反向代理里加 `/api/*` 和静态文件两条规则。
+按 [docs/guide.md](guide.md)「部署」：本机 `npm run build`，把 `dist/` 复制到服务器，用 Caddy（`deploy/`）或现有的反向代理把 `/api/*` 转发到 easytier-web 的 11211 端口、其余路径托管 `dist/`。用原来的账号登录新前端。原版前端可以继续保留在 11211 端口，作为对照。**不要在生产主机上启动 `deploy/docker-compose.yml`**：它会再起一个 easytier-web（空数据目录）；生产上只需要在反向代理里加 `/api/*` 和静态文件两条规则。
 
 ## 8. 运行迁移向导
 

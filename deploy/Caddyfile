@@ -1,5 +1,5 @@
 # EasyTier Web Console behind Caddy: the console's static build and the easytier-web API on one
-# origin, so the session cookie works without any cross-site setup (README 「部署」).
+# origin, so the session cookie works without any cross-site setup (docs/guide.md 「部署」).
 #
 # SITE_ADDRESS: a domain (automatic HTTPS), `localhost` (local CA) or `:80` (plain HTTP).
 {$SITE_ADDRESS:localhost} {

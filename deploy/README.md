@@ -6,7 +6,7 @@
 | --- | --- |
 | `docker-compose.yml` | 服务 `easytier-web`（`easytier/easytier:v2.7.1`，`--disable-registration`）和 `caddy`（`caddy:2`） |
 | `Caddyfile` | `/api/*` 反向代理到 `easytier-web:11211`；其余路径托管 `dist/`；`/config.js` 不存在时返回空脚本 |
-| `config.js.example` | 只有前端和 API 在同一注册域名的不同子域时才需要（README「部署」） |
+| `config.js.example` | 只有前端和 API 在同一注册域名的不同子域时才需要（[docs/guide.md](../docs/guide.md)「部署」） |
 
 ## 用法
 
